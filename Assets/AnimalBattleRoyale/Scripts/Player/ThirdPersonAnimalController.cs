@@ -879,5 +879,11 @@ namespace AnimalBattleRoyale
             if (IsBurrowed) damage *= 0.2f;
             return damage;
         }
+
+        private void OnDestroy()
+        {
+            if (!Application.isPlaying) return;
+            BattleRoyaleManager.Instance?.HandleFighterDisconnected(this);
+        }
     }
 }

@@ -29,6 +29,7 @@ namespace AnimalBattleRoyale
         private float lastHealthValue;
         private float healthTrailNormalized = 1f;
         private float healthDamagePulseUntil;
+        private bool shuttingDown;
 
         public IReadOnlyList<ThirdPersonAnimalController> Fighters => fighters;
         public ThirdPersonAnimalController LocalPlayer { get; private set; }
@@ -70,9 +71,15 @@ namespace AnimalBattleRoyale
         public void RegisterFighter(ThirdPersonAnimalController fighter)
         {
             if (fighter == null || fighters.Contains(fighter)) return;
+            if (fighters.Count >= DiamondObjectiveManager.MaxPlayers)
+            {
+                Debug.LogWarning($"Limite de {DiamondObjectiveManager.MaxPlayers} participantes atingido; {fighter.name} nao foi registrado.");
+                return;
+            }
             fighters.Add(fighter);
             fighter.Health.Died += OnFighterDied;
             if (fighter.IsLocalPlayer) LocalPlayer = fighter;
+            DiamondObjectiveManager.Instance?.RegisterFighter(fighter);
             RecalculateAlive();
         }
 
@@ -95,6 +102,30 @@ namespace AnimalBattleRoyale
                 return;
             }
 
+        }
+
+        public void HandleFighterDisconnected(ThirdPersonAnimalController fighter)
+        {
+            if (fighter == null || shuttingDown || !gameObject.scene.isLoaded || !fighters.Remove(fighter)) return;
+
+            Health fighterHealth = fighter.Health;
+            if (fighterHealth != null) fighterHealth.Died -= OnFighterDied;
+            if (fighterHealth != null && fighterHealth.IsDead)
+            {
+                RecalculateAlive();
+                return;
+            }
+
+            Vector3 deathPosition = GetGroundedDeathPosition(fighter.transform.position);
+            DiamondObjectiveManager.Instance?.DropAll(fighter, deathPosition);
+            FoodPickup.Create(deathPosition, FoodKind.Meat);
+            AttackVfx.CreateBurst(deathPosition + Vector3.up, new Color(0.92f, 0.08f, 0.045f), 1.9f);
+            RecalculateAlive();
+
+            if (!fighter.IsLocalPlayer || MatchFinished) return;
+            MatchFinished = true;
+            resultMessage = "VOCE FOI ELIMINADO";
+            ForestMissionDirector.Instance?.FinishMatch(false);
         }
 
         private Vector3 GetGroundedDeathPosition(Vector3 position)
@@ -246,8 +277,20 @@ namespace AnimalBattleRoyale
 
         private static void RestartMatch()
         {
+            if (Instance != null) Instance.shuttingDown = true;
             Scene activeScene = SceneManager.GetActiveScene();
             SceneManager.LoadScene(activeScene.buildIndex);
+        }
+
+        private void OnApplicationQuit()
+        {
+            shuttingDown = true;
+        }
+
+        private void OnDestroy()
+        {
+            shuttingDown = true;
+            if (Instance == this) Instance = null;
         }
 
         private void DrawPlayerHud()

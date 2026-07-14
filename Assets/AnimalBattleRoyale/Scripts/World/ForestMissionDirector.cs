@@ -58,7 +58,7 @@ namespace AnimalBattleRoyale
         public string GlobalMissionText => GlobalMissionDescription();
         public string AnimalMissionText => AnimalMissionDescription();
         public int AwardedMastery => awardedMastery;
-        public string MatchSummary => $"Diamantes: {localDiamondPeak}/10   •   Eliminações: {localEliminations}\nMissões: {localMissionsCompleted}/2   •   Sobrevivência: {matchDuration:0}s\nMaestria recebida: +{awardedMastery}";
+        public string MatchSummary => $"Cristais: {localDiamondPeak}/{DiamondObjectiveManager.RequiredDiamonds}   •   Eliminações: {localEliminations}\nMissões: {localMissionsCompleted}/2   •   Sobrevivência: {matchDuration:0}s\nMaestria recebida: +{awardedMastery}";
 
         private void Awake()
         {
@@ -169,7 +169,7 @@ namespace AnimalBattleRoyale
             bool contractComplete = (DateTime.UtcNow.DayOfYear % 3) switch
             {
                 0 => localMissionsCompleted >= 2,
-                1 => localDiamondPeak >= 5,
+                1 => localDiamondPeak >= Mathf.Min(5, DiamondObjectiveManager.RequiredDiamonds),
                 _ => localEliminations >= 2
             };
             awardedMastery = localMissionsCompleted * 35 + localDiamondPeak * 8 + localEliminations * 25 + survival
@@ -342,7 +342,7 @@ namespace AnimalBattleRoyale
             nextCarrierPulse = Time.time + 24f;
             if (GetLeadingCarrier() == null) return;
             carrierRevealUntil = Mathf.Max(carrierRevealUntil, Time.time + 6f);
-            eventMessage = "A FLORESTA REVELOU O MAIOR PORTADOR DE DIAMANTES";
+            eventMessage = "A FLORESTA REVELOU O MAIOR PORTADOR DE CRISTAIS";
             eventUntil = Mathf.Max(eventUntil, Time.time + 5f);
         }
 
