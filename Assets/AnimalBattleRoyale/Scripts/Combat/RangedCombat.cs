@@ -192,6 +192,7 @@ namespace AnimalBattleRoyale
         private RangedSupplyKind supplyKind;
         private Transform visual;
         private GameObject labelObject;
+        private GameObject highlightObject;
         private Vector3 visualBasePosition;
         private bool available = true;
         private float respawnAt;
@@ -258,6 +259,7 @@ namespace AnimalBattleRoyale
             respawnAt = Time.time + RespawnSeconds;
             if (visual != null) visual.gameObject.SetActive(false);
             if (labelObject != null) labelObject.SetActive(false);
+            if (highlightObject != null) highlightObject.SetActive(false);
             return true;
         }
 
@@ -269,6 +271,7 @@ namespace AnimalBattleRoyale
                 available = true;
                 if (visual != null) visual.gameObject.SetActive(true);
                 if (labelObject != null) labelObject.SetActive(true);
+                if (highlightObject != null) highlightObject.SetActive(true);
                 AttackVfx.CreateBurst(transform.position + Vector3.up * 0.35f, SupplyColor(), 1f);
             }
 
@@ -303,6 +306,9 @@ namespace AnimalBattleRoyale
             visualBasePosition = Vector3.up * 0.08f;
             instance.transform.localPosition = visualBasePosition;
             visual = instance.transform;
+
+            CollectibleHighlight highlight = CollectibleHighlight.Attach(transform, SupplyColor(), SupplyKind == RangedSupplyKind.StonePile ? 1.12f : 0.98f, 0.02f);
+            highlightObject = highlight != null ? highlight.gameObject : null;
 
             labelObject = new GameObject("SupplyLabel");
             labelObject.transform.SetParent(transform, false);
