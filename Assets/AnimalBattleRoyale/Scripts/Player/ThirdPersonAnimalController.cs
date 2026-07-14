@@ -50,7 +50,6 @@ namespace AnimalBattleRoyale
         private float nextDashDamage;
         private float mobilityEnergy = MaxMobilityEnergy;
         private int rangedAmmo = MaxRangedAmmo;
-        private bool rangedAttackMode;
         private int monkeyAirJumpsUsed;
         private Vector3 dashDirection;
         private int lastPowerSlot = -1;
@@ -97,7 +96,6 @@ namespace AnimalBattleRoyale
         public float MobilityRechargeSecondsRemaining => IsMobilityRecharging
             ? (MaxMobilityEnergy - mobilityEnergy) / (MaxMobilityEnergy / MobilityRechargeDuration)
             : 0f;
-        public bool IsRangedAttackMode => rangedAttackMode;
         public int RangedAmmo => rangedAmmo;
         public int MaxRangedAmmoValue => MaxRangedAmmo;
         public bool NeedsRangedAmmo => rangedAmmo < MaxRangedAmmo;
@@ -287,7 +285,6 @@ namespace AnimalBattleRoyale
             visualMotion = GetComponentInChildren<AnimalVisualMotion>();
             mobilityEnergy = MaxMobilityEnergy;
             rangedAmmo = MaxRangedAmmo;
-            rangedAttackMode = false;
             health.Initialize(stats.MaxHealth, this);
             if (!refillHealth) health.ReconfigureMaxHealth(stats.MaxHealth, false);
         }
@@ -295,7 +292,6 @@ namespace AnimalBattleRoyale
         private void HandleLocalInput()
         {
             Vector3 movement = GetCameraRelativeDirection(GameInput.ReadMovement());
-            if (GameInput.AttackModeTogglePressed()) rangedAttackMode = !rangedAttackMode;
             if (IsInAntTunnel)
             {
                 AntTunnelEntrance.Navigate(this, movement);
@@ -304,7 +300,7 @@ namespace AnimalBattleRoyale
             if (IsHangingVine)
             {
                 if (GameInput.AbilityOnePressed() || GameInput.JumpPressed()) TryMonkeyVineChain(GetAttackDirection(movement));
-                if (GameInput.AttackPressed()) ReleaseVine(GetAttackDirection(movement), true);
+                if (GameInput.MeleeAttackPressed()) ReleaseVine(GetAttackDirection(movement), true);
                 if (GameInput.ConsumePressed() && !MissionNode.TryUseNearest(this) && !DiamondPickup.TryCollectNearest(this)
                     && !RangedAmmoPickup.TryCollectNearest(this)) FoodPickup.TryConsumeNearest(this);
                 return;
@@ -314,11 +310,8 @@ namespace AnimalBattleRoyale
                 return;
             }
             SimulateMovement(movement, GameInput.SprintHeld(), GameInput.JumpPressed(), GameInput.JumpHeld(), GameInput.DescendHeld());
-            if (GameInput.AttackPressed())
-            {
-                if (rangedAttackMode) TryRangedAttack(GetRangedAttackDirection(movement));
-                else TryBasicAttack(GetAttackDirection(movement));
-            }
+            if (GameInput.RangedAttackPressed()) TryRangedAttack(GetRangedAttackDirection(movement));
+            if (GameInput.MeleeAttackPressed()) TryBasicAttack(GetAttackDirection(movement));
             if (GameInput.ConsumePressed() && !MissionNode.TryUseNearest(this) && !DiamondPickup.TryCollectNearest(this)
                 && !RangedAmmoPickup.TryCollectNearest(this)) FoodPickup.TryConsumeNearest(this);
             if (GameInput.AbilityOnePressed()) TryUsePower(0, GetAttackDirection(movement));

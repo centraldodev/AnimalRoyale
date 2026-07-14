@@ -96,7 +96,7 @@ namespace AnimalBattleRoyale
 #endif
         }
 
-        public static bool AttackPressed()
+        public static bool RangedAttackPressed()
         {
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
@@ -105,6 +105,8 @@ namespace AnimalBattleRoyale
             return Input.GetMouseButtonDown(0);
 #endif
         }
+
+        public static bool AttackPressed() => RangedAttackPressed();
 
         public static bool ConsumePressed()
         {
@@ -143,7 +145,7 @@ namespace AnimalBattleRoyale
 #endif
         }
 
-        public static bool AttackModeTogglePressed()
+        public static bool MeleeAttackPressed()
         {
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
@@ -152,6 +154,8 @@ namespace AnimalBattleRoyale
             return Input.GetMouseButtonDown(1);
 #endif
         }
+
+        public static bool AttackModeTogglePressed() => MeleeAttackPressed();
 
 #if ENABLE_INPUT_SYSTEM
         private static bool keyboardQPressed()

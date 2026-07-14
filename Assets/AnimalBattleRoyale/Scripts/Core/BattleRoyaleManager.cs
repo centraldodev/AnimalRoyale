@@ -338,9 +338,8 @@ namespace AnimalBattleRoyale
             Rect panel = new Rect(x, y, width, 68f);
             DrawCartoonPanel(panel, new Color(0.025f, 0.045f, 0.048f, 0.92f), new Color(0.18f, 0.31f, 0.29f, 1f), 1f);
             Rect key = new Rect(panel.x + 10f, panel.y + 10f, 46f, 46f);
-            DrawCartoonPanel(key, ready ? new Color(0.12f, 0.38f, 0.25f, 1f) : new Color(0.16f, 0.17f, 0.16f, 1f), accent, 1f);
-            GUI.Label(key, "Q", centeredStyle);
-            GUI.Label(new Rect(panel.x + 68f, panel.y + 9f, panel.width - 150f, 23f), stats.AbilityNames[0], normalStyle);
+            DrawKeycapIcon(key, "Q", accent, ready);
+            GUI.Label(new Rect(panel.x + 68f, panel.y + 9f, panel.width - 150f, 23f), "Q - HABILIDADE 1", normalStyle);
             GUI.Label(new Rect(panel.x + panel.width - 82f, panel.y + 9f, 70f, 23f), ready ? "PRONTO" : $"{remaining:0.0}s", rightStyle);
             Rect cooldownBar = new Rect(panel.x + 68f, panel.y + 42f, panel.width - 80f, 8f);
             DrawRoundedRect(cooldownBar, new Color(0.005f, 0.012f, 0.012f, 0.9f));
@@ -358,43 +357,72 @@ namespace AnimalBattleRoyale
             float powerX = (viewWidth - powerWidth) * 0.5f;
             if (powerX < 430f) powerX = Mathf.Min(430f, viewWidth - powerWidth - 20f);
 
-            float width = 220f;
+            float width = 420f;
             float x = powerX + powerWidth + 10f;
-            float y = viewHeight - 88f;
+            float y = viewHeight - 108f;
             if (x + width > viewWidth - 20f)
             {
                 x = Mathf.Max(20f, powerX + powerWidth - width);
-                y -= 76f;
+                y -= 110f;
             }
 
-            bool ranged = LocalPlayer.IsRangedAttackMode;
             bool hasAmmo = LocalPlayer.RangedAmmo > 0;
-            Color accent = ranged
-                ? hasAmmo ? new Color(0.28f, 0.82f, 1f) : new Color(1f, 0.3f, 0.24f)
-                : new Color(0.96f, 0.68f, 0.2f);
-            Rect panel = new Rect(x, y, width, 68f);
+            Color accent = hasAmmo ? new Color(0.28f, 0.82f, 1f) : new Color(1f, 0.3f, 0.24f);
+            Rect panel = new Rect(x, y, width, 96f);
             DrawCartoonPanel(panel, new Color(0.025f, 0.045f, 0.048f, 0.94f), accent, 1f);
             GUI.Label(new Rect(panel.x + 12f, panel.y + 8f, panel.width - 24f, 16f),
-                ranged ? "ATAQUE LONGO" : "ATAQUE CURTO", eyebrowStyle);
-            GUI.Label(new Rect(panel.x + 12f, panel.y + 27f, panel.width - 78f, 26f),
-                ranged ? LocalPlayer.RangedAmmoName : "CORPO A CORPO", normalStyle);
-            GUI.Label(new Rect(panel.x + panel.width - 72f, panel.y + 24f, 60f, 28f),
-                ranged ? $"{LocalPlayer.RangedAmmo}/{LocalPlayer.MaxRangedAmmoValue}" : "PRONTO", rightStyle);
-            Rect modeBar = new Rect(panel.x + 12f, panel.y + 56f, panel.width - 24f, 4f);
+                "ATALHOS DE ATAQUE", eyebrowStyle);
+            DrawShortcutRow(new Rect(panel.x + 12f, panel.y + 27f, panel.width - 24f, 26f),
+                true, "Mouse esquerdo - Ataque longo", accent);
+            DrawShortcutRow(new Rect(panel.x + 12f, panel.y + 57f, panel.width - 24f, 26f),
+                false, "Mouse direito - Ataque corpo a corpo", new Color(0.96f, 0.68f, 0.2f));
+            GUI.Label(new Rect(panel.x + panel.width - 78f, panel.y + 8f, 66f, 20f),
+                $"{LocalPlayer.RangedAmmo}/{LocalPlayer.MaxRangedAmmoValue}", rightStyle);
+            Rect modeBar = new Rect(panel.x + 12f, panel.y + 86f, panel.width - 24f, 4f);
             DrawRoundedRect(modeBar, new Color(accent.r, accent.g, accent.b, 0.75f));
+        }
+
+        private void DrawShortcutRow(Rect row, bool leftButton, string label, Color accent)
+        {
+            Rect icon = new Rect(row.x, row.y, 58f, row.height);
+            DrawMouseIcon(icon, leftButton, accent);
+            GUI.Label(new Rect(row.x + 68f, row.y, row.width - 68f, row.height), label, smallStyle);
+        }
+
+        private void DrawKeycapIcon(Rect rect, string keyText, Color accent, bool ready)
+        {
+            Color fill = ready ? new Color(0.12f, 0.38f, 0.25f, 1f) : new Color(0.16f, 0.17f, 0.16f, 1f);
+            DrawCartoonPanel(rect, fill, accent, 1f);
+            DrawRoundedRect(new Rect(rect.x + 5f, rect.y + 5f, rect.width - 10f, 5f), new Color(1f, 1f, 1f, 0.12f));
+            GUI.Label(rect, keyText, centeredStyle);
+        }
+
+        private void DrawMouseIcon(Rect rect, bool leftButton, Color accent)
+        {
+            Rect body = new Rect(rect.x + 12f, rect.y + 2f, 34f, rect.height - 4f);
+            DrawRoundedRect(body, new Color(0.06f, 0.075f, 0.075f, 1f));
+            DrawRoundedRect(new Rect(body.x + 2f, body.y + 2f, body.width - 4f, body.height - 4f), new Color(0.13f, 0.16f, 0.16f, 1f));
+
+            Rect left = new Rect(body.x + 4f, body.y + 4f, body.width * 0.5f - 5f, body.height * 0.42f);
+            Rect right = new Rect(body.center.x + 1f, body.y + 4f, body.width * 0.5f - 5f, body.height * 0.42f);
+            DrawRoundedRect(leftButton ? left : right, accent);
+            DrawRoundedRect(leftButton ? right : left, new Color(0.22f, 0.25f, 0.25f, 1f));
+
+            Color previous = GUI.color;
+            GUI.color = new Color(0.03f, 0.04f, 0.04f, 1f);
+            GUI.DrawTexture(new Rect(body.center.x - 1f, body.y + 4f, 2f, body.height * 0.42f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(body.x + 10f, body.y + body.height * 0.5f, body.width - 20f, 2f), Texture2D.whiteTexture);
+            GUI.color = previous;
         }
 
         private void DrawAimReticle()
         {
             bool vineTarget = LocalPlayer != null && VineAnchor.IsLookedAtBy(LocalPlayer);
-            bool rangedMode = LocalPlayer != null && LocalPlayer.IsRangedAttackMode;
             bool hasAmmo = LocalPlayer != null && LocalPlayer.RangedAmmo > 0;
             Color previousColor = GUI.color;
             GUI.color = vineTarget
                 ? new Color(0.3f, 1f, 0.58f, 1f)
-                : rangedMode
-                    ? hasAmmo ? new Color(0.28f, 0.82f, 1f, 1f) : new Color(1f, 0.3f, 0.24f, 1f)
-                    : new Color(1f, 1f, 1f, 0.88f);
+                : hasAmmo ? new Color(0.28f, 0.82f, 1f, 1f) : new Color(1f, 0.3f, 0.24f, 1f);
 
             float centerX = viewWidth * 0.5f;
             float centerY = viewHeight * 0.5f;
@@ -411,11 +439,11 @@ namespace AnimalBattleRoyale
                 DrawCartoonPanel(prompt, new Color(0.025f, 0.075f, 0.055f, 0.92f), new Color(0.3f, 0.9f, 0.58f, 1f), 1f);
                 GUI.Label(prompt, "Q  AGARRAR CIPÓ", centeredStyle);
             }
-            else if (rangedMode && LocalPlayer != null)
+            else if (LocalPlayer != null)
             {
-                Rect rangedStatus = new Rect(centerX - 130f, centerY + 24f, 260f, 26f);
+                Rect rangedStatus = new Rect(centerX - 250f, centerY + 24f, 500f, 26f);
                 GUI.Label(rangedStatus,
-                    $"{LocalPlayer.RangedAttackName}  {LocalPlayer.RangedAmmo}/{LocalPlayer.MaxRangedAmmoValue}",
+                    $"MOUSE ESQUERDO - {LocalPlayer.RangedAttackName}  {LocalPlayer.RangedAmmo}/{LocalPlayer.MaxRangedAmmoValue}",
                     centeredStyle);
             }
         }
