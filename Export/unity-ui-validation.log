@@ -1,0 +1,324 @@
+[Licensing::Module] Trying to connect to existing licensing client channel...
+Built from '6000.5/staging' branch; Version is '6000.5.3f1 (c2eb47b3a2a9) revision 12774215'; Using compiler version '194234433'; Build Type 'Release'
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-natan" at "2026-07-14T21:35:48.9084951Z"
+OS: 'Windows 11  (10.0.26200) Professional' Language: 'pt' Physical Memory: 32638 MB
+BatchMode: 1, IsHumanControllingUs: 0, StartBugReporterOnCrash: 0, Is64bit: 1
+System  architecture: x64
+Process architecture: x64
+Date: 2026-07-14T21:35:48Z
+
+COMMAND LINE ARGUMENTS:
+C:\Program Files\Unity\Hub\Editor\6000.5.3f1\Editor\Unity.exe
+-batchmode
+-nographics
+-quit
+-projectPath
+D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject
+-logFile
+D:\DEV\AnimalRoyale\Export\unity-ui-validation.log
+Successfully changed project path to: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject
+D:/DEV/AnimalRoyale/Export/AnimalRoyale_UnityProject
+[UnityMemory] Configuration Parameters - Can be set up in boot.config
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-gi-baking-worker=262144"
+    "memorysetup-temp-allocator-size-nav-mesh-worker=65536"
+    "memorysetup-temp-allocator-size-audio-worker=65536"
+    "memorysetup-temp-allocator-size-cloud-worker=32768"
+    "memorysetup-temp-allocator-size-gfx=262144"
+    "memorysetup-temp-allocator-size-preload-manager=33554432"
+    "memorysetup-allocator-temp-initial-block-size-main=262144"
+    "memorysetup-allocator-temp-initial-block-size-worker=262144"
+    "memorysetup-temp-allocator-size-job-worker=262144"
+    "memorysetup-temp-allocator-size-background-worker=32768"
+    "memorysetup-bucket-allocator-granularity=16"
+    "memorysetup-bucket-allocator-bucket-count=8"
+    "memorysetup-bucket-allocator-block-size=33554432"
+    "memorysetup-bucket-allocator-block-count=8"
+    "memorysetup-main-allocator-block-size=16777216"
+    "memorysetup-thread-allocator-block-size=16777216"
+    "memorysetup-main-allocator-mimalloc-enabled=0"
+    "memorysetup-gfx-main-allocator-block-size=16777216"
+    "memorysetup-gfx-thread-allocator-block-size=16777216"
+    "memorysetup-cache-allocator-block-size=4194304"
+    "memorysetup-typetree-allocator-block-size=2097152"
+    "memorysetup-profiler-bucket-allocator-granularity=16"
+    "memorysetup-profiler-bucket-allocator-bucket-count=8"
+    "memorysetup-profiler-bucket-allocator-block-size=33554432"
+    "memorysetup-profiler-bucket-allocator-block-count=8"
+    "memorysetup-profiler-allocator-block-size=16777216"
+    "memorysetup-profiler-editor-allocator-block-size=1048576"
+    "memorysetup-temp-allocator-size-main=16777216"
+    "memorysetup-job-temp-allocator-block-size=2097152"
+    "memorysetup-job-temp-allocator-block-size-background=1048576"
+    "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
+Logging is directed to a specific file, skipping project log.Player connection [16084]  Target information:
+
+Player connection [16084]  * "[IP] 192.168.1.14 [Port] 55505 [Flags] 2 [Guid] 2596417970 [EditorId] 2596417970 [Version] 1048832 [Id] WindowsEditor(7,Desktop) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+
+Player connection [16084] Host joined multi-casting on [225.0.0.222:54997]...
+Player connection [16084] Host joined alternative multi-casting on [225.0.0.222:34997]...
+Input System module state changed to: Initialized.
+[Physics::Module] Initialized fallback backend.
+[Physics::Module] Id: 0xdecafbad
+[Package Manager] Connected to IPC stream "Upm-7448" after 0.3 seconds.
+[Licensing::Module] Licensing is not yet initialized.
+[Licensing::Client] Error: HandshakeResponse reported an error:
+	ResponseCode: 505
+	ResponseStatus: Unsupported protocol version '1.18.1'.
+[Licensing::Module] Error: Failed to handshake to channel: "LicenseClient-natan"
+[Licensing::IpcConnector] LicenseClient-natan channel disconnected successfully.
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-natan-6000.5.3" at "2026-07-14T21:35:50.1450022Z"
+[Licensing::Client] Code 10 while verifying Licensing Client signature (process Id: 4288, path: "C:/Program Files/Unity/Hub/Editor/6000.5.3f1/Editor/Data/Resources/Licensing/Client/Unity.Licensing.Client.exe")
+[Licensing::Module] LicensingClient has failed validation; ignoring
+[Licensing::Client] Handshaking with LicensingClient:
+  Version:                 1.18.1+9fbee8e
+  Session Id:              80405802bfae41f8b403bd766352618d
+  Correlation Id:          f056a944ec531f30843253ae4d6ea417
+  External correlation Id: 7241074727673986638
+  Machine Id:              SBBkA5KGkIm8j0APFcjXDgq4y9o=
+[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-natan-6000.5.3" (connect: 0.00s, validation: 0.00s, handshake: 0.01s)
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-natan-6000.5.3-notifications" at "2026-07-14T21:35:50.1527045Z"
+[Licensing::Module] Error: Access token is unavailable; failed to update
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] License group:
+  Id: 4674229066755-UnityPersXXXX
+  Product: Unity Personal
+  Type: Assigned
+  Expiration: Unlimited
+[Licensing::Client] Successfully updated license, isAsync: True, time: 0.00
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] Licensing Background thread has ended after 1.25s
+[Licensing::Module] Licensing is initialized (took 0.77s).
+[Licensing::Client] Successfully resolved entitlement details
+Library Redirect Path: Library/
+[Physics::Module] Selected backend.
+[Physics::Module] Name: PhysX
+[Physics::Module] Id: 0xf2b8ea05
+[Physics::Module] SDK Version: 4.1.2
+[Physics::Module] Integration Version: 1.0.0
+[Physics::Module] Threading Mode: Multi-Threaded
+Artifact Garbage Collection - Removed 90 unused hashed content files
+Initialize engine version: 6000.5.3f1 (c2eb47b3a2a9)
+[Subsystems] Discovering subsystems at path C:/Program Files/Unity/Hub/Editor/6000.5.3f1/Editor/Data/Resources/UnitySubsystems
+[Subsystems] Discovering subsystems at path D:/DEV/AnimalRoyale/Export/AnimalRoyale_UnityProject/Assets
+Forcing GfxDevice: Null
+GfxDevice: creating device client; kGfxThreadingModeNonThreaded
+NullGfxDevice:
+    Version:  NULL 1.0 [1.0]
+    Renderer: Null Device
+    Vendor:   Unity Technologies
+Initialize mono
+Mono path[0] = 'C:/Program Files/Unity/Hub/Editor/6000.5.3f1/Editor/Data/Managed'
+Mono path[1] = 'C:/Program Files/Unity/Hub/Editor/6000.5.3f1/Editor/Data/BCLExtensions/runtime/netstandard2.1'
+Mono path[2] = 'C:/Program Files/Unity/Hub/Editor/6000.5.3f1/Editor/Data/MonoBleedingEdge/lib/mono/unityjit-win32'
+Mono config path = 'C:/Program Files/Unity/Hub/Editor/6000.5.3f1/Editor/Data/MonoBleedingEdge/etc'
+Using monoOptions --debugger-agent=transport=dt_socket,embedding=1,server=y,suspend=n,address=127.0.0.1:56448
+CodeReloadManager initialized
+ImportWorker Server TCP listen port: 0
+AcceleratorClientConnectionCallback - disconnected - :0
+Begin MonoManager ReloadAssembly
+Registering precompiled unity dll's ...
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.5.3f1/Editor/Data/PlaybackEngines/WebGLSupport/UnityEditor.WebGL.Extensions.dll
+Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.5.3f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport/UnityEditor.WindowsStandalone.Extensions.dll
+Registered in 0.002426 seconds.
+Native extension for WindowsStandalone target not found
+Native extension for WebGL target not found
+Package Manager log level set to [2]
+ScheduleIndexationOnStartup MainProcess:False IndexOnStartup:False
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  0.385 seconds
+Domain Reload Profiling: 962ms
+	BeginReloadAssembly (154ms)
+		CreateAndSetChildDomain (3ms)
+	RebuildCommonClasses (6ms)
+	RebuildNativeTypeToScriptingClass (17ms)
+	initialDomainReloadingComplete (80ms)
+	LoadAllAssembliesAndSetupDomain (317ms)
+		LoadAssemblies (147ms)
+		AnalyzeDomain (230ms)
+			TypeCache.Refresh (228ms)
+				TypeCache.ScanAssembly (214ms)
+	FinalizeReload (388ms)
+		SetupLoadedEditorAssemblies (0ms)
+			InitializePlatformSupportModulesInManaged (3ms)
+			BeforeProcessingInitializeOnLoad (88ms)
+			ProcessInitializeOnLoadAttributes (95ms)
+			ProcessInitializeOnLoadMethodAttributes (125ms)
+[Licensing::Client] Successfully resolved entitlement details
+Application.AssetDatabase Initial Refresh Start
+[Package Manager] Restoring resolved packages state from cache
+[Licensing::Client] Successfully resolved entitlement details
+[Package Manager] Registered 37 packages:
+  Built-in packages:
+    com.unity.multiplayer.center@1.0.1 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.multiplayer.center@b860850997d0)
+    com.unity.modules.accessibility@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.accessibility)
+    com.unity.modules.adaptiveperformance@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.adaptiveperformance)
+    com.unity.modules.ai@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.ai)
+    com.unity.modules.androidjni@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.androidjni)
+    com.unity.modules.animation@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.animation)
+    com.unity.modules.assetbundle@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.assetbundle)
+    com.unity.modules.audio@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.audio)
+    com.unity.modules.cloth@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.cloth)
+    com.unity.modules.director@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.director)
+    com.unity.modules.imageconversion@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.imageconversion)
+    com.unity.modules.imgui@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.imgui)
+    com.unity.modules.jsonserialize@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.jsonserialize)
+    com.unity.modules.particlesystem@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.particlesystem)
+    com.unity.modules.physics@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.physics)
+    com.unity.modules.physics2d@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.physics2d)
+    com.unity.modules.physicscore2d@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.physicscore2d)
+    com.unity.modules.screencapture@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.screencapture)
+    com.unity.modules.terrain@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.terrain)
+    com.unity.modules.terrainphysics@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.terrainphysics)
+    com.unity.modules.tilemap@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.tilemap)
+    com.unity.modules.ui@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.ui)
+    com.unity.modules.uielements@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.uielements)
+    com.unity.modules.umbra@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.umbra)
+    com.unity.modules.unityanalytics@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.unityanalytics)
+    com.unity.modules.unitywebrequest@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.unitywebrequest)
+    com.unity.modules.unitywebrequestassetbundle@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.unitywebrequestassetbundle)
+    com.unity.modules.unitywebrequestaudio@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.unitywebrequestaudio)
+    com.unity.modules.unitywebrequesttexture@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.unitywebrequesttexture)
+    com.unity.modules.unitywebrequestwww@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.unitywebrequestwww)
+    com.unity.modules.vectorgraphics@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.vectorgraphics)
+    com.unity.modules.vehicles@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.vehicles)
+    com.unity.modules.video@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.video)
+    com.unity.modules.wind@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.wind)
+    com.unity.modules.xr@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.xr)
+    com.unity.modules.subsystems@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.subsystems)
+    com.unity.modules.hierarchycore@1.0.0 (location: D:\DEV\AnimalRoyale\Export\AnimalRoyale_UnityProject\Library\PackageCache\com.unity.modules.hierarchycore)
+[Subsystems] No new subsystems found in resolved package list.
+[Package Manager] Done registering packages in 0.02 seconds
+[ScriptCompilation] Requested script compilation because: AssetDatabase observed changes in script compilation related files
+Starting: C:\Program Files\Unity\Hub\Editor\6000.5.3f1\Editor\Data\Tools\BuildPipeline\bee_backend.exe --ipc --defer-dag-verification --dagfile="Library/Bee/1900b0aE.dag" --continue-on-failure --profile="Library/Bee/backend1.traceevents" ScriptAssemblies
+WorkingDir: D:/DEV/AnimalRoyale/Export/AnimalRoyale_UnityProject
+DisplayProgressbar: Compiling Scripts
+ExitCode: 4 Duration: 1s772ms
+Rebuilding DAG because FileSignature timestamp changed: Library/Bee/1900b0aE-inputdata.json
+*** Tundra requires additional run (1.73 seconds), 1 items updated, 179 evaluated
+Starting: C:\Program Files\Unity\Hub\Editor\6000.5.3f1\Editor\Data\netcorerun\netcorerun.exe "C:\Program Files\Unity\Hub\Editor\6000.5.3f1\Editor\Data\Tools\BuildPipeline\ScriptCompilationBuildProgram.exe" "Library/Bee/1900b0aE.dag.json" "Library/Bee/1900b0aE-inputdata.json" "Library\Bee\buildprogram0.traceevents"
+WorkingDir: D:/DEV/AnimalRoyale/Export/AnimalRoyale_UnityProject
+ExitCode: 0 Duration: 0s241ms
+Starting: C:\Program Files\Unity\Hub\Editor\6000.5.3f1\Editor\Data\Tools\BuildPipeline\bee_backend.exe --ipc --defer-dag-verification --dagfile="Library/Bee/1900b0aE.dag" --continue-on-failure --dagfilejson="Library\Bee\1900b0aE.dag.json" --profile="Library/Bee/backend2.traceevents" ScriptAssemblies
+WorkingDir: D:/DEV/AnimalRoyale/Export/AnimalRoyale_UnityProject
+ExitCode: 0 Duration: 0s935ms
+Finished compiling graph: 189 nodes, 1021 flattened edges (989 ToBuild, 8 ToUse), maximum node priority 46
+[168/186    0s] WriteText Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp.rsp
+[180/186    0s] Csc Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp.dll (+2 others)
+[181/186    0s] CopyFiles Library/ScriptAssemblies/Assembly-CSharp.pdb
+[182/186    0s] CopyFiles Library/ScriptAssemblies/Assembly-CSharp.dll
+[183/186    0s] Csc Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp-Editor.dll (+2 others)
+[184/186    0s] CopyFiles Library/ScriptAssemblies/Assembly-CSharp-Editor.pdb
+[185/186    0s] CopyFiles Library/ScriptAssemblies/Assembly-CSharp-Editor.dll
+*** Tundra build success (0.91 seconds), 7 items updated, 186 evaluated
+Total cache size 25117028
+Total cache size after purge 25117028, took 00:00:00.0436328
+AssetDatabase: script compilation time: 3.494353s
+Begin MonoManager ReloadAssembly
+Native extension for WindowsStandalone target not found
+Native extension for WebGL target not found
+ScheduleIndexationOnStartup MainProcess:True IndexOnStartup:True
+Mono: successfully reloaded assembly
+- Finished resetting the current domain, in  0.412 seconds
+Domain Reload Profiling: 888ms
+	BeginReloadAssembly (279ms)
+		DisableScriptedObjects (75ms)
+		CreateAndSetChildDomain (51ms)
+	RebuildCommonClasses (9ms)
+	RebuildNativeTypeToScriptingClass (16ms)
+	initialDomainReloadingComplete (50ms)
+	LoadAllAssembliesAndSetupDomain (119ms)
+		LoadAssemblies (117ms)
+		AnalyzeDomain (12ms)
+			TypeCache.Refresh (6ms)
+			BuildScriptInfoCaches (3ms)
+	FinalizeReload (415ms)
+		SetupLoadedEditorAssemblies (0ms)
+			InitializePlatformSupportModulesInManaged (3ms)
+			BeforeProcessingInitializeOnLoad (93ms)
+			ProcessInitializeOnLoadAttributes (78ms)
+			ProcessInitializeOnLoadMethodAttributes (74ms)
+			AfterProcessingInitializeOnLoad (8ms)
+		AwakeInstancesAfterBackupRestoration (21ms)
+Starting new worker id: 0 with log in D:/DEV/AnimalRoyale/Export/AnimalRoyale_UnityProject/Logs/AssetImportWorkerHW0.log
+
+Asset Pipeline Refresh (id=1a7dd2af462c14148a13339c0b2312c1): Total: 4.631 seconds - Initiated by InitialRefreshV2(ForceSynchronousImport)
+	(Values over 0.05ms)
+	Summary:
+		Imports: total=0 (actual=0, local cache=0, cache server=0)
+		Asset DB Process Time: managed=0 ms, native=524 ms
+		Asset DB Callback time: managed=75 ms, native=19 ms
+		Scripting: domain reloads=1, domain reload time=505 ms, compile time=3497 ms, other=9 ms
+		Project Asset Count: scripts=160, non-scripts=147
+		Asset File Changes: new=1, changed=3, moved=0, deleted=0
+		Scan Filter Count: 0
+	InvokePackagesCallback: 19.350ms
+	ApplyChangesToAssetFolders: 0.492ms
+	Scan: 40.428ms
+	Collect global state as custom dependencies: 2.895ms
+	OnSourceAssetsModified: 0.823ms
+	CategorizeScriptCompilationAssets: 0.349ms
+	ProcessAssetsWithTransientArtifactChanges: 2.102ms
+	CategorizeAssets: 2.282ms
+	CompileScripts: 3496.716ms
+	ImportOutOfDateAssets: 430.757ms (419.204ms without children)
+		UnloadImportedAssets: 0.103ms
+		ImportSchedulerStart: 11.406ms
+	PostProcessAllAssets: 75.835ms
+		VCAutoAddAssetPostprocess 1.557ms
+		MonoPostProcessAllAssets: 73.736ms
+			AssetPostprocessor.OnPostprocessAllAssets 20.856ms
+			StyleCatalogPostProcessor.OnPostprocessAllAssets 13.517ms
+			WindowAssetPostprocessingWatcher.OnPostprocessAllAssets 8.362ms
+			BuilderAssetPostprocessor.OnPostprocessAllAssets 5.763ms
+			AssetChangedListener.OnPostprocessAllAssets 3.089ms
+			RetainedModeAssetPostprocessor.OnPostprocessAllAssets 1.932ms
+			SyncVS.PostprocessSyncProject 1.544ms
+			SpeedTree9Postprocessor.OnPostprocessAllAssets 1.208ms
+			EditModeScopePostprocessor.OnPostprocessAllAssets 0.936ms
+			TextAssetPostProcessor.OnPostprocessAllAssets 0.866ms
+			ArtifactBrowserPostProcessor.OnPostprocessAllAssets 0.583ms
+			ReferencedClipsPostProcessor.OnPostprocessAllAssets 0.463ms
+			AssetEvents.OnPostprocessAllAssets 0.354ms
+			TerrainToolbarOverlayPostProcessor.OnPostprocessAllAssets 0.311ms
+			AudioMixerPostprocessor.OnPostprocessAllAssets 0.290ms
+			SpeedTreePostProcessor.OnPostprocessAllAssets 0.220ms
+			AssetDatabaseCallbacks.OnPostprocessAllAssets 0.166ms
+			RenderPipelineGlobalSettingsPostprocessor.OnPostprocessAllAssets 0.143ms
+			ConfigAssetsTracker.OnPostprocessAllAssets 0.141ms
+			ScenarioDriftAssetsTracker.OnPostprocessAllAssets 0.125ms
+			AudioContainerPostProcessor.OnPostprocessAllAssets 0.083ms
+	PostAssetChangesProfiler: 0.883ms
+	UnloadStreamsBegin: 1.365ms
+	GenerateScriptTypeHashes: 0.342ms
+	GenerateScriptTypeSerializationHashes: 0.702ms
+	Untracked: 552.093ms
+
+Application.AssetDatabase Initial Refresh End
+Scanning for USB devices : 17.739ms
+Initializing Unity extensions:
+[MODES] ModeService[none].Initialize
+[MODES] ModeService[none].LoadModes
+[MODES] Loading mode Default (0) for mode-current-id-AnimalBattleRoyale_UnityStarter
+Unloading 3 Unused Serialized files (Serialized files now loaded: 0)
+Unloading 109 unused Assets / (0.5 MB). Loaded Objects now: 745.
+Memory consumption went from 187.8 MB to 187.2 MB.
+Total: 4.830800 ms (FindLiveObjects: 0.051300 ms CreateObjectMapping: 0.020700 ms MarkObjects: 4.523300 ms  DeleteObjects: 0.231000 ms)
+
+Batchmode quit successfully invoked - shutting down!
+Curl error 42: Callback aborted
+[Physics::Module] Cleanup current backend.
+[Physics::Module] Id: 0xf2b8ea05
+Input System module state changed to: ShutdownInProgress.
+Input Polling Thread exited.
+Input System module state changed to: Shutdown.
+[Licensing::IpcConnector] LicenseClient-natan-6000.5.3-notifications channel disconnected successfully.
+[Licensing::IpcConnector] LicenseClient-natan-6000.5.3 channel disconnected successfully.
+AcceleratorClientConnectionCallback - disconnected - :0
+Cleanup mono
+CodeReloadManager destroyed
+Exiting batchmode successfully now!
+Exiting without the bug reporter. Application will terminate with return code 0
