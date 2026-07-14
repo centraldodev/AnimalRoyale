@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AnimalBattleRoyale
@@ -28,6 +29,7 @@ namespace AnimalBattleRoyale
         private string currentClip;
         private float monkeyGrabUntil;
         private bool monkeyHanging;
+        private readonly List<LegBinding> locomotionLegs = new List<LegBinding>();
 
         public void Initialize(AnimalType type)
         {
@@ -53,6 +55,7 @@ namespace AnimalBattleRoyale
                 if (monkeyLeftArm != null) monkeyLeftArmRotation = monkeyLeftArm.localRotation;
                 if (monkeyRightArm != null) monkeyRightArmRotation = monkeyRightArm.localRotation;
             }
+            CacheLocomotionLegs();
 
             PlayLocomotion();
         }
@@ -118,7 +121,7 @@ namespace AnimalBattleRoyale
             ApplyMonkeyVineArmPose(1f);
         }
 
-        /// <summary>Stops all visual animation so the animal can remain as a corpse.</summary>
+        /// <summary>Stops all visual animation when the animal is removed from combat.</summary>
         public void Freeze()
         {
             if (returnToIdle != null)
@@ -243,6 +246,97 @@ namespace AnimalBattleRoyale
             }
         }
 
+        private void LateUpdate()
+        {
+            ApplyForwardLegLocomotion();
+            if (monkeyHanging) ApplyMonkeyVineArmPose(1f);
+        }
+
+        private void CacheLocomotionLegs()
+        {
+            locomotionLegs.Clear();
+            if (animator == null) return;
+
+            switch (animalType)
+            {
+                case AnimalType.Ant:
+                    AddLeg("Leg_F_L", 0f, 1f);
+                    AddLeg("LowerLeg_F_L", 0f, -0.68f);
+                    AddLeg("Leg_M_R", 0f, 1f);
+                    AddLeg("LowerLeg_M_R", 0f, -0.68f);
+                    AddLeg("Leg_B_L", 0f, 1f);
+                    AddLeg("LowerLeg_B_L", 0f, -0.68f);
+                    AddLeg("Leg_F_R", Mathf.PI, 1f);
+                    AddLeg("LowerLeg_F_R", Mathf.PI, -0.68f);
+                    AddLeg("Leg_M_L", Mathf.PI, 1f);
+                    AddLeg("LowerLeg_M_L", Mathf.PI, -0.68f);
+                    AddLeg("Leg_B_R", Mathf.PI, 1f);
+                    AddLeg("LowerLeg_B_R", Mathf.PI, -0.68f);
+                    break;
+                case AnimalType.Monkey:
+                    AddLeg("Leg_L", 0f, 1f);
+                    AddLeg("Shin_L", 0f, -0.72f);
+                    AddLeg("Foot_L", 0f, 0.28f);
+                    AddLeg("Leg_R", Mathf.PI, 1f);
+                    AddLeg("Shin_R", Mathf.PI, -0.72f);
+                    AddLeg("Foot_R", Mathf.PI, 0.28f);
+                    break;
+                case AnimalType.Tiger:
+                    AddLeg("Leg_FL", 0f, 1f);
+                    AddLeg("LowerLeg_FL", 0f, -0.68f);
+                    AddLeg("Paw_FL", 0f, 0.3f);
+                    AddLeg("Leg_BR", 0f, 1f);
+                    AddLeg("LowerLeg_BR", 0f, -0.68f);
+                    AddLeg("Paw_BR", 0f, 0.3f);
+                    AddLeg("Leg_FR", Mathf.PI, 1f);
+                    AddLeg("LowerLeg_FR", Mathf.PI, -0.68f);
+                    AddLeg("Paw_FR", Mathf.PI, 0.3f);
+                    AddLeg("Leg_BL", Mathf.PI, 1f);
+                    AddLeg("LowerLeg_BL", Mathf.PI, -0.68f);
+                    AddLeg("Paw_BL", Mathf.PI, 0.3f);
+                    break;
+                case AnimalType.Eagle:
+                    AddLeg("Leg_L", 0f, 0.7f);
+                    AddLeg("LowerLeg_L", 0f, -0.5f);
+                    AddLeg("Talon_L", 0f, 0.22f);
+                    AddLeg("Leg_R", Mathf.PI, 0.7f);
+                    AddLeg("LowerLeg_R", Mathf.PI, -0.5f);
+                    AddLeg("Talon_R", Mathf.PI, 0.22f);
+                    break;
+            }
+        }
+
+        private void AddLeg(string boneName, float phase, float amplitudeMultiplier)
+        {
+            Transform bone = FindChildRecursive(animator.transform, boneName);
+            if (bone == null) return;
+            locomotionLegs.Add(new LegBinding(bone, bone.localRotation, phase, amplitudeMultiplier));
+        }
+
+        private void ApplyForwardLegLocomotion()
+        {
+            if (locomotionLegs.Count == 0 || !isMoving || isAirborne || monkeyHanging || Time.time < actionLockUntil) return;
+
+            Transform axisRoot = transform.root != null ? transform.root : transform;
+            Vector3 swingAxis = axisRoot.right;
+            if (swingAxis.sqrMagnitude < 0.01f) swingAxis = Vector3.right;
+
+            float speed = isSprinting ? 11.5f : 7.5f;
+            float amplitude = isSprinting ? 42f : 28f;
+            if (animalType == AnimalType.Ant) amplitude *= 0.72f;
+            if (animalType == AnimalType.Eagle) amplitude *= 0.55f;
+
+            float cycle = Time.time * speed;
+            foreach (LegBinding leg in locomotionLegs)
+            {
+                if (leg.Bone == null || leg.Bone.parent == null) continue;
+                float angle = Mathf.Sin(cycle + leg.Phase) * amplitude * leg.AmplitudeMultiplier;
+                Quaternion bindWorld = leg.Bone.parent.rotation * leg.BindLocalRotation;
+                Quaternion targetWorld = Quaternion.AngleAxis(angle, swingAxis.normalized) * bindWorld;
+                leg.Bone.localRotation = Quaternion.Inverse(leg.Bone.parent.rotation) * targetWorld;
+            }
+        }
+
         private bool monkeyLeftHandGrip = true;
 
         private void ApplyMonkeyVineArmPose(float reach)
@@ -284,6 +378,22 @@ namespace AnimalBattleRoyale
                 if (found != null) return found;
             }
             return null;
+        }
+
+        private readonly struct LegBinding
+        {
+            public readonly Transform Bone;
+            public readonly Quaternion BindLocalRotation;
+            public readonly float Phase;
+            public readonly float AmplitudeMultiplier;
+
+            public LegBinding(Transform bone, Quaternion bindLocalRotation, float phase, float amplitudeMultiplier)
+            {
+                Bone = bone;
+                BindLocalRotation = bindLocalRotation;
+                Phase = phase;
+                AmplitudeMultiplier = amplitudeMultiplier;
+            }
         }
     }
 }
