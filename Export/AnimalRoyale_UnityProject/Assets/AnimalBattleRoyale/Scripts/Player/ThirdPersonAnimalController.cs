@@ -12,11 +12,13 @@ namespace AnimalBattleRoyale
         [SerializeField] private float gravity = -24f;
 
         private const float MaxMobilityEnergy = 100f;
+        private const float MobilityRechargeDuration = 15f;
         private const float EagleFlightDrainPerSecond = 4.5f;
         private const float EagleMinimumTakeoffEnergy = 6f;
         private const float MonkeyVineLeapEnergyCost = 20f;
         private const float MonkeyAirJumpEnergyCost = 20f;
         private const int MonkeyMaxAirJumps = 5;
+        private const int MaxRangedAmmo = 12;
         private const float CorpseLifetime = 60f;
 
         private CharacterController characterController;
@@ -30,6 +32,7 @@ namespace AnimalBattleRoyale
         private Vector3 aiMoveDirection;
         private bool aiSprint;
         private bool aiAttack;
+        private bool aiRangedAttack;
         private int aiAbilitySlot = -1;
         private readonly float[] nextPowerTimes = new float[3];
         private float nextBasicAttackTime;
@@ -45,6 +48,8 @@ namespace AnimalBattleRoyale
         private float slowMultiplier = 1f;
         private float nextDashDamage;
         private float mobilityEnergy = MaxMobilityEnergy;
+        private int rangedAmmo = MaxRangedAmmo;
+        private bool rangedAttackMode;
         private int monkeyAirJumpsUsed;
         private Vector3 dashDirection;
         private int lastPowerSlot = -1;
@@ -83,8 +88,38 @@ namespace AnimalBattleRoyale
         public bool UsesMobilityEnergy => animalType == AnimalType.Eagle || animalType == AnimalType.Monkey;
         public float MobilityEnergy => mobilityEnergy;
         public float MaxMobilityEnergyValue => MaxMobilityEnergy;
-        public string MobilityEnergyName => animalType == AnimalType.Eagle ? "ENERGIA DE VOO" : "ENERGIA DE CIPÓ";
+        public string MobilityEnergyName => animalType == AnimalType.Eagle ? "ESTAMINA DE VOO" : "ESTAMINA DE SALTO";
         public bool NeedsMobilityEnergy => UsesMobilityEnergy && mobilityEnergy < MaxMobilityEnergy - 0.5f;
+        public bool IsMobilityRecharging => NeedsMobilityEnergy && !IsFlying;
+        public float MobilityRechargeSecondsRemaining => IsMobilityRecharging
+            ? (MaxMobilityEnergy - mobilityEnergy) / (MaxMobilityEnergy / MobilityRechargeDuration)
+            : 0f;
+        public bool IsRangedAttackMode => rangedAttackMode;
+        public int RangedAmmo => rangedAmmo;
+        public int MaxRangedAmmoValue => MaxRangedAmmo;
+        public bool NeedsRangedAmmo => rangedAmmo < MaxRangedAmmo;
+        public string RangedAmmoName => animalType switch
+        {
+            AnimalType.Monkey => "BANANAS",
+            AnimalType.Ant => "PEDRAS",
+            AnimalType.Tiger => "PEDRAS",
+            AnimalType.Eagle => "CARGAS",
+            _ => "MUNIÇÃO"
+        };
+        public string RangedAttackName => animalType switch
+        {
+            AnimalType.Monkey => "ARREMESSO DE BANANA",
+            AnimalType.Ant => "ARREMESSO DE PEDRA",
+            AnimalType.Tiger => "ARREMESSO DE PEDRA",
+            AnimalType.Eagle => "BOMBARDEIO",
+            _ => "ATAQUE À DISTÂNCIA"
+        };
+        public RangedSupplyKind CompatibleRangedSupply => animalType switch
+        {
+            AnimalType.Monkey => RangedSupplyKind.BananaBunch,
+            AnimalType.Eagle => RangedSupplyKind.EagleNest,
+            _ => RangedSupplyKind.StonePile
+        };
         public int LastPowerSlot => lastPowerSlot;
         public string LastPowerName => Stats.AbilityNames != null && lastPowerSlot >= 0 && lastPowerSlot < Stats.AbilityNames.Length
             ? Stats.AbilityNames[lastPowerSlot]
@@ -143,6 +178,7 @@ namespace AnimalBattleRoyale
             RecoverIfBelowTerrain();
             if (isLocalPlayer) HandleLocalInput();
             else HandleAIInput();
+            RechargeMobilityEnergy();
         }
 
         /// <summary>Places the CharacterController's feet a small distance above the terrain.</summary>
@@ -177,11 +213,12 @@ namespace AnimalBattleRoyale
 
         public void SetCamera(Transform cameraReference) => cameraTransform = cameraReference;
 
-        public void SetAIInput(Vector3 moveDirection, bool sprint, bool attack, int abilitySlot)
+        public void SetAIInput(Vector3 moveDirection, bool sprint, bool attack, bool rangedAttack, int abilitySlot)
         {
             aiMoveDirection = Vector3.ClampMagnitude(moveDirection, 1f);
             aiSprint = sprint;
             aiAttack = attack;
+            aiRangedAttack = rangedAttack;
             aiAbilitySlot = abilitySlot;
         }
 
@@ -200,6 +237,7 @@ namespace AnimalBattleRoyale
             extraVelocity = Vector3.zero;
             aiMoveDirection = Vector3.zero;
             aiAttack = false;
+            aiRangedAttack = false;
             aiAbilitySlot = -1;
 
             // Corpses always settle at their death location on the terrain, even if the
@@ -231,6 +269,8 @@ namespace AnimalBattleRoyale
             AnimalVisualFactory.Build(transform, type, stats.MainColor, stats.VisualScale);
             visualMotion = GetComponentInChildren<AnimalVisualMotion>();
             mobilityEnergy = MaxMobilityEnergy;
+            rangedAmmo = MaxRangedAmmo;
+            rangedAttackMode = false;
             health.Initialize(stats.MaxHealth, this);
             if (!refillHealth) health.ReconfigureMaxHealth(stats.MaxHealth, false);
         }
@@ -238,6 +278,7 @@ namespace AnimalBattleRoyale
         private void HandleLocalInput()
         {
             Vector3 movement = GetCameraRelativeDirection(GameInput.ReadMovement());
+            if (GameInput.AttackModeTogglePressed()) rangedAttackMode = !rangedAttackMode;
             if (IsInAntTunnel)
             {
                 AntTunnelEntrance.Navigate(this, movement);
@@ -247,7 +288,8 @@ namespace AnimalBattleRoyale
             {
                 if (GameInput.AbilityOnePressed()) TryMonkeyVineChain(GetAttackDirection(movement));
                 if (GameInput.AttackPressed()) ReleaseVine(GetAttackDirection(movement), true);
-                if (GameInput.ConsumePressed() && !MissionNode.TryUseNearest(this) && !DiamondPickup.TryCollectNearest(this)) FoodPickup.TryConsumeNearest(this);
+                if (GameInput.ConsumePressed() && !MissionNode.TryUseNearest(this) && !DiamondPickup.TryCollectNearest(this)
+                    && !RangedAmmoPickup.TryCollectNearest(this)) FoodPickup.TryConsumeNearest(this);
                 return;
             }
             if (animalType == AnimalType.Ant && GameInput.AbilityTwoPressed() && AntTunnelEntrance.TryEnter(this))
@@ -255,8 +297,13 @@ namespace AnimalBattleRoyale
                 return;
             }
             SimulateMovement(movement, GameInput.SprintHeld(), GameInput.JumpPressed(), GameInput.JumpHeld(), GameInput.DescendHeld());
-            if (GameInput.AttackPressed()) TryBasicAttack(GetAttackDirection(movement));
-            if (GameInput.ConsumePressed() && !MissionNode.TryUseNearest(this) && !DiamondPickup.TryCollectNearest(this)) FoodPickup.TryConsumeNearest(this);
+            if (GameInput.AttackPressed())
+            {
+                if (rangedAttackMode) TryRangedAttack(GetRangedAttackDirection(movement));
+                else TryBasicAttack(GetAttackDirection(movement));
+            }
+            if (GameInput.ConsumePressed() && !MissionNode.TryUseNearest(this) && !DiamondPickup.TryCollectNearest(this)
+                && !RangedAmmoPickup.TryCollectNearest(this)) FoodPickup.TryConsumeNearest(this);
             if (GameInput.AbilityOnePressed()) TryUsePower(0, GetAttackDirection(movement));
         }
 
@@ -275,9 +322,14 @@ namespace AnimalBattleRoyale
                 return;
             }
             SimulateMovement(aiMoveDirection, aiSprint, false, false, false);
-            if (aiAttack) TryBasicAttack(aiMoveDirection);
+            if (aiAttack)
+            {
+                if (aiRangedAttack) TryRangedAttack(aiMoveDirection);
+                else TryBasicAttack(aiMoveDirection);
+            }
             if (aiAbilitySlot >= 0) TryUsePower(aiAbilitySlot, aiMoveDirection);
             aiAttack = false;
+            aiRangedAttack = false;
             aiAbilitySlot = -1;
         }
 
@@ -375,13 +427,58 @@ namespace AnimalBattleRoyale
 
         private Vector3 GetAttackDirection(Vector3 movementDirection)
         {
-            if (GameInput.AimHeld() && cameraTransform != null)
+            return movementDirection.sqrMagnitude > 0.01f ? movementDirection.normalized : transform.forward;
+        }
+
+        private Vector3 GetRangedAttackDirection(Vector3 movementDirection)
+        {
+            if (cameraTransform != null)
             {
-                Vector3 aim = cameraTransform.forward;
-                aim.y = 0f;
+                Vector3 aimPoint = cameraTransform.position + cameraTransform.forward * 60f;
+                RaycastHit[] hits = Physics.RaycastAll(cameraTransform.position, cameraTransform.forward, 60f,
+                    ~0, QueryTriggerInteraction.Ignore);
+                float nearestDistance = float.MaxValue;
+                foreach (RaycastHit hit in hits)
+                {
+                    if (hit.collider == null) continue;
+                    Transform hitTransform = hit.collider.transform;
+                    if (hitTransform == transform || hitTransform.IsChildOf(transform) || hit.distance >= nearestDistance) continue;
+                    nearestDistance = hit.distance;
+                    aimPoint = hit.point;
+                }
+
+                Vector3 launchPoint = transform.position + Vector3.up * (stats.ControllerHeight * 0.62f + 0.3f);
+                Vector3 aim = aimPoint - launchPoint;
                 if (aim.sqrMagnitude > 0.01f) return aim.normalized;
             }
             return movementDirection.sqrMagnitude > 0.01f ? movementDirection.normalized : transform.forward;
+        }
+
+        private void TryRangedAttack(Vector3 direction)
+        {
+            if (IsBurrowed || IsHangingVine || Time.time < nextBasicAttackTime || rangedAmmo <= 0) return;
+            direction = direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
+            rangedAmmo--;
+            nextBasicAttackTime = Time.time + RangedAttackCooldown();
+            Vector3 flatDirection = new Vector3(direction.x, 0f, direction.z);
+            if (flatDirection.sqrMagnitude > 0.01f)
+            {
+                transform.rotation = Quaternion.LookRotation(flatDirection.normalized, Vector3.up);
+            }
+            visualMotion?.TriggerAttack();
+            RangedProjectile.Fire(this, direction);
+        }
+
+        private float RangedAttackCooldown()
+        {
+            return animalType switch
+            {
+                AnimalType.Eagle => 0.68f,
+                AnimalType.Monkey => 0.72f,
+                AnimalType.Ant => 0.86f,
+                AnimalType.Tiger => 0.92f,
+                _ => 0.8f
+            };
         }
 
         private void TryBasicAttack(Vector3 direction)
@@ -511,7 +608,7 @@ namespace AnimalBattleRoyale
             int hitCount = Physics.OverlapSphereNonAlloc(
                 transform.position + Vector3.up * 0.8f + direction * (range * 0.48f),
                 range, combatHits, ~0, QueryTriggerInteraction.Ignore);
-            float dotThreshold = GameInput.AimHeld() ? 0.72f : 0.18f;
+            const float dotThreshold = 0.18f;
             for (int i = 0; i < hitCount; i++)
             {
                 Collider hit = combatHits[i];
@@ -709,6 +806,21 @@ namespace AnimalBattleRoyale
         {
             if (!UsesMobilityEnergy || amount <= 0f) return;
             mobilityEnergy = Mathf.Min(MaxMobilityEnergy, mobilityEnergy + amount);
+        }
+
+        private void RechargeMobilityEnergy()
+        {
+            if (!IsMobilityRecharging) return;
+            float rechargePerSecond = MaxMobilityEnergy / MobilityRechargeDuration;
+            mobilityEnergy = Mathf.Min(MaxMobilityEnergy, mobilityEnergy + rechargePerSecond * Time.deltaTime);
+        }
+
+        public bool TryRefillRangedAmmo(RangedSupplyKind supplyKind, int amount)
+        {
+            if (defeated || health == null || health.IsDead || supplyKind != CompatibleRangedSupply || amount <= 0 || !NeedsRangedAmmo) return false;
+            rangedAmmo = Mathf.Min(MaxRangedAmmo, rangedAmmo + amount);
+            AttackVfx.CreateBurst(transform.position + Vector3.up * 0.6f, new Color(1f, 0.76f, 0.18f), 1.25f);
+            return true;
         }
 
         private bool HasMobilityEnergy(float amount) => !UsesMobilityEnergy || mobilityEnergy >= amount;

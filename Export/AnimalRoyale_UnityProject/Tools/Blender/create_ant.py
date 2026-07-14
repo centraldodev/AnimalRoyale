@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from organic import claw, material as organic_material, rigid_bind, tapered_limb  # noqa: E402
 OUT=os.path.abspath(sys.argv[sys.argv.index('--')+1]) if '--' in sys.argv else os.path.abspath('AntOutput')
 def clear(): bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False)
-def mat(n,c,rough=0.3,coat=0.6):
+def mat(n,c,rough=0.42,coat=0.2):
  return organic_material(n,c,roughness=rough,coat=coat)
 def rig():
  bpy.ops.object.armature_add(enter_editmode=True);r=bpy.context.object;r.name='Ant_Rig';r.data.name='Ant_RigData';bs={'Root':r.data.edit_bones[0]};bs['Root'].name='Root';bs['Root'].head=(0,0,0);bs['Root'].tail=(0,.5,0)
@@ -48,8 +48,8 @@ def model(r,red,dark,eye):
  sph('Cranium',(0,.72,.42),(.30,.24,.24),red,r,'Head')
  for side,label in ((-1,'L'),(1,'R')):
   # Big glossy compound eyes with a specular glint.
-  sph('Eye_'+label,(side*.18,.70,.72),(.115,.135,.075),eye,r,'Head')
-  sph('EyeSpark_'+label,(side*.21,.74,.775),(.028,.028,.016),shine,r,'Head')
+  sph('Eye_'+label,(side*.18,.70,.72),(.090,.108,.058),eye,r,'Head')
+  sph('EyeSpark_'+label,(side*.20,.73,.763),(.018,.018,.010),shine,r,'Head')
   # Curved mandibles: a tapered arm plus an inward-hooked tip.
   tapered_limb('Mandible_'+label,(side*.13,.56,.74),(side*.30,.47,.90),.07,.04,dark,r,'Mandible_'+label)
   claw('MandibleTip_'+label,(side*.30,.465,.905),.14,.045,dark,r,'Mandible_'+label,pitch=1.0)
@@ -82,4 +82,4 @@ def animations(r):
  act(r,'Ant_Throw',24,[(1,{},None),(10,{'Leg_F_L':(-58,0,0),'Leg_F_R':(-58,0,0),'LowerLeg_F_L':(-48,0,0),'LowerLeg_F_R':(-48,0,0),'Thorax':(14,0,0)},None),(18,{'Leg_F_L':(48,0,0),'Leg_F_R':(48,0,0),'LowerLeg_F_L':(34,0,0),'LowerLeg_F_R':(34,0,0),'Thorax':(-8,0,0)},(0,0,.22)),(24,{},None)])
  act(r,'Ant_Burrow',24,[(1,{},None),(12,{'Thorax':(18,0,0)},(0,-.30,0)),(24,{},None)])
  act(r,'Ant_Shield',18,[(1,{},None),(9,{'Thorax':(-10,0,0),'Head':(12,0,0)},None),(18,{},None)]);r.animation_data.action=bpy.data.actions['Ant_Idle']
-clear();R=rig();RED=mat('Ant_Red',(.55,.045,.018));DARK=mat('Ant_Dark',(.13,.012,.006));EYE=mat('Ant_Eye',(.08,.025,.012));model(R,RED,DARK,EYE);animations(R);os.makedirs(OUT,exist_ok=True);bpy.ops.object.select_all(action='SELECT');bpy.context.view_layer.objects.active=R;bpy.context.preferences.filepaths.save_version=0;bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT,'Ant_Source.blend'));bpy.ops.export_scene.fbx(filepath=os.path.join(OUT,'Ant.fbx'),use_selection=True,object_types={'ARMATURE','MESH'},add_leaf_bones=False,bake_anim=True,bake_anim_use_all_actions=True,bake_anim_use_nla_strips=False,bake_anim_force_startend_keying=True,mesh_smooth_type='FACE',apply_scale_options='FBX_SCALE_UNITS')
+clear();R=rig();RED=mat('Ant_Red',(.34,.025,.010));DARK=mat('Ant_Dark',(.065,.008,.004));EYE=mat('Ant_Eye',(.025,.010,.006),rough=.34,coat=.25);model(R,RED,DARK,EYE);animations(R);os.makedirs(OUT,exist_ok=True);bpy.ops.object.select_all(action='SELECT');bpy.context.view_layer.objects.active=R;bpy.context.preferences.filepaths.save_version=0;bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT,'Ant_Source.blend'));bpy.ops.export_scene.fbx(filepath=os.path.join(OUT,'Ant.fbx'),use_selection=True,object_types={'ARMATURE','MESH'},add_leaf_bones=False,bake_anim=True,bake_anim_use_all_actions=True,bake_anim_use_nla_strips=False,bake_anim_force_startend_keying=True,mesh_smooth_type='FACE',apply_scale_options='FBX_SCALE_UNITS')

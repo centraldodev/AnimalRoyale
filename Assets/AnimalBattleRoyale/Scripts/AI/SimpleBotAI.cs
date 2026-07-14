@@ -41,6 +41,7 @@ namespace AnimalBattleRoyale
 
             DiamondPickup.TryCollectNearest(controller);
             MissionNode.TryUseNearest(controller);
+            RangedAmmoPickup.TryCollectNearest(controller);
             if (controller.Health.CurrentHealth < controller.Health.MaxHealth * 0.72f)
             {
                 FoodPickup.TryConsumeNearest(controller);
@@ -55,13 +56,17 @@ namespace AnimalBattleRoyale
             Vector3 desiredDirection;
             bool sprint = false;
             bool attack = false;
+            bool rangedAttack = false;
             int abilitySlot = -1;
             DiamondObjectiveManager objective = DiamondObjectiveManager.Instance;
             DiamondPickup objectiveDiamond = DiamondPickup.FindClosest(transform.position);
             int carriedDiamonds = objective != null ? objective.GetCount(controller) : 0;
             bool targetHasDiamonds = target != null && objective != null && objective.GetCount(target) > 0;
             float targetDistance = target != null ? Vector3.Distance(transform.position, target.transform.position) : float.MaxValue;
-            bool shouldFight = target != null && (objectiveDiamond == null || (targetHasDiamonds && targetDistance < 18f));
+            bool shouldFight = target != null && (objectiveDiamond == null || (targetHasDiamonds && targetDistance < 26f));
+            RangedAmmoPickup ammoSupply = controller.NeedsRangedAmmo
+                ? RangedAmmoPickup.FindClosestCompatible(controller)
+                : null;
 
             SafeZoneController zone = SafeZoneController.Instance;
             if (zone != null && zone.IsOutside(transform.position, 3f))
@@ -78,15 +83,28 @@ namespace AnimalBattleRoyale
                 desiredDirection = GetNavigationDirection(portalPosition, fallback.normalized);
                 sprint = true;
             }
+            else if (controller.RangedAmmo <= 0 && ammoSupply != null)
+            {
+                Vector3 toSupply = ammoSupply.transform.position - transform.position;
+                toSupply.y = 0f;
+                desiredDirection = GetNavigationDirection(ammoSupply.transform.position, toSupply.normalized);
+                sprint = true;
+            }
             else if (shouldFight)
             {
                 Vector3 toTarget = target.transform.position - transform.position;
                 toTarget.y = 0f;
                 float distance = toTarget.magnitude;
                 Vector3 fallback = distance > 0.1f ? toTarget / distance : Vector3.zero;
-                desiredDirection = GetNavigationDirection(target.transform.position, fallback);
-                sprint = distance > controller.Stats.AttackRange * 1.2f;
-                attack = distance <= controller.Stats.AttackRange * 1.15f;
+                bool canUseRanged = controller.RangedAmmo > 0
+                    && distance > controller.Stats.AttackRange * 1.35f
+                    && distance <= 26f;
+                rangedAttack = canUseRanged;
+                attack = canUseRanged || distance <= controller.Stats.AttackRange * 1.15f;
+                desiredDirection = canUseRanged
+                    ? fallback
+                    : GetNavigationDirection(target.transform.position, fallback);
+                sprint = !canUseRanged && distance > controller.Stats.AttackRange * 1.2f;
 
                 if (Time.time >= nextAbilityDecision && distance < 12f)
                 {
@@ -117,7 +135,7 @@ namespace AnimalBattleRoyale
 
             desiredDirection = RecoverIfStuck(desiredDirection);
             desiredDirection = AvoidObstacles(desiredDirection);
-            controller.SetAIInput(desiredDirection, sprint, attack, abilitySlot);
+            controller.SetAIInput(desiredDirection, sprint, attack, rangedAttack, abilitySlot);
         }
 
         private ThirdPersonAnimalController FindClosestTarget()

@@ -70,10 +70,10 @@ def model(r,brown,cream,gold,black,white):
 
     # Fierce eyes: layered eye plus an angled dark brow ridge.
     for s, label in ((-1, 'L'), (1, 'R')):
-        cartoon_eye('Eye_'+label, (s*.105, 1.26, .43), (s*.35, .05, 1.0),
-                    .06, r, 'Head', white, gold, black, spark)
-        oriented_detail_sphere('Brow_'+label, (s*.105, 1.325, .44),
-                               (.05, .015, .045), (0, 0, -s*.35), dark, r, 'Head')
+        cartoon_eye('Eye_'+label, (s*.082, 1.255, .455), (s*.24, .03, 1.0),
+                    .036, r, 'Head', gold, gold, black, spark)
+        oriented_detail_sphere('Brow_'+label, (s*.082, 1.300, .452),
+                               (.044, .012, .032), (0, 0, -s*.28), dark, r, 'Head')
 
     # Wings: covert base plus fanned secondary and primary feathers.
     for s, label in ((-1, 'L'), (1, 'R')):
@@ -138,4 +138,4 @@ def animations(r):
     act(r,'Eagle_Gust',20,[(1,up,None),(10,down,None),(20,up,None)])
     act(r,'Eagle_Perch',20,[(1,{'Wing_L':(0,0,30),'Wing_R':(0,0,-30)},None),(12,{},None),(20,{},None)])
     r.animation_data.action=bpy.data.actions['Eagle_Idle']
-clear();B=material('Eagle_Brown',(.20,.07,.025));C=material('Eagle_Cream',(.95,.83,.56));G=material('Eagle_Gold',(1,.48,.04));K=material('Eagle_Black',(.02,.01,.008));W=material('Eagle_White',(.96,.94,.78));R=make_rig();model(R,B,C,G,K,W);animations(R);os.makedirs(OUT,exist_ok=True);bpy.ops.object.select_all(action='SELECT');bpy.context.view_layer.objects.active=R;bpy.context.preferences.filepaths.save_version=0;bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT,'Eagle_Source.blend'));bpy.ops.export_scene.fbx(filepath=os.path.join(OUT,'Eagle.fbx'),use_selection=True,object_types={'ARMATURE','MESH'},add_leaf_bones=False,bake_anim=True,bake_anim_use_all_actions=True,bake_anim_use_nla_strips=False,bake_anim_force_startend_keying=True,mesh_smooth_type='FACE',apply_scale_options='FBX_SCALE_UNITS')
+clear();B=material('Eagle_Brown',(.12,.038,.014));C=material('Eagle_Cream',(.78,.70,.50));G=material('Eagle_Gold',(.72,.34,.025));K=material('Eagle_Black',(.014,.007,.004));W=material('Eagle_White',(.86,.82,.66));R=make_rig();model(R,B,C,G,K,W);animations(R);os.makedirs(OUT,exist_ok=True);bpy.ops.object.select_all(action='SELECT');bpy.context.view_layer.objects.active=R;bpy.context.preferences.filepaths.save_version=0;bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT,'Eagle_Source.blend'));bpy.ops.export_scene.fbx(filepath=os.path.join(OUT,'Eagle.fbx'),use_selection=True,object_types={'ARMATURE','MESH'},add_leaf_bones=False,bake_anim=True,bake_anim_use_all_actions=True,bake_anim_use_nla_strips=False,bake_anim_force_startend_keying=True,mesh_smooth_type='FACE',apply_scale_options='FBX_SCALE_UNITS')

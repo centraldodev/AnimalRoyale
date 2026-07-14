@@ -34,7 +34,10 @@ namespace AnimalBattleRoyale
             if (initialized) return;
             initialized = true;
             jungle = generatedJungle;
-            portal = EscapePortal.Create(new Vector3(0f, jungle.LakeSurfaceHeight + 0.05f, 0f));
+            Physics.SyncTransforms();
+            Vector3 portalPosition = FindPortalPosition(out bool usesLakeAccess);
+            portal = EscapePortal.Create(portalPosition, usesLakeAccess);
+            SafeZoneController.Instance?.SetFinalCenter(portalPosition);
             for (int i = 0; i < TotalDiamonds; i++) SpawnDiamond(FindInitialSpawn(i));
         }
 
@@ -120,6 +123,42 @@ namespace AnimalBattleRoyale
             return jungle.GetGroundPosition(new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius));
         }
 
+        private Vector3 FindPortalPosition(out bool usesLakeAccess)
+        {
+            if (Random.value < 0.22f)
+            {
+                usesLakeAccess = true;
+                return new Vector3(0f, jungle.LakeSurfaceHeight + 0.05f, 0f);
+            }
+
+            usesLakeAccess = false;
+            float minRadius = jungle.MapSize * 0.23f;
+            float maxRadius = jungle.MapSize * 0.34f;
+            Vector3 fallback = jungle.GetGroundPosition(new Vector3(maxRadius, 0f, 0f), 0.08f);
+            for (int attempt = 0; attempt < 28; attempt++)
+            {
+                int sector = Random.Range(0, 8);
+                float angle = (sector * 45f + Random.Range(-14f, 14f)) * Mathf.Deg2Rad;
+                float radius = Random.Range(minRadius, maxRadius);
+                Vector3 candidate = jungle.GetGroundPosition(
+                    new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius), 0.08f);
+                fallback = candidate;
+                if (IsPortalAreaClear(candidate)) return candidate;
+            }
+            return fallback;
+        }
+
+        private static bool IsPortalAreaClear(Vector3 position)
+        {
+            Collider[] overlaps = Physics.OverlapSphere(position + Vector3.up * 1.8f, 4.5f, ~0, QueryTriggerInteraction.Ignore);
+            foreach (Collider overlap in overlaps)
+            {
+                if (overlap == null || !overlap.enabled || overlap.name == "RollingForestGround") continue;
+                return false;
+            }
+            return true;
+        }
+
         private Vector3 FindSafeSpawn()
         {
             SafeZoneController zone = SafeZoneController.Instance;
@@ -152,12 +191,14 @@ namespace AnimalBattleRoyale
         private Transform ring;
         private Transform core;
         private TextMesh label;
+        private bool usesLakeAccess;
 
-        public static EscapePortal Create(Vector3 position)
+        public static EscapePortal Create(Vector3 position, bool lakeAccess)
         {
-            GameObject root = new GameObject("CentralEscapePortal");
+            GameObject root = new GameObject("EscapePortal");
             root.transform.position = position;
             EscapePortal portal = root.AddComponent<EscapePortal>();
+            portal.usesLakeAccess = lakeAccess;
             portal.BuildVisual();
             return portal;
         }
@@ -215,13 +256,14 @@ namespace AnimalBattleRoyale
             MeshCollider islandCollider = baseObject.AddComponent<MeshCollider>();
             islandCollider.convex = true;
 
-            // A ring of stone ramps rises from the lakebed to the island, so any
-            // animal that swims (or walks the bed) can climb up to the portal.
-            for (int i = 0; i < 8; i++)
+            int rampCount = usesLakeAccess ? 8 : 4;
+            float outerDistance = usesLakeAccess ? 9f : 5.8f;
+            float outerHeight = usesLakeAccess ? -2.9f : -0.18f;
+            for (int i = 0; i < rampCount; i++)
             {
-                float angle = i * Mathf.PI * 2f / 8f;
+                float angle = i * Mathf.PI * 2f / rampCount;
                 Vector3 direction = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
-                Vector3 outerEnd = direction * 9f + Vector3.down * 2.9f;
+                Vector3 outerEnd = direction * outerDistance + Vector3.up * outerHeight;
                 Vector3 innerEnd = direction * 1.9f + Vector3.up * 0.1f;
                 Vector3 slope = innerEnd - outerEnd;
                 GameObject ramp = CreatePrimitive(transform, PrimitiveType.Cube, "PortalRamp",

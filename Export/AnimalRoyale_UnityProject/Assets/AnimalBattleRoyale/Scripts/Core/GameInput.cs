@@ -143,13 +143,13 @@ namespace AnimalBattleRoyale
 #endif
         }
 
-        public static bool AimHeld()
+        public static bool AttackModeTogglePressed()
         {
 #if ENABLE_INPUT_SYSTEM
-            return (Mouse.current != null && Mouse.current.rightButton.isPressed)
-                   || (Gamepad.current != null && Gamepad.current.leftTrigger.ReadValue() > 0.4f);
+            return (Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
+                   || (Gamepad.current != null && Gamepad.current.leftTrigger.wasPressedThisFrame);
 #else
-            return Input.GetMouseButton(1);
+            return Input.GetMouseButtonDown(1);
 #endif
         }
 
