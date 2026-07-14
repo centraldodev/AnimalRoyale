@@ -4,7 +4,7 @@ using UnityEngine.Rendering;
 
 namespace AnimalBattleRoyale
 {
-    /// <summary>One of the ten objective diamonds that can be carried or dropped.</summary>
+    /// <summary>An objective crystal carried by a fighter and dropped on death.</summary>
     public sealed class DiamondPickup : MonoBehaviour
     {
         private static readonly List<DiamondPickup> activePickups = new List<DiamondPickup>();
@@ -122,7 +122,7 @@ namespace AnimalBattleRoyale
             label.transform.SetParent(transform, false);
             label.transform.localPosition = Vector3.up * 1.35f;
             TextMesh text = label.AddComponent<TextMesh>();
-            text.text = "F  DIAMANTE-CHAVE";
+            text.text = "F  CRISTAL-CHAVE";
             text.anchor = TextAnchor.MiddleCenter;
             text.alignment = TextAlignment.Center;
             text.characterSize = 0.042f;

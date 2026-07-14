@@ -4,18 +4,19 @@ using UnityEngine.Rendering;
 
 namespace AnimalBattleRoyale
 {
-    /// <summary>Owns the ten-diamond economy and the single escape victory condition.</summary>
+    /// <summary>Owns the player-bound crystal economy and the single escape victory condition.</summary>
     public sealed class DiamondObjectiveManager : MonoBehaviour
     {
-        public const int RequiredDiamonds = 10;
-        public const int TotalDiamonds = 10;
+        public const int MaxPlayers = 30;
         public static DiamondObjectiveManager Instance { get; private set; }
+        public static int RequiredDiamonds => Instance != null ? Instance.requiredDiamonds : 0;
 
         private readonly Dictionary<ThirdPersonAnimalController, int> carried = new Dictionary<ThirdPersonAnimalController, int>();
         private JungleGenerator jungle;
         private EscapePortal portal;
         private float nextSafetyCheck;
         private bool initialized;
+        private int requiredDiamonds;
 
         public Vector3 PortalPosition => portal != null ? portal.transform.position : Vector3.zero;
 
@@ -38,7 +39,17 @@ namespace AnimalBattleRoyale
             Vector3 portalPosition = FindPortalPosition(out bool usesLakeAccess);
             portal = EscapePortal.Create(portalPosition, usesLakeAccess);
             SafeZoneController.Instance?.SetFinalCenter(portalPosition);
-            for (int i = 0; i < TotalDiamonds; i++) SpawnDiamond(FindInitialSpawn(i));
+
+            BattleRoyaleManager manager = BattleRoyaleManager.Instance;
+            if (manager == null) return;
+            foreach (ThirdPersonAnimalController fighter in manager.Fighters) RegisterFighter(fighter);
+        }
+
+        public void RegisterFighter(ThirdPersonAnimalController fighter)
+        {
+            if (fighter == null || carried.ContainsKey(fighter) || requiredDiamonds >= MaxPlayers) return;
+            carried.Add(fighter, 1);
+            requiredDiamonds++;
         }
 
         public int GetCount(ThirdPersonAnimalController fighter)
@@ -64,11 +75,7 @@ namespace AnimalBattleRoyale
             {
                 float angle = i * Mathf.PI * 2f / Mathf.Max(1, count);
                 Vector3 offset = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * (1.3f + (i % 3) * 0.35f);
-                Vector3 position = jungle.GetGroundPosition(deathPosition + offset);
-                if (SafeZoneController.Instance != null && SafeZoneController.Instance.IsOutside(position, 1.5f))
-                {
-                    position = FindSafeSpawn();
-                }
+                Vector3 position = GetSafeDropPosition(deathPosition + offset);
                 SpawnDiamond(position);
             }
         }
@@ -93,34 +100,26 @@ namespace AnimalBattleRoyale
                 {
                     if (pickup != null && pickup.IsAvailable && zone.IsOutside(pickup.transform.position, 1.5f))
                     {
-                        pickup.Relocate(FindSafeSpawn());
+                        pickup.Relocate(GetSafeDropPosition(pickup.transform.position));
                     }
                 }
             }
-            EnsureTenDiamondsExist();
         }
 
-        private void EnsureTenDiamondsExist()
+        private Vector3 GetSafeDropPosition(Vector3 position)
         {
-            int total = 0;
-            foreach (KeyValuePair<ThirdPersonAnimalController, int> entry in carried) total += entry.Value;
-            foreach (DiamondPickup pickup in DiamondPickup.ActivePickups)
-            {
-                if (pickup != null && pickup.IsAvailable) total++;
-            }
-            while (total < TotalDiamonds)
-            {
-                SpawnDiamond(FindSafeSpawn());
-                total++;
-            }
-        }
+            SafeZoneController zone = SafeZoneController.Instance;
+            if (zone == null) return jungle.GetGroundPosition(position);
 
-        private Vector3 FindInitialSpawn(int index)
-        {
-            float angle = (index * (360f / TotalDiamonds) + Random.Range(-10f, 10f)) * Mathf.Deg2Rad;
-            float radius = Mathf.Lerp(jungle.LakeRadius + 22f, jungle.MapSize * 0.43f, (index % 5) / 4f);
-            radius += Random.Range(-7f, 7f);
-            return jungle.GetGroundPosition(new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius));
+            Vector3 fromCenter = position - zone.Center;
+            fromCenter.y = 0f;
+            float safeRadius = Mathf.Max(2f, zone.CurrentRadius - 3f);
+            if (fromCenter.sqrMagnitude > safeRadius * safeRadius)
+            {
+                Vector3 direction = fromCenter.sqrMagnitude > 0.01f ? fromCenter.normalized : Vector3.forward;
+                position = zone.Center + direction * safeRadius;
+            }
+            return jungle.GetGroundPosition(position);
         }
 
         private Vector3 FindPortalPosition(out bool usesLakeAccess)
@@ -159,21 +158,6 @@ namespace AnimalBattleRoyale
             return true;
         }
 
-        private Vector3 FindSafeSpawn()
-        {
-            SafeZoneController zone = SafeZoneController.Instance;
-            Vector3 center = zone != null ? zone.Center : Vector3.zero;
-            float radius = zone != null ? zone.CurrentRadius - 4f : jungle.MapSize * 0.42f;
-            radius = Mathf.Clamp(radius, 7f, jungle.MapSize * 0.45f);
-            for (int attempt = 0; attempt < 18; attempt++)
-            {
-                Vector2 point = Random.insideUnitCircle * radius;
-                if (point.magnitude < Mathf.Min(5f, radius * 0.45f)) continue;
-                return jungle.GetGroundPosition(center + new Vector3(point.x, 0f, point.y));
-            }
-            return jungle.GetGroundPosition(center + Vector3.forward * Mathf.Min(6f, radius));
-        }
-
         private static void SpawnDiamond(Vector3 position)
         {
             DiamondPickup.Create(position);
@@ -185,7 +169,7 @@ namespace AnimalBattleRoyale
         }
     }
 
-    /// <summary>Always-open portal; only a fighter carrying all ten diamonds can escape.</summary>
+    /// <summary>Always-open portal; only a fighter carrying every match crystal can escape.</summary>
     public sealed class EscapePortal : MonoBehaviour
     {
         private Transform ring;
@@ -227,7 +211,7 @@ namespace AnimalBattleRoyale
                 int count = objective.GetCount(manager.LocalPlayer);
                 label.text = count >= DiamondObjectiveManager.RequiredDiamonds
                     ? "PORTAL LIBERADO\nENTRE PARA ESCAPAR"
-                    : $"PORTAL BLOQUEADO\n{count}/{DiamondObjectiveManager.RequiredDiamonds} DIAMANTES";
+                    : $"PORTAL BLOQUEADO\n{count}/{DiamondObjectiveManager.RequiredDiamonds} CRISTAIS";
             }
         }
 
@@ -292,7 +276,7 @@ namespace AnimalBattleRoyale
             labelObject.transform.SetParent(transform, false);
             labelObject.transform.localPosition = Vector3.up * 5.9f;
             label = labelObject.AddComponent<TextMesh>();
-            label.text = "PORTAL BLOQUEADO\n0/10 DIAMANTES";
+            label.text = "PORTAL BLOQUEADO\n0/0 CRISTAIS";
             label.anchor = TextAnchor.MiddleCenter;
             label.alignment = TextAlignment.Center;
             label.characterSize = 0.065f;

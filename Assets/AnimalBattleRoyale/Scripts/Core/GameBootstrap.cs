@@ -7,7 +7,7 @@ namespace AnimalBattleRoyale
     public sealed class GameBootstrap : MonoBehaviour
     {
         [Header("Prototype")]
-        [SerializeField, Range(1, 30)] private int botCount = 15;
+        [SerializeField, Range(0, DiamondObjectiveManager.MaxPlayers - 1)] private int botCount = 15;
         [SerializeField] private AnimalType initialAnimal = AnimalType.Tiger;
         [SerializeField] private bool generateJungleOnStart = true;
 
@@ -188,10 +188,15 @@ namespace AnimalBattleRoyale
 
         private void SpawnBots(float mapSize)
         {
+            int registeredFighters = BattleRoyaleManager.Instance != null
+                ? BattleRoyaleManager.Instance.Fighters.Count
+                : 1;
+            int availableSlots = Mathf.Max(0, DiamondObjectiveManager.MaxPlayers - registeredFighters);
+            int botsToSpawn = Mathf.Clamp(botCount, 0, availableSlots);
             float spawnRadius = Mathf.Min(125f, mapSize * 0.36f);
-            for (int i = 0; i < botCount; i++)
+            for (int i = 0; i < botsToSpawn; i++)
             {
-                float angle = i * Mathf.PI * 2f / botCount + Random.Range(-0.18f, 0.18f);
+                float angle = i * Mathf.PI * 2f / botsToSpawn + Random.Range(-0.18f, 0.18f);
                 float radius = Random.Range(spawnRadius * 0.45f, spawnRadius);
                 Vector3 position = new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
                 position = jungle.GetGroundPosition(position);
