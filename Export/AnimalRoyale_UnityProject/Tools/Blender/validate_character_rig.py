@@ -35,7 +35,17 @@ rig = rigs[0]
 
 missing_bones = [name for name in RULES[animal]["bones"] if name not in rig.data.bones]
 missing_actions = [name for name in RULES[animal]["actions"] if name not in bpy.data.actions]
-empty_actions = [name for name in RULES[animal]["actions"] if name in bpy.data.actions and len(bpy.data.actions[name].fcurves) == 0]
+empty_actions = []
+for name in RULES[animal]["actions"]:
+    if name not in bpy.data.actions:
+        continue
+    action = bpy.data.actions[name]
+    # Blender 5 stores animation curves in layered channel bags instead of the
+    # old Action.fcurves collection. A non-zero authored frame range works for
+    # both APIs and catches accidentally empty gameplay clips.
+    start, end = action.frame_range
+    if end <= start:
+        empty_actions.append(name)
 
 unbound_meshes = []
 for mesh in (obj for obj in bpy.context.scene.objects if obj.type == "MESH"):

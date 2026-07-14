@@ -148,6 +148,8 @@ namespace AnimalBattleRoyale
 
             DrawPowerBar();
 
+            DrawCombatModeHud();
+
             DrawAimReticle();
 
             DrawMinimap();
@@ -272,8 +274,11 @@ namespace AnimalBattleRoyale
                 float energyNormalized = LocalPlayer.MaxMobilityEnergyValue > 0f
                     ? Mathf.Clamp01(LocalPlayer.MobilityEnergy / LocalPlayer.MaxMobilityEnergyValue)
                     : 0f;
+                string energyValue = LocalPlayer.IsMobilityRecharging
+                    ? $"{LocalPlayer.MobilityEnergy:0}  {LocalPlayer.MobilityRechargeSecondsRemaining:0.0}s"
+                    : $"{LocalPlayer.MobilityEnergy:0}";
                 DrawStatBar(new Rect(contentX, panel.y + 72f, contentWidth, 18f), energyNormalized, energyNormalized,
-                    new Color(0.28f, 0.76f, 0.94f), LocalPlayer.MobilityEnergyName.ToUpperInvariant(), $"{LocalPlayer.MobilityEnergy:0}");
+                    new Color(0.28f, 0.76f, 0.94f), LocalPlayer.MobilityEnergyName.ToUpperInvariant(), energyValue);
             }
 
             if (healthNormalized <= 0.25f) DrawLowHealthVignette();
@@ -338,11 +343,50 @@ namespace AnimalBattleRoyale
             }
         }
 
+        private void DrawCombatModeHud()
+        {
+            if (LocalPlayer == null) return;
+            float powerWidth = 350f;
+            float powerX = (viewWidth - powerWidth) * 0.5f;
+            if (powerX < 430f) powerX = Mathf.Min(430f, viewWidth - powerWidth - 20f);
+
+            float width = 220f;
+            float x = powerX + powerWidth + 10f;
+            float y = viewHeight - 88f;
+            if (x + width > viewWidth - 20f)
+            {
+                x = Mathf.Max(20f, powerX + powerWidth - width);
+                y -= 76f;
+            }
+
+            bool ranged = LocalPlayer.IsRangedAttackMode;
+            bool hasAmmo = LocalPlayer.RangedAmmo > 0;
+            Color accent = ranged
+                ? hasAmmo ? new Color(0.28f, 0.82f, 1f) : new Color(1f, 0.3f, 0.24f)
+                : new Color(0.96f, 0.68f, 0.2f);
+            Rect panel = new Rect(x, y, width, 68f);
+            DrawCartoonPanel(panel, new Color(0.025f, 0.045f, 0.048f, 0.94f), accent, 1f);
+            GUI.Label(new Rect(panel.x + 12f, panel.y + 8f, panel.width - 24f, 16f),
+                ranged ? "ATAQUE LONGO" : "ATAQUE CURTO", eyebrowStyle);
+            GUI.Label(new Rect(panel.x + 12f, panel.y + 27f, panel.width - 78f, 26f),
+                ranged ? LocalPlayer.RangedAmmoName : "CORPO A CORPO", normalStyle);
+            GUI.Label(new Rect(panel.x + panel.width - 72f, panel.y + 24f, 60f, 28f),
+                ranged ? $"{LocalPlayer.RangedAmmo}/{LocalPlayer.MaxRangedAmmoValue}" : "PRONTO", rightStyle);
+            Rect modeBar = new Rect(panel.x + 12f, panel.y + 56f, panel.width - 24f, 4f);
+            DrawRoundedRect(modeBar, new Color(accent.r, accent.g, accent.b, 0.75f));
+        }
+
         private void DrawAimReticle()
         {
             bool vineTarget = LocalPlayer != null && VineAnchor.IsLookedAtBy(LocalPlayer);
+            bool rangedMode = LocalPlayer != null && LocalPlayer.IsRangedAttackMode;
+            bool hasAmmo = LocalPlayer != null && LocalPlayer.RangedAmmo > 0;
             Color previousColor = GUI.color;
-            GUI.color = vineTarget ? new Color(0.3f, 1f, 0.58f, 1f) : new Color(1f, 1f, 1f, 0.88f);
+            GUI.color = vineTarget
+                ? new Color(0.3f, 1f, 0.58f, 1f)
+                : rangedMode
+                    ? hasAmmo ? new Color(0.28f, 0.82f, 1f, 1f) : new Color(1f, 0.3f, 0.24f, 1f)
+                    : new Color(1f, 1f, 1f, 0.88f);
 
             float centerX = viewWidth * 0.5f;
             float centerY = viewHeight * 0.5f;
@@ -358,6 +402,13 @@ namespace AnimalBattleRoyale
                 Rect prompt = new Rect(centerX - 122f, centerY + 24f, 244f, 34f);
                 DrawCartoonPanel(prompt, new Color(0.025f, 0.075f, 0.055f, 0.92f), new Color(0.3f, 0.9f, 0.58f, 1f), 1f);
                 GUI.Label(prompt, "Q  AGARRAR CIPÓ", centeredStyle);
+            }
+            else if (rangedMode && LocalPlayer != null)
+            {
+                Rect rangedStatus = new Rect(centerX - 130f, centerY + 24f, 260f, 26f);
+                GUI.Label(rangedStatus,
+                    $"{LocalPlayer.RangedAttackName}  {LocalPlayer.RangedAmmo}/{LocalPlayer.MaxRangedAmmoValue}",
+                    centeredStyle);
             }
         }
 
@@ -477,9 +528,9 @@ namespace AnimalBattleRoyale
             if (zone != null)
             {
                 zoneText = outside
-                    ? "FORA DA ÁREA — CHUVA ÁCIDA: -10/s"
+                    ? "FORA DA ÁREA — QUEIMADA: -10/s"
                     : zone.TimeUntilShrink > 0f
-                        ? $"CHUVA ÁCIDA AVANÇA EM {zone.TimeUntilShrink:0}s"
+                        ? $"QUEIMADA AVANÇA EM {zone.TimeUntilShrink:0}s"
                         : $"ÁREA SEGURA  {zone.CurrentRadius:0} m";
             }
             GUI.Label(new Rect(panel.x + 12f, panel.y + 35f, panel.width - 24f, 24f), zoneText, centeredStyle);

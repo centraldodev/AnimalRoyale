@@ -302,8 +302,9 @@ def export(rig):
     print("Created", BLEND_PATH)
 
 
-clean_scene()
-tiger_rig = create_rig()
-build_tiger(tiger_rig)
-create_animations(tiger_rig)
-export(tiger_rig)
+if __name__ == "__main__":
+    clean_scene()
+    tiger_rig = create_rig()
+    build_tiger(tiger_rig)
+    create_animations(tiger_rig)
+    export(tiger_rig)

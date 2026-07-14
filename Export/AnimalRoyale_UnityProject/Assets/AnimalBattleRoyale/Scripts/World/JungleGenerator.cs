@@ -27,6 +27,7 @@ namespace AnimalBattleRoyale
         [SerializeField, Range(0, 100)] private int anthillCount = 40;
         [SerializeField, Range(0, 32)] private int mountainCount = 14;
         [SerializeField, Range(0, 200)] private int healthFoodCount = 90;
+        [SerializeField, Range(0, 90)] private int rangedSupplyCount = 45;
         [SerializeField, Range(0, 40)] private int houseCount = 16;
         [SerializeField, Range(0, 80)] private int tunnelEntranceCount = 30;
         [SerializeField, Range(0, 16)] private int eagleMountainCount = 6;
@@ -226,6 +227,14 @@ namespace AnimalBattleRoyale
             {
                 FoodKind kind = (FoodKind)(i % 4);
                 FoodPickup.Create(RandomMapPosition(9f), kind).transform.SetParent(foodRoot, true);
+            }
+
+            Transform rangedSuppliesRoot = new GameObject("RangedAmmoSupplies").transform;
+            rangedSuppliesRoot.SetParent(generated.transform, false);
+            for (int i = 0; i < rangedSupplyCount; i++)
+            {
+                RangedSupplyKind kind = (RangedSupplyKind)(i % 3);
+                RangedAmmoPickup.Create(RandomMapPosition(12f), kind).transform.SetParent(rangedSuppliesRoot, true);
             }
 
             Transform flowersRoot = new GameObject("FlowerPatches").transform;

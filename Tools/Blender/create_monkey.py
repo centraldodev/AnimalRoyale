@@ -10,7 +10,9 @@ import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from organic import OrganicBody, cartoon_eye, detail_sphere, material, oriented_detail_sphere  # noqa: E402
+from organic import (  # noqa: E402
+    OrganicBody, detail_sphere, material, oriented_detail_sphere, tapered_limb,
+)
 
 
 OUT = os.path.abspath(sys.argv[sys.argv.index("--") + 1]) if "--" in sys.argv else os.path.abspath("MonkeyOutput")
@@ -92,9 +94,9 @@ def model(arm, brown, tan, dark, white, gold):
     body.ball((0.17, 1.08, 0), 0.14)
     # Head with brow and short muzzle.
     body.chain((0, 1.14, 0.02), (0, 1.28, 0.04), 0.15, 0.15, 3)
-    body.ball((0, 1.46, 0.05), 0.25)
-    body.ball((0, 1.56, 0.12), 0.14)
-    body.ball((0, 1.36, 0.26), 0.135)
+    body.ball((0, 1.43, 0.05), 0.215)
+    body.ball((0, 1.51, 0.12), 0.115)
+    body.ball((0, 1.34, 0.27), 0.125)
 
     for side in (-1, 1):
         shoulder = (side * 0.26, 1.10, 0)
@@ -124,18 +126,43 @@ def model(arm, brown, tan, dark, white, gold):
         (tan, lambda c: abs(c.x) > 0.58 and c.y < 0.50),                   # hands
     ))
 
-    # Round ears with a lighter inner disc, sunk into the skull sides.
+    # Smaller ears and forward-projecting muzzle give the head primate planes.
     for side, label in ((-1, "L"), (1, "R")):
-        oriented_detail_sphere("Ear_" + label, (side * 0.27, 1.50, 0.03),
-                               (0.055, 0.105, 0.09), (0, side * 0.5, 0), brown, arm, "Head")
-        oriented_detail_sphere("EarInner_" + label, (side * 0.29, 1.50, 0.05),
-                               (0.035, 0.075, 0.065), (0, side * 0.5, 0), tan, arm, "Head")
-    # Layered eyes with a highlight plus a small flat nose.
+        oriented_detail_sphere("Ear_" + label, (side * 0.225, 1.45, 0.04),
+                               (0.045, 0.082, 0.068), (0, side * 0.5, 0), brown, arm, "Head")
+        oriented_detail_sphere("EarInner_" + label, (side * 0.242, 1.45, 0.055),
+                               (0.027, 0.055, 0.045), (0, side * 0.5, 0), tan, arm, "Head")
+
+    oriented_detail_sphere("Muzzle", (0, 1.345, 0.315),
+                           (0.13, 0.095, 0.105), (0, 0, 0), tan, arm, "Head")
+    oriented_detail_sphere("Brow", (0, 1.505, 0.215),
+                           (0.16, 0.055, 0.055), (0, 0, 0), brown, arm, "Head")
+
+    # Small dark-set eyes replace the surprised cartoon spheres.
     spark = mat("Monkey_Spark", (1, 1, 0.96))
     for side, label in ((-1, "L"), (1, "R")):
-        cartoon_eye("Eye_" + label, (side * 0.10, 1.51, 0.245), (side * 0.16, 0.03, 1.0),
-                    0.075, arm, "Head", white, gold, dark, spark)
-    detail_sphere("Nose", (0, 1.385, 0.385), (0.055, 0.04, 0.03), dark, arm, "Head")
+        oriented_detail_sphere("EyeSocket_" + label, (side * 0.072, 1.47, 0.264),
+                               (0.047, 0.037, 0.024), (0, 0, 0), dark, arm, "Head")
+        oriented_detail_sphere("Eye_" + label, (side * 0.072, 1.47, 0.281),
+                               (0.031, 0.025, 0.012), (0, 0, 0), gold, arm, "Head")
+        oriented_detail_sphere("Pupil_" + label, (side * 0.072, 1.47, 0.291),
+                               (0.010, 0.017, 0.005), (0, 0, 0), dark, arm, "Head")
+        oriented_detail_sphere("EyeSpark_" + label, (side * 0.066, 1.478, 0.296),
+                               (0.004, 0.004, 0.002), (0, 0, 0), spark, arm, "Head")
+    detail_sphere("Nose", (0, 1.385, 0.405), (0.060, 0.038, 0.028), dark, arm, "Head")
+
+    # Four long fingers and a shorter thumb make vine grabbing readable.
+    for side, label in ((-1, "L"), (1, "R")):
+        palm = (side * 0.67, 0.39, 0.16)
+        for finger in range(4):
+            spread = (finger - 1.5) * 0.022
+            start = (palm[0] + spread, palm[1] - 0.01, palm[2] + finger * 0.012)
+            end = (start[0] + side * 0.025, start[1] - 0.105, start[2] + 0.055)
+            tapered_limb("Finger_%s_%d" % (label, finger), start, end,
+                         0.013, 0.007, tan, arm, "Hand_" + label, vertices=8)
+        tapered_limb("Thumb_" + label, palm,
+                     (palm[0] - side * 0.055, palm[1] - 0.055, palm[2] + 0.035),
+                     0.016, 0.008, tan, arm, "Hand_" + label, vertices=8)
 
 
 def pose(arm, frame, rotations=None, root=None):
@@ -192,5 +219,5 @@ def export(arm):
 
 
 clean()
-BROWN, TAN, DARK, WHITE, GOLD = mat("Monkey_Brown", (.25,.09,.025)), mat("Monkey_Tan", (.84,.48,.20)), mat("Monkey_Dark", (.035,.014,.008)), mat("Monkey_White", (.96,.88,.66)), mat("Monkey_Gold", (1,.55,.06))
+BROWN, TAN, DARK, WHITE, GOLD = mat("Monkey_Brown", (.18,.055,.018)), mat("Monkey_Tan", (.58,.30,.12)), mat("Monkey_Dark", (.025,.010,.006)), mat("Monkey_White", (.86,.78,.58)), mat("Monkey_Gold", (.72,.38,.05))
 ARM = rig(); model(ARM, BROWN, TAN, DARK, WHITE, GOLD); animations(ARM); export(ARM)

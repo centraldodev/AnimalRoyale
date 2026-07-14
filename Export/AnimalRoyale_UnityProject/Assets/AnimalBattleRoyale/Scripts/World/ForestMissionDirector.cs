@@ -6,7 +6,7 @@ using UnityEngine.Rendering;
 namespace AnimalBattleRoyale
 {
     public enum GlobalForestMission { AncientTotems, PortalRunes, ForestSanctuary, Territory }
-    public enum ForestEventType { FruitRain, DenseFog, AcidStorm, PortalPulse, RareBloom, LakeGuardian }
+    public enum ForestEventType { FruitRain, DenseFog, WildfireSurge, PortalPulse, RareBloom, LakeGuardian }
     public enum MissionNodeKind { Totem, Rune, Offering, Territory, AntSeal, TigerMark, EaglePerch, Lore }
 
     /// <summary>Randomizes match missions, animal objectives, forest events, lore and mastery rewards.</summary>
@@ -391,11 +391,11 @@ namespace AnimalBattleRoyale
                 case ForestEventType.DenseFog:
                     RenderSettings.fogDensity = 0.018f;
                     RenderSettings.fogColor = new Color(0.48f, 0.58f, 0.52f);
-                    eventMessage = "EVENTO: NÉVOA DENSA — minimapa interferido";
+                    eventMessage = "EVENTO: NÉVOA DENSA — visibilidade reduzida";
                     break;
-                case ForestEventType.AcidStorm:
+                case ForestEventType.WildfireSurge:
                     SafeZoneController.Instance?.AccelerateShrink(24f);
-                    eventMessage = "EVENTO: TEMPESTADE ÁCIDA — a área segura acelera";
+                    eventMessage = "EVENTO: QUEIMADA INTENSA — o fogo avança mais rápido";
                     break;
                 case ForestEventType.PortalPulse:
                     carrierRevealUntil = Time.time + 24f;
@@ -408,7 +408,7 @@ namespace AnimalBattleRoyale
                 case ForestEventType.LakeGuardian:
                     if (activeGuardian != null) Destroy(activeGuardian.gameObject);
                     activeGuardian = LakeGuardian.Create(jungle.LakeSurfaceHeight);
-                    eventMessage = "EVENTO: GUARDIÃO DO LAGO — o portal está protegido";
+                    eventMessage = "EVENTO: GUARDIÃO DO LAGO — o lago ficou perigoso";
                     break;
             }
         }
@@ -663,13 +663,13 @@ namespace AnimalBattleRoyale
 
         public static string GetLoreText(int memory) => memory switch
         {
-            1 => "A chuva ácida começou quando o coração da floresta se partiu.",
+            1 => "A grande queimada começou quando o coração da floresta se partiu.",
             2 => "Dez pedras guardavam a passagem para além das montanhas.",
             3 => "Os antigos animais prometeram que apenas um cruzaria o portal.",
             4 => "As formigas abriram túneis para proteger as últimas sementes.",
             5 => "Os macacos esconderam runas entre os cipós mais altos.",
             6 => "Os tigres marcaram caminhos que somente caçadores conseguem ler.",
-            7 => "As águias viram a tempestade nascer atrás dos picos.",
+            7 => "As águias viram o incêndio nascer atrás dos picos.",
             8 => "O guardião do lago protege a saída, não os diamantes.",
             9 => "Cada cristal carrega uma lembrança de quem não escapou.",
             10 => "A floresta muda seus caminhos para testar novos sobreviventes.",

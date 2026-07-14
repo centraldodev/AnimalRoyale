@@ -21,6 +21,18 @@ def material(name, color, roughness=0.55, metallic=0.0, coat=0.0):
     mat.diffuse_color = (*color, 1.0)
     mat.use_nodes = True
     principled = mat.node_tree.nodes.get("Principled BSDF")
+    if principled is None:
+        principled = next(
+            (node for node in mat.node_tree.nodes if node.type == "BSDF_PRINCIPLED"),
+            None)
+    if principled is None:
+        principled = mat.node_tree.nodes.new("ShaderNodeBsdfPrincipled")
+        output = next(
+            (node for node in mat.node_tree.nodes if node.type == "OUTPUT_MATERIAL"),
+            None)
+        if output is None:
+            output = mat.node_tree.nodes.new("ShaderNodeOutputMaterial")
+        mat.node_tree.links.new(principled.outputs["BSDF"], output.inputs["Surface"])
     principled.inputs["Base Color"].default_value = (*color, 1.0)
     principled.inputs["Roughness"].default_value = roughness
     principled.inputs["Metallic"].default_value = metallic
