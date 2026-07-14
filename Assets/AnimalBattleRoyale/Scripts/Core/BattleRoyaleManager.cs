@@ -13,11 +13,22 @@ namespace AnimalBattleRoyale
         private GUIStyle normalStyle;
         private GUIStyle resultStyle;
         private GUIStyle minimapStyle;
+        private GUIStyle eyebrowStyle;
+        private GUIStyle smallStyle;
+        private GUIStyle rightStyle;
+        private GUIStyle centeredStyle;
         private Texture2D minimapCircleTexture;
         private Texture2D minimapRingTexture;
         private readonly Texture2D[] animalPortraits = new Texture2D[4];
         private JungleGenerator jungle;
         private string resultMessage = string.Empty;
+        private float uiScale = 1f;
+        private float viewWidth;
+        private float viewHeight;
+        private Health animatedHealth;
+        private float lastHealthValue;
+        private float healthTrailNormalized = 1f;
+        private float healthDamagePulseUntil;
 
         public IReadOnlyList<ThirdPersonAnimalController> Fighters => fighters;
         public ThirdPersonAnimalController LocalPlayer { get; private set; }
@@ -32,6 +43,28 @@ namespace AnimalBattleRoyale
                 return;
             }
             Instance = this;
+        }
+
+        private void Update()
+        {
+            if (LocalPlayer == null || LocalPlayer.Health == null) return;
+            Health health = LocalPlayer.Health;
+            float normalized = health.MaxHealth > 0f ? Mathf.Clamp01(health.CurrentHealth / health.MaxHealth) : 0f;
+            if (animatedHealth != health)
+            {
+                animatedHealth = health;
+                lastHealthValue = health.CurrentHealth;
+                healthTrailNormalized = normalized;
+                return;
+            }
+
+            if (health.CurrentHealth < lastHealthValue - 0.01f)
+            {
+                healthDamagePulseUntil = Time.time + 0.3f;
+            }
+            if (normalized >= healthTrailNormalized) healthTrailNormalized = normalized;
+            else healthTrailNormalized = Mathf.MoveTowards(healthTrailNormalized, normalized, Time.deltaTime * 0.18f);
+            lastHealthValue = health.CurrentHealth;
         }
 
         public void RegisterFighter(ThirdPersonAnimalController fighter)
@@ -85,7 +118,13 @@ namespace AnimalBattleRoyale
         private void OnGUI()
         {
             EnsureStyles();
+            uiScale = Mathf.Clamp(Mathf.Min(Screen.width / 1280f, Screen.height / 720f), 0.72f, 1.18f);
+            viewWidth = Screen.width / uiScale;
+            viewHeight = Screen.height / uiScale;
+            Matrix4x4 previousMatrix = GUI.matrix;
+            GUI.matrix = Matrix4x4.Scale(new Vector3(uiScale, uiScale, 1f));
             DrawHUD();
+            GUI.matrix = previousMatrix;
         }
 
         private void DrawHUD()
@@ -96,16 +135,14 @@ namespace AnimalBattleRoyale
                 DrawPlayerHud();
             }
 
-            string controlHint = LocalPlayer != null && LocalPlayer.IsInAntTunnel
+            string contextHint = LocalPlayer != null && LocalPlayer.IsInAntTunnel
                 ? $"NO TÚNEL: WASD escolhe saída • saída forçada: {LocalPlayer.TunnelSecondsRemaining:0.0}s"
                 : LocalPlayer != null && LocalPlayer.IsSwimming
                     ? "NADANDO — Espaço dá impulso • suba pela rampa de pedra do portal ou pela margem"
                 : LocalPlayer != null && LocalPlayer.IsWading
                     ? "NO LAGO — VELOCIDADE REDUZIDA • alcance a margem para correr normalmente"
-                : LocalPlayer != null && LocalPlayer.AnimalType == AnimalType.Ant
-                    ? "Q arremesso • E entra no túnel • F coleta/consome • Botão direito: mira"
-                    : "Q poder especial • F coleta diamante/consome alimento • Botão direito: mira";
-            GUI.Label(new Rect(28f, 283f, 650f, 20f), controlHint, normalStyle);
+                : string.Empty;
+            if (!string.IsNullOrEmpty(contextHint)) DrawContextHint(contextHint);
 
             DrawMissionHud();
 
@@ -119,13 +156,23 @@ namespace AnimalBattleRoyale
 
             if (MatchFinished)
             {
-                float boxHeight = 270f;
-                float boxY = Screen.height * 0.5f - boxHeight * 0.5f;
-                DrawCartoonPanel(new Rect(Screen.width * 0.5f - 300f, boxY, 600f, boxHeight), new Color(0.06f, 0.11f, 0.2f, 0.96f), new Color(1f, 0.73f, 0.18f, 1f));
-                GUI.Label(new Rect(Screen.width * 0.5f - 280f, boxY + 20f, 560f, 58f), resultMessage, resultStyle);
+                Color previous = GUI.color;
+                GUI.color = new Color(0.01f, 0.015f, 0.018f, 0.62f);
+                GUI.DrawTexture(new Rect(0f, 0f, viewWidth, viewHeight), Texture2D.whiteTexture);
+                GUI.color = previous;
+
+                float boxWidth = Mathf.Min(560f, viewWidth - 40f);
+                float boxHeight = 250f;
+                float boxX = (viewWidth - boxWidth) * 0.5f;
+                float boxY = viewHeight * 0.5f - boxHeight * 0.5f;
+                DrawCartoonPanel(new Rect(boxX, boxY, boxWidth, boxHeight), new Color(0.035f, 0.055f, 0.06f, 0.98f), new Color(0.35f, 0.86f, 0.62f, 1f));
+                GUI.Label(new Rect(boxX + 24f, boxY + 24f, boxWidth - 48f, 48f), resultMessage, resultStyle);
                 string summary = ForestMissionDirector.Instance != null ? ForestMissionDirector.Instance.MatchSummary : string.Empty;
-                GUI.Label(new Rect(Screen.width * 0.5f - 270f, boxY + 82f, 540f, 104f), summary, minimapStyle);
-                if (GUI.Button(new Rect(Screen.width * 0.5f - 130f, boxY + 207f, 260f, 45f), "JOGAR NOVAMENTE"))
+                GUI.Label(new Rect(boxX + 36f, boxY + 80f, boxWidth - 72f, 82f), summary, centeredStyle);
+                Rect restartButton = new Rect(boxX + boxWidth * 0.5f - 120f, boxY + 183f, 240f, 44f);
+                DrawCartoonPanel(restartButton, new Color(0.18f, 0.58f, 0.38f, 1f), new Color(0.48f, 1f, 0.72f, 1f), 1f);
+                GUI.Label(restartButton, "JOGAR NOVAMENTE", centeredStyle);
+                if (GUI.Button(restartButton, GUIContent.none, GUIStyle.none))
                 {
                     RestartMatch();
                 }
@@ -159,30 +206,32 @@ namespace AnimalBattleRoyale
         {
             ForestMissionDirector director = ForestMissionDirector.Instance;
             if (LocalPlayer == null || director == null) return;
-            Rect panel = new Rect(16f, 142f, 410f, 132f);
-            DrawCartoonPanel(panel, new Color(0.20f, 0.09f, 0.025f, 0.94f), new Color(0.94f, 0.57f, 0.18f, 1f), 4f);
-            DrawCartoonPanel(new Rect(24f, 150f, 394f, 30f), new Color(0.31f, 0.14f, 0.045f, 1f), new Color(0.7f, 0.36f, 0.1f, 1f), 2f);
-            GUI.Label(new Rect(32f, 154f, 378f, 22f), "MISSÕES DA FLORESTA", titleStyle);
-            DrawQuestCard(new Rect(25f, 186f, 392f, 36f), director.GlobalMissionText, new Color(1f, 0.77f, 0.37f));
-            DrawQuestCard(new Rect(25f, 228f, 392f, 36f), director.AnimalMissionText, new Color(0.76f, 0.9f, 0.42f));
+            float panelWidth = Mathf.Min(382f, viewWidth * 0.31f);
+            Rect panel = new Rect(20f, 20f, panelWidth, 112f);
+            DrawCartoonPanel(panel, new Color(0.025f, 0.045f, 0.048f, 0.9f), new Color(0.2f, 0.34f, 0.31f, 0.95f), 1f);
+            GUI.Label(new Rect(panel.x + 16f, panel.y + 10f, panel.width - 32f, 18f), "OBJETIVOS", eyebrowStyle);
+            DrawQuestCard(new Rect(panel.x + 16f, panel.y + 37f, panel.width - 32f, 28f), director.GlobalMissionText, new Color(0.98f, 0.74f, 0.24f));
+            DrawQuestCard(new Rect(panel.x + 16f, panel.y + 72f, panel.width - 32f, 28f), director.AnimalMissionText, new Color(0.36f, 0.86f, 0.58f));
             if (!string.IsNullOrEmpty(director.EventMessage))
             {
-                Rect banner = new Rect(Screen.width * 0.5f - 320f, 18f, 640f, 38f);
-                DrawCartoonPanel(banner, new Color(0.18f, 0.06f, 0.25f, 0.94f), new Color(0.92f, 0.42f, 1f, 1f));
-                GUI.Label(banner, director.EventMessage, minimapStyle);
+                float minimapSize = Mathf.Clamp(viewHeight * 0.22f, 176f, 218f);
+                float minimapLeft = viewWidth - minimapSize - 20f;
+                float availableWidth = minimapLeft - panel.xMax - 24f;
+                float bannerWidth = Mathf.Clamp(availableWidth, 280f, 440f);
+                float bannerX = Mathf.Clamp((viewWidth - bannerWidth) * 0.5f, panel.xMax + 12f, minimapLeft - bannerWidth - 12f);
+                Rect banner = new Rect(bannerX, 20f, bannerWidth, 38f);
+                DrawCartoonPanel(banner, new Color(0.08f, 0.055f, 0.11f, 0.94f), new Color(0.78f, 0.46f, 0.94f, 1f), 1f);
+                GUI.Label(banner, director.EventMessage, centeredStyle);
             }
         }
 
         private void DrawQuestCard(Rect rect, string text, Color accent)
         {
-            DrawCartoonPanel(rect, new Color(0.92f, 0.72f, 0.42f, 0.98f), new Color(0.42f, 0.2f, 0.055f, 1f), 2f);
             Color oldColor = GUI.color;
             GUI.color = accent;
-            GUI.DrawTexture(new Rect(rect.x + 7f, rect.y + 7f, 8f, rect.height - 14f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(rect.x, rect.y + 3f, 3f, rect.height - 6f), Texture2D.whiteTexture);
             GUI.color = oldColor;
-            GUIStyle questStyle = new GUIStyle(normalStyle) { fontStyle = FontStyle.Bold };
-            questStyle.normal.textColor = new Color(0.18f, 0.075f, 0.02f);
-            GUI.Label(new Rect(rect.x + 24f, rect.y + 6f, rect.width - 32f, rect.height - 8f), text, questStyle);
+            GUI.Label(new Rect(rect.x + 12f, rect.y, rect.width - 12f, rect.height), text, smallStyle);
         }
 
         private static void RestartMatch()
@@ -197,22 +246,37 @@ namespace AnimalBattleRoyale
             Health health = LocalPlayer.Health;
             if (health == null || string.IsNullOrEmpty(stats.DisplayName)) return;
             bool hasEnergy = LocalPlayer.UsesMobilityEnergy;
-            Rect panel = new Rect(16f, 16f, 430f, hasEnergy ? 116f : 104f);
-            DrawCartoonPanel(panel, new Color(0.22f, 0.09f, 0.025f, 0.95f), new Color(0.95f, 0.58f, 0.17f, 1f), 4f);
+            float panelHeight = hasEnergy ? 110f : 94f;
+            Rect panel = new Rect(20f, viewHeight - panelHeight - 20f, 390f, panelHeight);
+            float healthNormalized = health.MaxHealth > 0f ? Mathf.Clamp01(health.CurrentHealth / health.MaxHealth) : 0f;
+            Color healthColor = healthNormalized <= 0.25f
+                ? new Color(1f, 0.24f, 0.2f)
+                : healthNormalized <= 0.55f
+                    ? new Color(1f, 0.68f, 0.18f)
+                    : new Color(0.2f, 0.82f, 0.48f);
+            Color panelBorder = Time.time < healthDamagePulseUntil ? new Color(1f, 0.3f, 0.24f) : new Color(0.2f, 0.34f, 0.31f);
+            DrawCartoonPanel(panel, new Color(0.022f, 0.04f, 0.042f, 0.94f), panelBorder, 1f);
 
-            Rect portraitFrame = new Rect(27f, 26f, 84f, 84f);
-            DrawCartoonPanel(portraitFrame, new Color(0.08f, 0.12f, 0.12f, 1f), new Color(1f, 0.72f, 0.22f, 1f), 4f);
+            Rect portraitFrame = new Rect(panel.x + 10f, panel.y + 10f, 74f, 74f);
+            DrawCartoonPanel(portraitFrame, new Color(0.055f, 0.075f, 0.072f, 1f), Color.Lerp(stats.MainColor, Color.white, 0.28f), 1f);
             Texture2D portrait = GetAnimalPortrait(LocalPlayer.AnimalType);
-            if (portrait != null) GUI.DrawTexture(new Rect(32f, 31f, 74f, 74f), portrait, ScaleMode.ScaleToFit, true);
+            if (portrait != null) GUI.DrawTexture(new Rect(portraitFrame.x + 4f, portraitFrame.y + 4f, 66f, 66f), portrait, ScaleMode.ScaleToFit, true);
 
-            GUI.Label(new Rect(122f, 25f, 300f, 25f), stats.DisplayName.ToUpperInvariant(), titleStyle);
-            DrawCartoonStatBar(new Rect(122f, 53f, 300f, 31f), health.CurrentHealth, health.MaxHealth,
-                new Color(0.14f, 0.78f, 0.16f), "VIDA");
+            float contentX = panel.x + 96f;
+            float contentWidth = panel.width - 108f;
+            GUI.Label(new Rect(contentX, panel.y + 10f, contentWidth, 20f), stats.DisplayName.ToUpperInvariant(), titleStyle);
+            DrawStatBar(new Rect(contentX, panel.y + 36f, contentWidth, 28f), healthNormalized, healthTrailNormalized,
+                healthColor, "VIDA", $"{health.CurrentHealth:0} / {health.MaxHealth:0}");
             if (hasEnergy)
             {
-                DrawCartoonStatBar(new Rect(122f, 91f, 300f, 18f), LocalPlayer.MobilityEnergy,
-                    LocalPlayer.MaxMobilityEnergyValue, new Color(1f, 0.78f, 0.14f), LocalPlayer.MobilityEnergyName);
+                float energyNormalized = LocalPlayer.MaxMobilityEnergyValue > 0f
+                    ? Mathf.Clamp01(LocalPlayer.MobilityEnergy / LocalPlayer.MaxMobilityEnergyValue)
+                    : 0f;
+                DrawStatBar(new Rect(contentX, panel.y + 72f, contentWidth, 18f), energyNormalized, energyNormalized,
+                    new Color(0.28f, 0.76f, 0.94f), LocalPlayer.MobilityEnergyName.ToUpperInvariant(), $"{LocalPlayer.MobilityEnergy:0}");
             }
+
+            if (healthNormalized <= 0.25f) DrawLowHealthVignette();
         }
 
         private Texture2D GetAnimalPortrait(AnimalType type)
@@ -231,16 +295,16 @@ namespace AnimalBattleRoyale
             return animalPortraits[index];
         }
 
-        private void DrawCartoonStatBar(Rect rect, float value, float maxValue, Color fillColor, string label)
+        private void DrawStatBar(Rect rect, float normalized, float trailNormalized, Color fillColor, string label, string value)
         {
-            float normalized = maxValue > 0f ? Mathf.Clamp01(value / maxValue) : 0f;
-            DrawCartoonPanel(rect, new Color(0f, 0f, 0f, 0.7f), Color.Lerp(fillColor, Color.white, 0.28f), 2f);
-            Rect fill = new Rect(rect.x + 3f, rect.y + 3f, (rect.width - 6f) * normalized, rect.height - 6f);
-            Color oldColor = GUI.color;
-            GUI.color = fillColor;
-            GUI.DrawTexture(fill, Texture2D.whiteTexture);
-            GUI.color = oldColor;
-            GUI.Label(new Rect(rect.x + 9f, rect.y + 1f, rect.width - 18f, rect.height), $"{label}  {value:0}/{maxValue:0}", normalStyle);
+            DrawRoundedRect(rect, new Color(0.005f, 0.012f, 0.012f, 0.88f));
+            Rect inner = new Rect(rect.x + 2f, rect.y + 2f, rect.width - 4f, rect.height - 4f);
+            float trailWidth = inner.width * Mathf.Clamp01(trailNormalized);
+            if (trailWidth > 1f) DrawRoundedRect(new Rect(inner.x, inner.y, trailWidth, inner.height), new Color(0.92f, 0.35f, 0.2f, 0.52f));
+            float fillWidth = inner.width * Mathf.Clamp01(normalized);
+            if (fillWidth > 1f) DrawRoundedRect(new Rect(inner.x, inner.y, fillWidth, inner.height), fillColor);
+            GUI.Label(new Rect(rect.x + 9f, rect.y, rect.width * 0.62f, rect.height), label, smallStyle);
+            GUI.Label(new Rect(rect.x + rect.width * 0.52f, rect.y, rect.width * 0.45f - 8f, rect.height), value, rightStyle);
         }
 
         private void DrawPowerBar()
@@ -248,33 +312,52 @@ namespace AnimalBattleRoyale
             if (LocalPlayer == null) return;
             AnimalStats stats = LocalPlayer.Stats;
             if (stats.AbilityNames == null || stats.AbilityNames.Length == 0) return;
-            float width = Mathf.Min(720f, Screen.width - 32f);
-            float x = (Screen.width - width) * 0.5f;
-            float y = Screen.height - 116f;
-            DrawCartoonPanel(new Rect(x, y, width, 98f), new Color(0.04f, 0.1f, 0.17f, 0.9f), new Color(0.26f, 0.75f, 1f, 0.95f));
-            GUI.Label(new Rect(x + 12f, y + 7f, width - 24f, 19f), $"Último poder usado: {LocalPlayer.LastPowerName}", normalStyle);
-            DrawCartoonPanel(new Rect(x + 10f, y + 31f, width - 20f, 53f), new Color(0.07f, 0.16f, 0.26f, 0.95f),
-                new Color(1f, 0.72f, 0.18f), 2f);
-            GUI.Label(new Rect(x + 20f, y + 38f, width - 40f, 40f),
-                $"Q  {stats.AbilityNames[0]}   •   Recarga: {LocalPlayer.AbilityCooldownRemainingFor(0):0.0}s", normalStyle);
+            float width = 350f;
+            float x = (viewWidth - width) * 0.5f;
+            if (x < 430f) x = Mathf.Min(430f, viewWidth - width - 20f);
+            float y = viewHeight - 88f;
+            float remaining = LocalPlayer.AbilityCooldownRemainingFor(0);
+            float cooldown = stats.AbilityCooldowns != null && stats.AbilityCooldowns.Length > 0 ? Mathf.Max(0.01f, stats.AbilityCooldowns[0]) : 1f;
+            float readiness = 1f - Mathf.Clamp01(remaining / cooldown);
+            bool ready = remaining <= 0.01f;
+            Color accent = ready ? new Color(0.3f, 0.92f, 0.58f) : new Color(0.96f, 0.68f, 0.2f);
+
+            Rect panel = new Rect(x, y, width, 68f);
+            DrawCartoonPanel(panel, new Color(0.025f, 0.045f, 0.048f, 0.92f), new Color(0.18f, 0.31f, 0.29f, 1f), 1f);
+            Rect key = new Rect(panel.x + 10f, panel.y + 10f, 46f, 46f);
+            DrawCartoonPanel(key, ready ? new Color(0.12f, 0.38f, 0.25f, 1f) : new Color(0.16f, 0.17f, 0.16f, 1f), accent, 1f);
+            GUI.Label(key, "Q", centeredStyle);
+            GUI.Label(new Rect(panel.x + 68f, panel.y + 9f, panel.width - 150f, 23f), stats.AbilityNames[0], normalStyle);
+            GUI.Label(new Rect(panel.x + panel.width - 82f, panel.y + 9f, 70f, 23f), ready ? "PRONTO" : $"{remaining:0.0}s", rightStyle);
+            Rect cooldownBar = new Rect(panel.x + 68f, panel.y + 42f, panel.width - 80f, 8f);
+            DrawRoundedRect(cooldownBar, new Color(0.005f, 0.012f, 0.012f, 0.9f));
+            if (readiness > 0.01f) DrawRoundedRect(new Rect(cooldownBar.x, cooldownBar.y, cooldownBar.width * readiness, cooldownBar.height), accent);
+            if (!string.IsNullOrEmpty(LocalPlayer.LastPowerName))
+            {
+                GUI.Label(new Rect(panel.x + 68f, panel.y + 50f, panel.width - 80f, 14f), LocalPlayer.LastPowerName, eyebrowStyle);
+            }
         }
 
         private void DrawAimReticle()
         {
             bool vineTarget = LocalPlayer != null && VineAnchor.IsLookedAtBy(LocalPlayer);
             Color previousColor = GUI.color;
-            GUI.color = vineTarget ? new Color(0.25f, 1f, 0.55f, 1f) : Color.white;
+            GUI.color = vineTarget ? new Color(0.3f, 1f, 0.58f, 1f) : new Color(1f, 1f, 1f, 0.88f);
 
-            float centerX = Screen.width * 0.5f;
-            float centerY = Screen.height * 0.5f;
-            GUI.DrawTexture(new Rect(centerX - 11f, centerY - 1.5f, 22f, 3f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(centerX - 1.5f, centerY - 11f, 3f, 22f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(centerX - 2f, centerY - 2f, 4f, 4f), Texture2D.whiteTexture);
+            float centerX = viewWidth * 0.5f;
+            float centerY = viewHeight * 0.5f;
+            GUI.DrawTexture(new Rect(centerX - 14f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(centerX + 6f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(centerX - 1f, centerY - 14f, 2f, 8f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(centerX - 1f, centerY + 6f, 2f, 8f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(centerX - 1.5f, centerY - 1.5f, 3f, 3f), Texture2D.whiteTexture);
             GUI.color = previousColor;
 
             if (vineTarget)
             {
-                GUI.Label(new Rect(centerX - 105f, centerY + 20f, 210f, 22f), "CIPÓ AO ALCANCE — Q PARA AGARRAR", normalStyle);
+                Rect prompt = new Rect(centerX - 122f, centerY + 24f, 244f, 34f);
+                DrawCartoonPanel(prompt, new Color(0.025f, 0.075f, 0.055f, 0.92f), new Color(0.3f, 0.9f, 0.58f, 1f), 1f);
+                GUI.Label(prompt, "Q  AGARRAR CIPÓ", centeredStyle);
             }
         }
 
@@ -284,22 +367,23 @@ namespace AnimalBattleRoyale
             if (jungle == null) jungle = FindAnyObjectByType<JungleGenerator>();
             if (jungle == null) return;
 
-            float size = Mathf.Clamp(Screen.height * 0.235f, 190f, 250f);
-            Rect panel = new Rect(Screen.width - size - 18f, 16f, size, size + 28f);
-            DrawCartoonPanel(panel, new Color(0.035f, 0.09f, 0.14f, 0.94f), new Color(1f, 0.7f, 0.18f, 0.96f));
+            float size = Mathf.Clamp(viewHeight * 0.22f, 176f, 218f);
+            Rect panel = new Rect(viewWidth - size - 20f, 20f, size, size + 36f);
+            DrawCartoonPanel(panel, new Color(0.022f, 0.042f, 0.044f, 0.94f), new Color(0.18f, 0.32f, 0.29f, 0.98f), 1f);
             int carriedDiamonds = DiamondObjectiveManager.Instance != null
                 ? DiamondObjectiveManager.Instance.GetCount(LocalPlayer)
                 : 0;
-            GUI.Label(new Rect(panel.x + 8f, panel.y + 4f, panel.width - 16f, 22f),
-                $"MINIMAPA  •  ◆ {carriedDiamonds}/{DiamondObjectiveManager.RequiredDiamonds}", minimapStyle);
+            GUI.Label(new Rect(panel.x + 12f, panel.y + 8f, panel.width - 80f, 20f), "MAPA", eyebrowStyle);
+            GUI.Label(new Rect(panel.x + panel.width - 82f, panel.y + 8f, 70f, 20f),
+                $"◆ {carriedDiamonds}/{DiamondObjectiveManager.RequiredDiamonds}", rightStyle);
 
-            Rect map = new Rect(panel.x + 9f, panel.y + 29f, panel.width - 18f, panel.width - 18f);
+            Rect map = new Rect(panel.x + 8f, panel.y + 34f, panel.width - 16f, panel.width - 16f);
             ForestMissionDirector missionDirector = ForestMissionDirector.Instance;
             bool minimapJammed = missionDirector != null && missionDirector.MinimapJammed;
             Color previous = GUI.color;
-            GUI.color = new Color(0.08f, 0.31f, 0.13f, 1f);
+            GUI.color = new Color(0.055f, 0.23f, 0.12f, 1f);
             GUI.DrawTexture(map, Texture2D.whiteTexture);
-            GUI.color = new Color(0.2f, 0.52f, 0.2f, 0.45f);
+            GUI.color = new Color(0.28f, 0.54f, 0.24f, 0.24f);
             GUI.DrawTexture(new Rect(map.center.x - 1f, map.y, 2f, map.height), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(map.x, map.center.y - 1f, map.width, 2f), Texture2D.whiteTexture);
 
@@ -383,19 +467,20 @@ namespace AnimalBattleRoyale
         private void DrawObjectiveStatus()
         {
             if (LocalPlayer == null) return;
-            float minimapSize = Mathf.Clamp(Screen.height * 0.235f, 190f, 250f);
-            Rect panel = new Rect(Screen.width - minimapSize - 18f, minimapSize + 52f, minimapSize, 82f);
+            float minimapSize = Mathf.Clamp(viewHeight * 0.22f, 176f, 218f);
+            Rect panel = new Rect(viewWidth - minimapSize - 20f, minimapSize + 64f, minimapSize, 70f);
             SafeZoneController zone = SafeZoneController.Instance;
             bool outside = zone != null && zone.IsOutside(LocalPlayer.transform.position);
             DrawCartoonPanel(panel,
-                outside ? new Color(0.34f, 0.055f, 0.025f, 0.96f) : new Color(0.22f, 0.09f, 0.025f, 0.95f),
-                outside ? new Color(1f, 0.22f, 0.08f, 1f) : new Color(0.95f, 0.58f, 0.17f, 1f), 4f);
+                outside ? new Color(0.24f, 0.035f, 0.03f, 0.96f) : new Color(0.022f, 0.042f, 0.044f, 0.94f),
+                outside ? new Color(1f, 0.24f, 0.18f, 1f) : new Color(0.18f, 0.32f, 0.29f, 1f), 1f);
 
             int diamonds = DiamondObjectiveManager.Instance != null
                 ? DiamondObjectiveManager.Instance.GetCount(LocalPlayer)
                 : 0;
-            GUI.Label(new Rect(panel.x + 10f, panel.y + 8f, panel.width - 20f, 24f),
-                $"ANIMAIS  {AliveCount}     ◆  {diamonds}/{DiamondObjectiveManager.RequiredDiamonds}", minimapStyle);
+            GUI.Label(new Rect(panel.x + 12f, panel.y + 8f, panel.width * 0.55f, 20f), $"ANIMAIS  {AliveCount}", smallStyle);
+            GUI.Label(new Rect(panel.x + panel.width * 0.5f, panel.y + 8f, panel.width * 0.5f - 12f, 20f),
+                $"◆  {diamonds}/{DiamondObjectiveManager.RequiredDiamonds}", rightStyle);
 
             string zoneText = "ÁREA SEGURA INDISPONÍVEL";
             if (zone != null)
@@ -406,7 +491,27 @@ namespace AnimalBattleRoyale
                         ? $"CHUVA ÁCIDA AVANÇA EM {zone.TimeUntilShrink:0}s"
                         : $"ÁREA SEGURA  {zone.CurrentRadius:0} m";
             }
-            GUI.Label(new Rect(panel.x + 10f, panel.y + 39f, panel.width - 20f, 25f), zoneText, minimapStyle);
+            GUI.Label(new Rect(panel.x + 12f, panel.y + 35f, panel.width - 24f, 24f), zoneText, centeredStyle);
+        }
+
+        private void DrawContextHint(string text)
+        {
+            float width = Mathf.Min(520f, viewWidth - 48f);
+            Rect panel = new Rect((viewWidth - width) * 0.5f, viewHeight * 0.5f + 72f, width, 36f);
+            DrawCartoonPanel(panel, new Color(0.025f, 0.045f, 0.048f, 0.92f), new Color(0.32f, 0.72f, 0.62f, 0.95f), 1f);
+            GUI.Label(panel, text, centeredStyle);
+        }
+
+        private void DrawLowHealthVignette()
+        {
+            float pulse = 0.045f + (Mathf.Sin(Time.time * 5.5f) * 0.5f + 0.5f) * 0.035f;
+            Color previous = GUI.color;
+            GUI.color = new Color(1f, 0.04f, 0.02f, pulse);
+            GUI.DrawTexture(new Rect(0f, 0f, viewWidth, 14f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0f, viewHeight - 14f, viewWidth, 14f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(0f, 0f, 14f, viewHeight), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(viewWidth - 14f, 0f, 14f, viewHeight), Texture2D.whiteTexture);
+            GUI.color = previous;
         }
 
         private static Vector2 WorldToMinimap(Vector3 worldPosition, Rect map, float worldSize)
@@ -444,37 +549,39 @@ namespace AnimalBattleRoyale
             return texture;
         }
 
-        private static void DrawCartoonPanel(Rect rect, Color fill, Color border, float borderSize = 3f)
+        private void DrawRoundedRect(Rect rect, Color color)
         {
-            Color oldColor = GUI.color;
-            GUI.color = new Color(0f, 0f, 0f, fill.a * 0.42f);
-            GUI.DrawTexture(new Rect(rect.x + 3f, rect.y + 4f, rect.width, rect.height), Texture2D.whiteTexture);
-            GUI.color = border;
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = fill;
-            GUI.DrawTexture(new Rect(rect.x + borderSize, rect.y + borderSize, rect.width - borderSize * 2f, rect.height - borderSize * 2f), Texture2D.whiteTexture);
-            GUI.color = oldColor;
+            RuntimeGuiTheme.DrawRoundedRect(rect, color);
+        }
+
+        private void DrawCartoonPanel(Rect rect, Color fill, Color border, float borderSize = 1f)
+        {
+            RuntimeGuiTheme.DrawPanel(rect, fill, border, borderSize);
         }
 
         private void EnsureStyles()
         {
             if (titleStyle != null && normalStyle != null && resultStyle != null && minimapStyle != null
+                && eyebrowStyle != null && smallStyle != null && rightStyle != null && centeredStyle != null
                 && minimapCircleTexture != null && minimapRingTexture != null) return;
 
             titleStyle = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 17,
+                fontSize = 16,
                 fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
                 normal = { textColor = Color.white }
             };
             normalStyle = new GUIStyle(GUI.skin.label)
             {
                 fontSize = 14,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
                 normal = { textColor = Color.white }
             };
             resultStyle = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 25,
+                fontSize = 26,
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter,
                 normal = { textColor = Color.white }
@@ -486,8 +593,35 @@ namespace AnimalBattleRoyale
                 alignment = TextAnchor.MiddleCenter,
                 normal = { textColor = Color.white }
             };
+            eyebrowStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 10,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                normal = { textColor = new Color(0.55f, 0.7f, 0.65f) }
+            };
+            smallStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 12,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                clipping = TextClipping.Clip,
+                normal = { textColor = new Color(0.92f, 0.96f, 0.94f) }
+            };
+            rightStyle = new GUIStyle(smallStyle)
+            {
+                alignment = TextAnchor.MiddleRight,
+                normal = { textColor = Color.white }
+            };
+            centeredStyle = new GUIStyle(normalStyle)
+            {
+                fontSize = 13,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true
+            };
             minimapCircleTexture = CreateMinimapCircleTexture(false);
             minimapRingTexture = CreateMinimapCircleTexture(true);
+            RuntimeGuiTheme.Ensure();
         }
     }
 }
