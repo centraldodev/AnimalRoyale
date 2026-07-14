@@ -378,8 +378,6 @@ namespace AnimalBattleRoyale
                 $"◆ {carriedDiamonds}/{DiamondObjectiveManager.RequiredDiamonds}", rightStyle);
 
             Rect map = new Rect(panel.x + 8f, panel.y + 34f, panel.width - 16f, panel.width - 16f);
-            ForestMissionDirector missionDirector = ForestMissionDirector.Instance;
-            bool minimapJammed = missionDirector != null && missionDirector.MinimapJammed;
             Color previous = GUI.color;
             GUI.color = new Color(0.055f, 0.23f, 0.12f, 1f);
             GUI.DrawTexture(map, Texture2D.whiteTexture);
@@ -387,23 +385,12 @@ namespace AnimalBattleRoyale
             GUI.DrawTexture(new Rect(map.center.x - 1f, map.y, 2f, map.height), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(map.x, map.center.y - 1f, map.width, 2f), Texture2D.whiteTexture);
 
-            CentralLake lake = CentralLake.Instance;
-            if (lake != null)
-            {
-                Vector2 center = WorldToMinimap(lake.transform.position, map, jungle.MapSize);
-                float diameter = lake.Radius * 2f / jungle.MapSize * map.width;
-                GUI.color = new Color(0.08f, 0.66f, 0.95f, 0.9f);
-                GUI.DrawTexture(new Rect(center.x - diameter * 0.5f, center.y - diameter * 0.5f, diameter, diameter), minimapCircleTexture);
-            }
-
             foreach (DiamondPickup diamond in DiamondPickup.ActivePickups)
             {
                 if (diamond == null || !diamond.IsAvailable) continue;
-                float localDistance = Vector3.Distance(LocalPlayer.transform.position, diamond.transform.position);
-                if (minimapJammed || (localDistance > 36f && (missionDirector == null || !missionDirector.RevealDiamonds))) continue;
                 Vector2 point = WorldToMinimap(diamond.transform.position, map, jungle.MapSize);
                 GUI.color = new Color(0.22f, 0.9f, 1f, 1f);
-                GUI.DrawTexture(new Rect(point.x - 3f, point.y - 3f, 6f, 6f), minimapCircleTexture);
+                GUI.DrawTexture(new Rect(point.x - 4f, point.y - 4f, 8f, 8f), minimapCircleTexture);
             }
 
             if (DiamondObjectiveManager.Instance != null)
@@ -413,17 +400,14 @@ namespace AnimalBattleRoyale
                 GUI.DrawTexture(new Rect(portalPoint.x - 6f, portalPoint.y - 6f, 12f, 12f), minimapRingTexture);
             }
 
-            if (!minimapJammed)
+            foreach (MissionNode node in MissionNode.ActiveNodes)
             {
-                foreach (MissionNode node in MissionNode.ActiveNodes)
-                {
-                    if (node == null || node.IsActivated) continue;
-                    Vector2 point = WorldToMinimap(node.transform.position, map, jungle.MapSize);
-                    GUI.color = node.Kind == MissionNodeKind.Lore
-                        ? new Color(0.9f, 0.35f, 1f, 1f)
-                        : new Color(1f, 0.76f, 0.12f, 1f);
-                    GUI.DrawTexture(new Rect(point.x - 2.5f, point.y - 2.5f, 5f, 5f), Texture2D.whiteTexture);
-                }
+                if (node == null || node.IsActivated) continue;
+                Vector2 point = WorldToMinimap(node.transform.position, map, jungle.MapSize);
+                GUI.color = node.Kind == MissionNodeKind.Lore
+                    ? new Color(0.9f, 0.35f, 1f, 1f)
+                    : new Color(1f, 0.76f, 0.12f, 1f);
+                GUI.DrawTexture(new Rect(point.x - 3f, point.y - 3f, 6f, 6f), Texture2D.whiteTexture);
             }
 
             SafeZoneController zone = SafeZoneController.Instance;
@@ -437,7 +421,7 @@ namespace AnimalBattleRoyale
 
             foreach (ThirdPersonAnimalController fighter in fighters)
             {
-                if (fighter == null || fighter.Health == null || fighter.Health.IsDead || fighter.IsBurrowed) continue;
+                if (fighter == null || fighter.Health == null || fighter.Health.IsDead) continue;
                 Vector2 point = WorldToMinimap(fighter.transform.position, map, jungle.MapSize);
                 if (!map.Contains(point)) continue;
                 if (fighter == LocalPlayer)
@@ -451,11 +435,18 @@ namespace AnimalBattleRoyale
                 }
                 else
                 {
-                    float distance = Vector3.Distance(LocalPlayer.transform.position, fighter.transform.position);
-                    bool tracked = missionDirector != null && missionDirector.IsCarrierRevealed(fighter);
-                    if (minimapJammed || (distance > 42f && !tracked)) continue;
-                    GUI.color = new Color(1f, 0.22f, 0.12f, 1f);
+                    int fighterDiamonds = DiamondObjectiveManager.Instance != null
+                        ? DiamondObjectiveManager.Instance.GetCount(fighter)
+                        : 0;
+                    if (fighterDiamonds <= 0) continue;
+                    GUI.color = new Color(0.15f, 0.92f, 1f, 1f);
+                    GUI.DrawTexture(new Rect(point.x - 7f, point.y - 7f, 14f, 14f), minimapRingTexture);
+                    GUI.color = new Color(1f, 0.28f, 0.16f, 1f);
                     GUI.DrawTexture(new Rect(point.x - 3.5f, point.y - 3.5f, 7f, 7f), minimapCircleTexture);
+                    GUI.color = Color.white;
+                    float countX = point.x > map.xMax - 22f ? point.x - 23f : point.x + 5f;
+                    float countY = Mathf.Clamp(point.y - 10f, map.y, map.yMax - 18f);
+                    GUI.Label(new Rect(countX, countY, 18f, 18f), fighterDiamonds.ToString(), eyebrowStyle);
                 }
             }
 
