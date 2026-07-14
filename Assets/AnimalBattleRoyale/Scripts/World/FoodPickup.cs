@@ -113,6 +113,7 @@ namespace AnimalBattleRoyale
                 case FoodKind.Meat: BuildMeat(display.transform); break;
                 case FoodKind.GoldenFruit: BuildFruitBundle(display.transform); break;
             }
+            CollectibleHighlight.Attach(transform, effectColor, foodKind == FoodKind.GoldenFruit ? 1.15f : 0.92f, -0.28f);
             CreateLabel();
         }
 

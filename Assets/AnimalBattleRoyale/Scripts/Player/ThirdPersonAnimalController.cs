@@ -17,9 +17,10 @@ namespace AnimalBattleRoyale
         private const float EagleMinimumTakeoffEnergy = 6f;
         private const float MonkeyVineLeapEnergyCost = 20f;
         private const float MonkeyAirJumpEnergyCost = 20f;
+        private const float MonkeyVineChainCooldown = 0.14f;
         private const int MonkeyMaxAirJumps = 5;
         private const int MaxRangedAmmo = 12;
-        private const float CorpseLifetime = 60f;
+        private const float DefeatedCleanupDelay = 1.5f;
 
         private CharacterController characterController;
         private Health health;
@@ -59,6 +60,8 @@ namespace AnimalBattleRoyale
         private Transform pendingVineGrab;
         private float pendingVineGrabAllowedAt;
         private float pendingVineGrabExpiresAt;
+        private float nextVineChainTime;
+        private bool leftHandVineGrip = true;
         private bool vineControllerDisabled;
         private readonly Collider[] combatHits = new Collider[64];
         private readonly RaycastHit[] surfaceHits = new RaycastHit[32];
@@ -135,6 +138,10 @@ namespace AnimalBattleRoyale
 
         public float AbilityCooldownRemainingFor(int slot)
         {
+            if (animalType == AnimalType.Monkey && slot == 0 && IsHangingVine)
+            {
+                return Mathf.Max(0f, nextVineChainTime - Time.time);
+            }
             return slot < 0 || slot >= nextPowerTimes.Length ? 0f : Mathf.Max(0f, nextPowerTimes[slot] - Time.time);
         }
 
@@ -240,19 +247,29 @@ namespace AnimalBattleRoyale
             aiRangedAttack = false;
             aiAbilitySlot = -1;
 
-            // Corpses always settle at their death location on the terrain, even if the
-            // animal was flying, climbing, or hanging from a vine when it was defeated.
+            // The meat drop is spawned by the match manager; this animal only leaves a
+            // quick transformation burst and then disappears from the arena.
             SnapToTerrain(jungle != null ? jungle : FindAnyObjectByType<JungleGenerator>());
-            characterController.enabled = false;
+            if (characterController != null) characterController.enabled = false;
+            DisableAllColliders();
             Transform visual = transform.Find("VisualRoot");
             if (visual != null)
             {
-                visual.gameObject.SetActive(true);
                 visualMotion?.Freeze();
-                visual.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                visual.gameObject.SetActive(false);
             }
+            AttackVfx.CreateBurst(transform.position + Vector3.up * (stats.ControllerHeight * 0.45f), new Color(0.92f, 0.08f, 0.045f), 1.9f);
 
-            Destroy(gameObject, CorpseLifetime);
+            Destroy(gameObject, DefeatedCleanupDelay);
+        }
+
+        private void DisableAllColliders()
+        {
+            Collider[] colliders = GetComponentsInChildren<Collider>();
+            foreach (Collider collider in colliders)
+            {
+                if (collider != null) collider.enabled = false;
+            }
         }
 
         public void ApplyAnimal(AnimalType type, bool refillHealth)
@@ -286,7 +303,7 @@ namespace AnimalBattleRoyale
             }
             if (IsHangingVine)
             {
-                if (GameInput.AbilityOnePressed()) TryMonkeyVineChain(GetAttackDirection(movement));
+                if (GameInput.AbilityOnePressed() || GameInput.JumpPressed()) TryMonkeyVineChain(GetAttackDirection(movement));
                 if (GameInput.AttackPressed()) ReleaseVine(GetAttackDirection(movement), true);
                 if (GameInput.ConsumePressed() && !MissionNode.TryUseNearest(this) && !DiamondPickup.TryCollectNearest(this)
                     && !RangedAmmoPickup.TryCollectNearest(this)) FoodPickup.TryConsumeNearest(this);
@@ -536,9 +553,9 @@ namespace AnimalBattleRoyale
 
         private void TryMonkeyVineChain(Vector3 direction)
         {
-            if (animalType != AnimalType.Monkey || Time.time < nextPowerTimes[0] || !HasMobilityEnergy(MonkeyVineLeapEnergyCost)) return;
+            if (animalType != AnimalType.Monkey || Time.time < nextVineChainTime || !HasMobilityEnergy(MonkeyVineLeapEnergyCost)) return;
             if (!VineAnchor.TryUseNearest(this, direction)) return;
-            nextPowerTimes[0] = Time.time + stats.AbilityCooldowns[0];
+            nextVineChainTime = Time.time + MonkeyVineChainCooldown;
             lastPowerSlot = 0;
             CombatFeedback.PlayPower(animalType, 0, transform.position);
             visualMotion?.TriggerPower(0);
@@ -733,8 +750,9 @@ namespace AnimalBattleRoyale
             if (vine == null || IsHangingVine) return false;
             pendingVineGrab = null;
             heldVine = vine;
+            leftHandVineGrip = !leftHandVineGrip;
             UpdateVineHang();
-            visualMotion?.SetVineHanging(true);
+            visualMotion?.SetVineHanging(true, leftHandVineGrip);
             AttackVfx.CreateBurst(vine.position, new Color(0.35f, 1f, 0.45f), 1.25f);
             return true;
         }

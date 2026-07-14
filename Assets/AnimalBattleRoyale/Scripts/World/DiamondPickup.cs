@@ -116,6 +116,8 @@ namespace AnimalBattleRoyale
             renderer.sharedMaterial = diamondMaterial;
             renderer.shadowCastingMode = ShadowCastingMode.Off;
 
+            CollectibleHighlight.Attach(transform, new Color(0.18f, 0.86f, 1f), 1.05f, -0.46f);
+
             GameObject label = new GameObject("DiamondLabel");
             label.transform.SetParent(transform, false);
             label.transform.localPosition = Vector3.up * 1.35f;

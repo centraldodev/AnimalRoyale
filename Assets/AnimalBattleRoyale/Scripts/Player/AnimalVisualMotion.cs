@@ -15,6 +15,8 @@ namespace AnimalBattleRoyale
         private Transform monkeyRightArm;
         private Vector3 monkeyLeftArmScale;
         private Vector3 monkeyRightArmScale;
+        private Quaternion monkeyLeftArmRotation;
+        private Quaternion monkeyRightArmRotation;
         private Animator animator;
         private Coroutine returnToIdle;
         private float attackUntil;
@@ -48,6 +50,8 @@ namespace AnimalBattleRoyale
                 monkeyRightArm = FindChildRecursive(animator.transform, "Arm_R");
                 if (monkeyLeftArm != null) monkeyLeftArmScale = monkeyLeftArm.localScale;
                 if (monkeyRightArm != null) monkeyRightArmScale = monkeyRightArm.localScale;
+                if (monkeyLeftArm != null) monkeyLeftArmRotation = monkeyLeftArm.localRotation;
+                if (monkeyRightArm != null) monkeyRightArmRotation = monkeyRightArm.localRotation;
             }
 
             PlayLocomotion();
@@ -90,13 +94,15 @@ namespace AnimalBattleRoyale
             if (clip != null) PlayClip(clip, slot == 0 ? 0.7f : 0.58f);
         }
 
-        public void SetVineHanging(bool hanging)
+        public void SetVineHanging(bool hanging, bool leftHandGrip = true)
         {
             if (animalType != AnimalType.Monkey || animator == null) return;
             monkeyHanging = hanging;
+            monkeyLeftHandGrip = leftHandGrip;
             animator.speed = hanging ? 0f : 1f;
             if (!hanging)
             {
+                ResetMonkeyArms();
                 actionLockUntil = 0f;
                 PlayLocomotion();
                 return;
@@ -105,8 +111,11 @@ namespace AnimalBattleRoyale
             string clip = ResolveClipName("Monkey_VineLeap");
             if (clip == null) return;
             currentClip = clip;
-            // Freeze mid-clip, where both arms are raised towards the vine.
+            // Freeze mid-clip, then bias the pose so one arm keeps the vine while
+            // the other remains ready for the next jump.
             animator.Play(clip, 0, 0.52f);
+            animator.Update(0f);
+            ApplyMonkeyVineArmPose(1f);
         }
 
         /// <summary>Stops all visual animation so the animal can remain as a corpse.</summary>
@@ -225,8 +234,44 @@ namespace AnimalBattleRoyale
             {
                 float progress = 1f - Mathf.Clamp01((monkeyGrabUntil - Time.time) / 0.68f);
                 float reach = Mathf.Sin(progress * Mathf.PI);
-                if (monkeyLeftArm != null) monkeyLeftArm.localScale = monkeyLeftArmScale * (1f + reach * 0.32f);
-                if (monkeyRightArm != null) monkeyRightArm.localScale = monkeyRightArmScale * (1f + reach * 0.32f);
+                if (monkeyHanging) ApplyMonkeyVineArmPose(1f);
+                else
+                {
+                    if (monkeyLeftArm != null) monkeyLeftArm.localScale = monkeyLeftArmScale * (1f + reach * 0.32f);
+                    if (monkeyRightArm != null) monkeyRightArm.localScale = monkeyRightArmScale * (1f + reach * 0.32f);
+                }
+            }
+        }
+
+        private bool monkeyLeftHandGrip = true;
+
+        private void ApplyMonkeyVineArmPose(float reach)
+        {
+            Transform gripArm = monkeyLeftHandGrip ? monkeyLeftArm : monkeyRightArm;
+            Transform freeArm = monkeyLeftHandGrip ? monkeyRightArm : monkeyLeftArm;
+            Vector3 gripScale = monkeyLeftHandGrip ? monkeyLeftArmScale : monkeyRightArmScale;
+            Vector3 freeScale = monkeyLeftHandGrip ? monkeyRightArmScale : monkeyLeftArmScale;
+            Quaternion freeRotation = monkeyLeftHandGrip ? monkeyRightArmRotation : monkeyLeftArmRotation;
+
+            if (gripArm != null) gripArm.localScale = gripScale * (1f + reach * 0.34f);
+            if (freeArm != null)
+            {
+                freeArm.localScale = freeScale;
+                freeArm.localRotation = freeRotation * Quaternion.Euler(34f, monkeyLeftHandGrip ? -18f : 18f, monkeyLeftHandGrip ? 26f : -26f);
+            }
+        }
+
+        private void ResetMonkeyArms()
+        {
+            if (monkeyLeftArm != null)
+            {
+                monkeyLeftArm.localScale = monkeyLeftArmScale;
+                monkeyLeftArm.localRotation = monkeyLeftArmRotation;
+            }
+            if (monkeyRightArm != null)
+            {
+                monkeyRightArm.localScale = monkeyRightArmScale;
+                monkeyRightArm.localRotation = monkeyRightArmRotation;
             }
         }
 

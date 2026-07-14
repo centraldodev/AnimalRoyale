@@ -80,7 +80,9 @@ namespace AnimalBattleRoyale
         {
             if (defeated.Owner != null)
             {
-                DiamondObjectiveManager.Instance?.DropAll(defeated.Owner, defeated.Owner.transform.position);
+                Vector3 deathPosition = GetGroundedDeathPosition(defeated.Owner.transform.position);
+                DiamondObjectiveManager.Instance?.DropAll(defeated.Owner, deathPosition);
+                FoodPickup.Create(deathPosition, FoodKind.Meat);
             }
             ForestMissionDirector.Instance?.RecordElimination(attacker);
             RecalculateAlive();
@@ -93,6 +95,12 @@ namespace AnimalBattleRoyale
                 return;
             }
 
+        }
+
+        private Vector3 GetGroundedDeathPosition(Vector3 position)
+        {
+            if (jungle == null) jungle = FindAnyObjectByType<JungleGenerator>();
+            return jungle != null ? jungle.GetGroundPosition(position) : position;
         }
 
         public void CompleteEscape(ThirdPersonAnimalController winner)
