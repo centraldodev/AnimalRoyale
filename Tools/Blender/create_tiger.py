@@ -101,29 +101,31 @@ def create_rig():
 
 
 def build_tiger(rig):
-    body = OrganicBody("TigerBody", resolution=0.045)
+    body = OrganicBody("TigerBody", resolution=0.034)
 
     # Hindquarters: wide haunches that read as powerful cat legs.
-    body.ball((0, 0.80, -0.52), 0.36)
-    body.ball((-0.24, 0.72, -0.56), 0.28)
-    body.ball((0.24, 0.72, -0.56), 0.28)
+    body.ball((0, 0.80, -0.52), 0.39)
+    body.ball((-0.24, 0.72, -0.56), 0.30)
+    body.ball((0.24, 0.72, -0.56), 0.30)
     # Barrel ribcage sloping up into a deep chest — the classic feline topline.
     body.ball((0, 0.76, -0.18), 0.40)
     body.ball((-0.14, 0.76, -0.15), 0.30)
     body.ball((0.14, 0.76, -0.15), 0.30)
     body.ball((0, 0.84, 0.16), 0.40)
-    body.ball((0, 0.90, 0.34), 0.38)
+    body.ball((0, 0.90, 0.34), 0.41)
     body.ball((-0.18, 0.90, 0.32), 0.26)
     body.ball((0.18, 0.90, 0.32), 0.26)
     # Neck ruff blending into the skull.
-    body.chain((0, 1.00, 0.55), (0, 1.16, 0.80), 0.24, 0.20, 4)
-    body.ball((0, 1.28, 0.95), 0.25)
-    body.ball((0, 1.40, 1.04), 0.15)
-    body.ball((-0.14, 1.24, 1.06), 0.14)
-    body.ball((0.14, 1.24, 1.06), 0.14)
-    # Muzzle and jaw.
-    body.chain((0, 1.20, 1.20), (0, 1.17, 1.40), 0.125, 0.10, 3)
-    body.ball((0, 1.08, 1.22), 0.11)
+    body.chain((0, 1.00, 0.55), (0, 1.16, 0.80), 0.29, 0.25, 5)
+    # A cub-like skull: broad brow, round cranium and full cheek muscles. The
+    # muzzle still projects forward enough to remain unmistakably feline.
+    body.ball((0, 1.27, 0.96), 0.36)
+    body.ball((0, 1.39, 0.99), 0.27)
+    body.ball((-0.19, 1.25, 1.05), 0.22)
+    body.ball((0.19, 1.25, 1.05), 0.22)
+    body.ball((0, 1.18, 1.18), 0.22)
+    body.chain((0, 1.20, 1.18), (0, 1.16, 1.43), 0.18, 0.12, 4)
+    body.ball((0, 1.08, 1.27), 0.15)
 
     # Legs flow out of the torso; tapered chains give knees and slim ankles.
     legs = [
@@ -133,14 +135,14 @@ def build_tiger(rig):
         ("BR", (0.34, 0.70, -0.54), (0.38, 0.38, -0.58), (0.39, 0.16, -0.50)),
     ]
     for label, hip, knee, ankle in legs:
-        body.chain(hip, knee, 0.155, 0.115, 4)
-        body.chain(knee, ankle, 0.115, 0.10, 3)
+        body.chain(hip, knee, 0.18, 0.13, 5)
+        body.chain(knee, ankle, 0.13, 0.105, 4)
         paw_center = (ankle[0], 0.11, ankle[2] + 0.14)
-        body.ball(paw_center, 0.115)
+        body.ball(paw_center, 0.14)
         # Toes overlap the paw ball so they fuse into one island; separated
         # islands confuse the automatic weights and drift during animations.
         for toe_index in (-1, 0, 1):
-            body.ball((ankle[0] + toe_index * 0.062, 0.10, ankle[2] + 0.235), 0.062)
+            body.ball((ankle[0] + toe_index * 0.072, 0.10, ankle[2] + 0.245), 0.072)
 
     # Tail with a slight S-curve, thinning to a dark tip. Dense chains keep
     # the surface tubular instead of turning into a string of beads.
@@ -153,14 +155,14 @@ def build_tiger(rig):
     body_bands = (-0.62, -0.38, -0.14, 0.10, 0.34)
 
     def body_stripe(c):
-        if c.y < 0.70 or not (-0.80 < c.z < 0.54):
+        if c.y < 0.70 or abs(c.x) < 0.17 or not (-0.80 < c.z < 0.54):
             return False
         swept_z = c.z + 0.20 * abs(c.x)
-        return any(abs(swept_z - band) < 0.045 for band in body_bands)
+        return any(abs(swept_z - band) < 0.055 for band in body_bands)
 
     def head_stripe(c):
-        return (c.y > 1.42 and 0.80 < c.z < 1.14 and abs(c.x) < 0.22
-                and any(abs(c.z - band) < 0.028 for band in (0.86, 0.96, 1.06)))
+        return (c.y > 1.42 and 0.78 < c.z < 1.20 and abs(c.x) < 0.26
+                and any(abs(c.z - band) < 0.034 for band in (0.86, 0.99, 1.12)))
 
     def tail_ring(c):
         return c.z < -0.94 and c.y > 0.72 and (
@@ -179,19 +181,31 @@ def build_tiger(rig):
 
     # Ears: fur-colored shells with a lighter inner ear, planted on the skull.
     for side, label in ((-1, "L"), (1, "R")):
-        oriented_detail_sphere("Ear_" + label, (side * 0.175, 1.43, 0.90),
-                               (0.115, 0.125, 0.06), (0.35, side * 0.45, 0),
+        oriented_detail_sphere("Ear_" + label, (side * 0.245, 1.53, 0.87),
+                               (0.155, 0.17, 0.075), (0.35, side * 0.45, 0),
                                ORANGE, rig, "Ear_" + label)
-        oriented_detail_sphere("EarInner_" + label, (side * 0.17, 1.435, 0.932),
-                               (0.07, 0.085, 0.045), (0.35, side * 0.45, 0),
+        oriented_detail_sphere("EarInner_" + label, (side * 0.242, 1.535, 0.912),
+                               (0.095, 0.115, 0.052), (0.35, side * 0.45, 0),
                                INNER_EAR, rig, "Ear_" + label)
 
     # Face: layered cartoon eyes with a highlight, nose leather and whiskers.
     for side in (-1, 1):
         cartoon_eye("Eye_" + ("L" if side < 0 else "R"),
-                    (side * 0.115, 1.345, 1.16), (side * 0.20, 0.05, 1.0),
-                    0.078, rig, "Head", WHITE, AMBER, PUPIL, SPARK)
-    detail_sphere("Nose", (0, 1.235, 1.47), (0.07, 0.048, 0.042), PINK, rig, "Head")
+                    (side * 0.145, 1.385, 1.205), (side * 0.16, 0.04, 1.0),
+                    0.112, rig, "Head", WHITE, AMBER, PUPIL, SPARK)
+    # Separate cream whisker pads create the characteristic big-cat muzzle.
+    for side in (-1, 1):
+        oriented_detail_sphere("WhiskerPad_" + ("L" if side < 0 else "R"),
+                               (side * 0.105, 1.185, 1.405),
+                               (0.135, 0.10, 0.105), (0, 0, 0), CREAM, rig, "Head")
+    oriented_detail_sphere("Chin", (0, 1.105, 1.36), (0.12, 0.07, 0.10),
+                           (0, 0, 0), CREAM, rig, "Jaw")
+    detail_sphere("Nose", (0, 1.255, 1.505), (0.09, 0.058, 0.052), PINK, rig, "Head")
+    # A small open smiling mouth keeps the cub friendly without flattening the snout.
+    oriented_detail_sphere("Mouth", (0, 1.095, 1.455), (0.095, 0.022, 0.052),
+                           (0, 0, 0), BLACK, rig, "Jaw")
+    oriented_detail_sphere("Tongue", (0, 1.085, 1.475), (0.052, 0.014, 0.025),
+                           (0, 0, 0), PINK, rig, "Jaw")
     for side in (-1, 1):
         for row, (dy, dz) in enumerate(((0.02, 0.0), (-0.015, 0.01), (-0.05, 0.0))):
             tapered_limb("Whisker_%d_%d" % (side, row),

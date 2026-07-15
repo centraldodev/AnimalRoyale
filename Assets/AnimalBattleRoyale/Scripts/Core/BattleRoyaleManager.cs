@@ -19,7 +19,7 @@ namespace AnimalBattleRoyale
         private GUIStyle centeredStyle;
         private Texture2D minimapCircleTexture;
         private Texture2D minimapRingTexture;
-        private readonly Texture2D[] animalPortraits = new Texture2D[4];
+        private readonly RenderTexture[] animalPortraits = new RenderTexture[AnimalRoster.Count];
         private JungleGenerator jungle;
         private string resultMessage = string.Empty;
         private float uiScale = 1f;
@@ -29,12 +29,29 @@ namespace AnimalBattleRoyale
         private float lastHealthValue;
         private float healthTrailNormalized = 1f;
         private float healthDamagePulseUntil;
+        private bool openingPhaseStarted;
+        private float combatUnlockTime;
+        private bool matchFinished;
         private bool shuttingDown;
 
         public IReadOnlyList<ThirdPersonAnimalController> Fighters => fighters;
         public ThirdPersonAnimalController LocalPlayer { get; private set; }
         public int AliveCount { get; private set; }
-        public bool MatchFinished { get; private set; }
+        public bool MatchFinished
+        {
+            get => matchFinished;
+            private set
+            {
+                if (matchFinished == value) return;
+                matchFinished = value;
+                if (matchFinished) ThirdPersonCamera.SetCursorLocked(false);
+            }
+        }
+        public bool CombatEnabled => !MatchFinished
+                                     && (!openingPhaseStarted || Time.time >= combatUnlockTime);
+        public float OpeningSecondsRemaining => openingPhaseStarted
+            ? Mathf.Max(0f, combatUnlockTime - Time.time)
+            : 0f;
 
         private void Awake()
         {
@@ -81,6 +98,12 @@ namespace AnimalBattleRoyale
             if (fighter.IsLocalPlayer) LocalPlayer = fighter;
             DiamondObjectiveManager.Instance?.RegisterFighter(fighter);
             RecalculateAlive();
+        }
+
+        public void BeginOpeningPhase(float duration)
+        {
+            openingPhaseStarted = true;
+            combatUnlockTime = Time.time + Mathf.Max(0f, duration);
         }
 
         private void OnFighterDied(Health defeated, ThirdPersonAnimalController attacker)
@@ -173,6 +196,8 @@ namespace AnimalBattleRoyale
             {
                 DrawPlayerHud();
             }
+
+            if (OpeningSecondsRemaining > 0f) DrawOpeningCountdown();
 
             string contextHint = LocalPlayer != null && LocalPlayer.IsInAntTunnel
                 ? $"NO TÚNEL: WASD escolhe saída • saída forçada: {LocalPlayer.TunnelSecondsRemaining:0.0}s"
@@ -290,6 +315,7 @@ namespace AnimalBattleRoyale
         private void OnDestroy()
         {
             shuttingDown = true;
+            for (int i = 0; i < animalPortraits.Length; i++) AnimalPreviewRenderer.Release(animalPortraits[i]);
             if (Instance == this) Instance = null;
         }
 
@@ -312,7 +338,7 @@ namespace AnimalBattleRoyale
 
             Rect portraitFrame = new Rect(panel.x + 10f, panel.y + 10f, 74f, 74f);
             DrawCartoonPanel(portraitFrame, new Color(0.055f, 0.075f, 0.072f, 1f), Color.Lerp(stats.MainColor, Color.white, 0.28f), 1f);
-            Texture2D portrait = GetAnimalPortrait(LocalPlayer.AnimalType);
+            Texture portrait = GetAnimalPortrait(LocalPlayer.AnimalType);
             if (portrait != null) GUI.DrawTexture(new Rect(portraitFrame.x + 4f, portraitFrame.y + 4f, 66f, 66f), portrait, ScaleMode.ScaleToFit, true);
 
             float contentX = panel.x + 96f;
@@ -335,19 +361,11 @@ namespace AnimalBattleRoyale
             if (healthNormalized <= 0.25f) DrawLowHealthVignette();
         }
 
-        private Texture2D GetAnimalPortrait(AnimalType type)
+        private Texture GetAnimalPortrait(AnimalType type)
         {
             int index = (int)type;
             if (animalPortraits[index] != null) return animalPortraits[index];
-            string assetName = type switch
-            {
-                AnimalType.Ant => "AntPortrait",
-                AnimalType.Monkey => "MonkeyPortrait",
-                AnimalType.Tiger => "TigerPortrait",
-                AnimalType.Eagle => "EaglePortrait",
-                _ => string.Empty
-            };
-            animalPortraits[index] = Resources.Load<Texture2D>("CharacterConcepts/" + assetName);
+            animalPortraits[index] = AnimalPreviewRenderer.Create(type, 192);
             return animalPortraits[index];
         }
 
@@ -469,6 +487,11 @@ namespace AnimalBattleRoyale
 
             float centerX = viewWidth * 0.5f;
             float centerY = viewHeight * 0.5f;
+            if (LocalPlayer != null && LocalPlayer.TryGetRangedAimViewportPosition(out Vector2 aimViewport))
+            {
+                centerX = aimViewport.x * viewWidth;
+                centerY = (1f - aimViewport.y) * viewHeight;
+            }
             GUI.DrawTexture(new Rect(centerX - 14f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(centerX + 6f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(centerX - 1f, centerY - 14f, 2f, 8f), Texture2D.whiteTexture);
@@ -621,6 +644,19 @@ namespace AnimalBattleRoyale
             Rect panel = new Rect((viewWidth - width) * 0.5f, viewHeight * 0.5f + 72f, width, 36f);
             DrawCartoonPanel(panel, new Color(0.025f, 0.045f, 0.048f, 0.92f), new Color(0.32f, 0.72f, 0.62f, 0.95f), 1f);
             GUI.Label(panel, text, centeredStyle);
+        }
+
+        private void DrawOpeningCountdown()
+        {
+            int seconds = Mathf.Max(1, Mathf.CeilToInt(OpeningSecondsRemaining));
+            float width = Mathf.Min(510f, viewWidth - 48f);
+            Rect panel = new Rect((viewWidth - width) * 0.5f, viewHeight * 0.15f, width, 92f);
+            DrawCartoonPanel(panel, new Color(0.025f, 0.065f, 0.05f, 0.96f),
+                new Color(0.38f, 0.95f, 0.59f, 1f), 2f);
+            GUI.Label(new Rect(panel.x + 18f, panel.y + 9f, panel.width - 36f, 30f),
+                "EXPLORE A CLAREIRA", resultStyle);
+            GUI.Label(new Rect(panel.x + 18f, panel.y + 42f, panel.width - 36f, 35f),
+                $"COMBATE LIBERADO EM {seconds}  •  NENHUM DANO", centeredStyle);
         }
 
         private void DrawLowHealthVignette()

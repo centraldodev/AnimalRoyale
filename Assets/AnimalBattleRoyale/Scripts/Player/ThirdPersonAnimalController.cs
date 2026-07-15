@@ -1,9 +1,12 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AnimalBattleRoyale
 {
     [RequireComponent(typeof(CharacterController))]
     [RequireComponent(typeof(Health))]
+    [RequireComponent(typeof(AnimalOrientationStabilizer))]
     public sealed class ThirdPersonAnimalController : MonoBehaviour
     {
         [SerializeField] private AnimalType animalType = AnimalType.Tiger;
@@ -11,17 +14,11 @@ namespace AnimalBattleRoyale
         [SerializeField] private float rotationSpeed = 14f;
         [SerializeField] private float gravity = -24f;
 
-        private const float MaxMobilityEnergy = 100f;
-        private const float MobilityRechargeDuration = 15f;
-        private const float EagleFlightDrainPerSecond = 4.5f;
-        private const float EagleMinimumTakeoffEnergy = 6f;
-        private const float MonkeyVineLeapEnergyCost = 20f;
-        private const float MonkeyAirJumpEnergyCost = 20f;
-        private const float MonkeyVineChainCooldown = 0.14f;
-        private const int MonkeyMaxAirJumps = 5;
         private const int MaxRangedAmmo = 12;
         private const float DefeatedCleanupDelay = 1.5f;
 
+        private readonly Collider[] combatHits = new Collider[64];
+        private readonly HashSet<Health> abilityHitTargets = new HashSet<Health>();
         private CharacterController characterController;
         private Health health;
         private AnimalStats stats;
@@ -31,132 +28,113 @@ namespace AnimalBattleRoyale
         private Vector3 verticalVelocity;
         private Vector3 extraVelocity;
         private Vector3 aiMoveDirection;
+        private Vector3 aiAttackDirection;
         private bool aiSprint;
         private bool aiAttack;
         private bool aiRangedAttack;
         private int aiAbilitySlot = -1;
         private readonly float[] nextPowerTimes = new float[3];
         private float nextBasicAttackTime;
-        private float burrowUntil;
-        private float antFuryUntil;
-        private float tigerPounceUntil;
-        private float tigerClawComboUntil;
-        private float eagleDiveUntil;
-        private float climbUntil;
-        private float flightUntil;
-        private float monkeyFuryUntil;
         private float slowUntil;
         private float slowMultiplier = 1f;
-        private float nextDashDamage;
-        private float mobilityEnergy = MaxMobilityEnergy;
-        private int rangedAmmo = MaxRangedAmmo;
-        private int monkeyAirJumpsUsed;
+        private float resistanceUntil;
+        private float abilityDashUntil;
+        private float nextAbilityDamage;
+        private float abilityDashSpeed;
+        private float abilityDamage;
+        private float abilityKnockback;
+        private float abilityRadius;
+        private float abilitySlow;
         private Vector3 dashDirection;
+        private Color abilityColor;
+        private int rangedAmmo = MaxRangedAmmo;
         private int lastPowerSlot = -1;
         private bool defeated;
-        private bool tunnelControllerDisabled;
-        private Transform heldVine;
-        private Transform pendingVineGrab;
-        private float pendingVineGrabAllowedAt;
-        private float pendingVineGrabExpiresAt;
-        private float nextVineChainTime;
-        private bool leftHandVineGrip = true;
-        private bool vineControllerDisabled;
-        private readonly Collider[] combatHits = new Collider[64];
-        private readonly RaycastHit[] surfaceHits = new RaycastHit[32];
 
         public AnimalType AnimalType => animalType;
-        public AnimalStats Stats
-        {
-            get
-            {
-                EnsureRuntimeReferences();
-                return stats;
-            }
-        }
+        public AnimalStats Stats { get { EnsureRuntimeReferences(); return stats; } }
         public Health Health => health;
         public bool IsLocalPlayer => isLocalPlayer;
         public bool IsDefeated => defeated;
-        public bool IsFlying => Time.time < flightUntil;
-        public bool IsBurrowed => Time.time < burrowUntil || AntTunnelEntrance.IsTraveling(this);
-        public bool IsInAntTunnel => AntTunnelEntrance.IsTraveling(this);
-        public bool IsHangingVine => heldVine != null;
-        public bool IsWading => !IsFlying && !IsClimbing && !IsBurrowed
-                                && CentralLake.Instance != null && CentralLake.Instance.Contains(transform.position);
-        /// <summary>Deep water: the animal floats and paddles instead of walking the lakebed.</summary>
-        public bool IsSwimming => IsWading
-                                  && transform.position.y < CentralLake.Instance.SurfaceHeight - stats.ControllerHeight * 0.35f;
-        public float TunnelSecondsRemaining => AntTunnelEntrance.SecondsRemaining(this);
-        public bool UsesMobilityEnergy => animalType == AnimalType.Eagle || animalType == AnimalType.Monkey;
-        public float MobilityEnergy => mobilityEnergy;
-        public float MaxMobilityEnergyValue => MaxMobilityEnergy;
-        public string MobilityEnergyName => animalType == AnimalType.Eagle ? "ESTAMINA DE VOO" : "ESTAMINA DE SALTO";
-        public bool NeedsMobilityEnergy => UsesMobilityEnergy && mobilityEnergy < MaxMobilityEnergy - 0.5f;
-        public bool IsMobilityRecharging => NeedsMobilityEnergy && !IsFlying;
-        public float MobilityRechargeSecondsRemaining => IsMobilityRecharging
-            ? (MaxMobilityEnergy - mobilityEnergy) / (MaxMobilityEnergy / MobilityRechargeDuration)
-            : 0f;
+        public bool IsFlying => false;
+        public bool IsBurrowed => false;
+        public bool IsInAntTunnel => false;
+        public bool IsHangingVine => false;
+        public bool IsWading => CentralLake.Instance != null && CentralLake.Instance.Contains(transform.position);
+        public bool IsSwimming => IsWading && transform.position.y < CentralLake.Instance.SurfaceHeight - stats.ControllerHeight * 0.35f;
+        public float TunnelSecondsRemaining => 0f;
+        public bool UsesMobilityEnergy => false;
+        public float MobilityEnergy => 0f;
+        public float MaxMobilityEnergyValue => 0f;
+        public string MobilityEnergyName => string.Empty;
+        public bool NeedsMobilityEnergy => false;
+        public bool IsMobilityRecharging => false;
+        public float MobilityRechargeSecondsRemaining => 0f;
         public int RangedAmmo => rangedAmmo;
         public int MaxRangedAmmoValue => MaxRangedAmmo;
         public bool NeedsRangedAmmo => rangedAmmo < MaxRangedAmmo;
+        public RangedSupplyKind CompatibleRangedSupply => RangedSupplyKind.NaturalAmmo;
+        public int LastPowerSlot => lastPowerSlot;
+
+        public Vector3 ViewAimDirection
+        {
+            get
+            {
+                if (cameraTransform == null) return transform.forward;
+                ThirdPersonCamera thirdPersonCamera = cameraTransform.GetComponent<ThirdPersonCamera>();
+                Vector3 direction = thirdPersonCamera != null ? thirdPersonCamera.AimDirection : cameraTransform.forward;
+                return direction.sqrMagnitude > 0.001f ? direction.normalized : transform.forward;
+            }
+        }
+
         public string RangedAmmoName => animalType switch
         {
-            AnimalType.Monkey => "BANANAS",
-            AnimalType.Ant => "PEDRAS",
-            AnimalType.Tiger => "PEDRAS",
-            AnimalType.Eagle => "CARGAS",
-            _ => "MUNIÇÃO"
+            AnimalType.Deer => "BOLOTAS",
+            AnimalType.Chicken => "OVOS",
+            AnimalType.Dog => "OSSOS",
+            AnimalType.Cat => "NOVELOS",
+            AnimalType.Penguin => "BOLAS DE NEVE",
+            _ => "CARGAS"
         };
+
         public string RangedAttackName => animalType switch
         {
-            AnimalType.Monkey => "ARREMESSO DE BANANA",
-            AnimalType.Ant => "ARREMESSO DE PEDRA",
-            AnimalType.Tiger => "ARREMESSO DE PEDRA",
-            AnimalType.Eagle => "BOMBARDEIO",
+            AnimalType.Tiger => "ONDA DE GARRAS",
+            AnimalType.Deer => "DISPARO DE BOLOTA",
+            AnimalType.Horse => "PEDRA DE CASCO",
+            AnimalType.Chicken => "ARREMESSO DE OVO",
+            AnimalType.Dog => "ARREMESSO DE OSSO",
+            AnimalType.Cat => "NOVELO VELOZ",
+            AnimalType.Penguin => "BOLA DE NEVE",
             _ => "ATAQUE À DISTÂNCIA"
         };
-        public RangedSupplyKind CompatibleRangedSupply => animalType switch
-        {
-            AnimalType.Monkey => RangedSupplyKind.BananaBunch,
-            AnimalType.Eagle => RangedSupplyKind.EagleNest,
-            _ => RangedSupplyKind.StonePile
-        };
-        public int LastPowerSlot => lastPowerSlot;
+
         public string LastPowerName => Stats.AbilityNames != null && lastPowerSlot >= 0 && lastPowerSlot < Stats.AbilityNames.Length
-            ? Stats.AbilityNames[lastPowerSlot]
-            : "Ataque base";
+            ? Stats.AbilityNames[lastPowerSlot] : "Ataque base";
+
         public string BasicActionName => animalType switch
         {
-            AnimalType.Ant => "Mordida",
-            AnimalType.Monkey => "Soco Duplo",
-            AnimalType.Tiger => Time.time < tigerClawComboUntil ? "Patada Aérea de Garras" : "Patada de Garras",
-            AnimalType.Eagle => "Golpe de Garras",
+            AnimalType.Tiger => "Patada de Garras",
+            AnimalType.Deer => "Golpe de Chifres",
+            AnimalType.Horse => "Coice",
+            AnimalType.Chicken => "Bicada",
+            AnimalType.Dog => "Mordida",
+            AnimalType.Cat => "Arranhão",
+            AnimalType.Penguin => "Golpe de Nadadeira",
             _ => "Ataque"
         };
 
-        public float AbilityCooldownRemainingFor(int slot)
-        {
-            if (animalType == AnimalType.Monkey && slot == 0 && IsHangingVine)
-            {
-                return Mathf.Max(0f, nextVineChainTime - Time.time);
-            }
-            return slot < 0 || slot >= nextPowerTimes.Length ? 0f : Mathf.Max(0f, nextPowerTimes[slot] - Time.time);
-        }
+        public float AbilityCooldownRemainingFor(int slot) => slot < 0 || slot >= nextPowerTimes.Length
+            ? 0f : Mathf.Max(0f, nextPowerTimes[slot] - Time.time);
 
         private void Awake()
         {
             characterController = GetComponent<CharacterController>();
             health = GetComponent<Health>();
-            ApplyAnimal(animalType, true);
+            stats = AnimalDefinition.Get(animalType);
         }
 
-        private void OnEnable()
-        {
-            // Unity can preserve the live GameObject while clearing non-serialized
-            // runtime fields after a script reload in Play Mode. Restore those caches
-            // so movement and the HUD continue working without restarting the match.
-            EnsureRuntimeReferences();
-        }
+        private void OnEnable() => EnsureRuntimeReferences();
 
         private void EnsureRuntimeReferences()
         {
@@ -168,25 +146,60 @@ namespace AnimalBattleRoyale
 
         private void Start()
         {
+            if (transform.Find("VisualRoot") == null) ApplyAnimal(animalType, true);
             if (isLocalPlayer && Camera.main != null) cameraTransform = Camera.main.transform;
             SnapToTerrain(jungle != null ? jungle : FindAnyObjectByType<JungleGenerator>());
         }
 
         private void Update()
         {
-            AntTunnelEntrance.Tick(this);
-            UpdateVineHang();
-            UpdatePendingVineGrab();
-            UpdateTunnelCollisionState();
-            UpdateBurrowVisual();
             if (defeated || health.IsDead) return;
+            if (BattleRoyaleManager.Instance != null && BattleRoyaleManager.Instance.MatchFinished)
+            {
+                visualMotion?.SetLocomotion(false, false, false);
+                return;
+            }
             RecoverIfBelowTerrain();
             if (isLocalPlayer) HandleLocalInput();
             else HandleAIInput();
-            RechargeMobilityEnergy();
         }
 
-        /// <summary>Places the CharacterController's feet a small distance above the terrain.</summary>
+        public void Initialize(AnimalType type, bool localPlayer, Transform cameraReference = null)
+        {
+            isLocalPlayer = localPlayer;
+            cameraTransform = cameraReference;
+            ApplyAnimal(type, true);
+        }
+
+        public void SetCamera(Transform cameraReference) => cameraTransform = cameraReference;
+
+        public void SetAIInput(Vector3 moveDirection, Vector3 attackDirection, bool sprint, bool attack, bool rangedAttack, int abilitySlot)
+        {
+            aiMoveDirection = Vector3.ClampMagnitude(moveDirection, 1f);
+            aiAttackDirection = Vector3.ClampMagnitude(attackDirection, 1f);
+            aiSprint = sprint;
+            aiAttack = attack;
+            aiRangedAttack = rangedAttack;
+            aiAbilitySlot = abilitySlot;
+        }
+
+        public void ApplyAnimal(AnimalType type, bool refillHealth)
+        {
+            animalType = type;
+            stats = AnimalDefinition.Get(type);
+            EnsureRuntimeReferences();
+            characterController.radius = stats.ControllerRadius;
+            characterController.height = stats.ControllerHeight;
+            characterController.center = new Vector3(0f, stats.ControllerHeight * 0.5f, 0f);
+            characterController.stepOffset = Mathf.Min(0.35f, stats.ControllerHeight * 0.25f);
+            characterController.skinWidth = 0.04f;
+            Transform visualRoot = AnimalVisualFactory.Build(transform, type, stats.MainColor, stats.VisualScale);
+            visualMotion = visualRoot != null ? visualRoot.GetComponent<AnimalVisualMotion>() : null;
+            rangedAmmo = MaxRangedAmmo;
+            health.Initialize(stats.MaxHealth, this);
+            if (!refillHealth) health.ReconfigureMaxHealth(stats.MaxHealth, false);
+        }
+
         public void SnapToTerrain(JungleGenerator terrain, float clearance = 0.12f)
         {
             if (terrain == null) return;
@@ -201,229 +214,74 @@ namespace AnimalBattleRoyale
 
         private void RecoverIfBelowTerrain()
         {
-            if (jungle == null || IsFlying || IsClimbing || IsBurrowed) return;
+            if (jungle == null) return;
             Vector3 safePosition = jungle.GetGroundPosition(transform.position);
-            if (transform.position.y < safePosition.y - 0.5f)
-            {
-                SnapToTerrain(jungle);
-            }
-        }
-
-        public void Initialize(AnimalType type, bool localPlayer, Transform cameraReference = null)
-        {
-            isLocalPlayer = localPlayer;
-            cameraTransform = cameraReference;
-            ApplyAnimal(type, true);
-        }
-
-        public void SetCamera(Transform cameraReference) => cameraTransform = cameraReference;
-
-        public void SetAIInput(Vector3 moveDirection, bool sprint, bool attack, bool rangedAttack, int abilitySlot)
-        {
-            aiMoveDirection = Vector3.ClampMagnitude(moveDirection, 1f);
-            aiSprint = sprint;
-            aiAttack = attack;
-            aiRangedAttack = rangedAttack;
-            aiAbilitySlot = abilitySlot;
-        }
-
-        public void SetDefeated()
-        {
-            if (defeated) return;
-            defeated = true;
-            AntTunnelEntrance.CancelTravel(this);
-            ReleaseVine(Vector3.zero, false);
-            pendingVineGrab = null;
-            flightUntil = 0f;
-            climbUntil = 0f;
-            tigerPounceUntil = 0f;
-            eagleDiveUntil = 0f;
-            verticalVelocity = Vector3.zero;
-            extraVelocity = Vector3.zero;
-            aiMoveDirection = Vector3.zero;
-            aiAttack = false;
-            aiRangedAttack = false;
-            aiAbilitySlot = -1;
-
-            // The meat drop is spawned by the match manager; this animal only leaves a
-            // quick transformation burst and then disappears from the arena.
-            SnapToTerrain(jungle != null ? jungle : FindAnyObjectByType<JungleGenerator>());
-            if (characterController != null) characterController.enabled = false;
-            DisableAllColliders();
-            Transform visual = transform.Find("VisualRoot");
-            if (visual != null)
-            {
-                visualMotion?.Freeze();
-                visual.gameObject.SetActive(false);
-            }
-            AttackVfx.CreateBurst(transform.position + Vector3.up * (stats.ControllerHeight * 0.45f), new Color(0.92f, 0.08f, 0.045f), 1.9f);
-
-            Destroy(gameObject, DefeatedCleanupDelay);
-        }
-
-        private void DisableAllColliders()
-        {
-            Collider[] colliders = GetComponentsInChildren<Collider>();
-            foreach (Collider collider in colliders)
-            {
-                if (collider != null) collider.enabled = false;
-            }
-        }
-
-        public void ApplyAnimal(AnimalType type, bool refillHealth)
-        {
-            animalType = type;
-            stats = AnimalDefinition.Get(type);
-            if (characterController == null) characterController = GetComponent<CharacterController>();
-            if (health == null) health = GetComponent<Health>();
-            characterController.radius = stats.ControllerRadius;
-            characterController.height = stats.ControllerHeight;
-            characterController.center = new Vector3(0f, stats.ControllerHeight * 0.5f, 0f);
-            characterController.stepOffset = Mathf.Min(0.35f, stats.ControllerHeight * 0.25f);
-            characterController.skinWidth = 0.04f;
-            AnimalVisualFactory.Build(transform, type, stats.MainColor, stats.VisualScale);
-            visualMotion = GetComponentInChildren<AnimalVisualMotion>();
-            mobilityEnergy = MaxMobilityEnergy;
-            rangedAmmo = MaxRangedAmmo;
-            health.Initialize(stats.MaxHealth, this);
-            if (!refillHealth) health.ReconfigureMaxHealth(stats.MaxHealth, false);
+            if (transform.position.y < safePosition.y - 0.5f) SnapToTerrain(jungle);
         }
 
         private void HandleLocalInput()
         {
             Vector3 movement = GetCameraRelativeDirection(GameInput.ReadMovement());
-            if (IsInAntTunnel)
-            {
-                AntTunnelEntrance.Navigate(this, movement);
-                return;
-            }
-            if (IsHangingVine)
-            {
-                if (GameInput.AbilityOnePressed() || GameInput.JumpPressed()) TryMonkeyVineChain(GetAttackDirection(movement));
-                if (GameInput.MeleeAttackPressed()) ReleaseVine(GetAttackDirection(movement), true);
-                if (GameInput.ConsumePressed() && !MissionNode.TryUseNearest(this) && !DiamondPickup.TryCollectNearest(this)
-                    && !RangedAmmoPickup.TryCollectNearest(this)) FoodPickup.TryConsumeNearest(this);
-                return;
-            }
-            if (animalType == AnimalType.Ant && GameInput.AbilityTwoPressed() && AntTunnelEntrance.TryEnter(this))
-            {
-                return;
-            }
-            SimulateMovement(movement, GameInput.SprintHeld(), GameInput.JumpPressed(), GameInput.JumpHeld(), GameInput.DescendHeld());
+            SimulateMovement(movement, GameInput.SprintHeld(), GameInput.JumpPressed());
             if (GameInput.RangedAttackPressed()) TryRangedAttack(GetRangedAttackDirection(movement));
             if (GameInput.MeleeAttackPressed()) TryBasicAttack(GetAttackDirection(movement));
+            if (GameInput.AbilityOnePressed()) TryUsePower(0, GetAttackDirection(movement));
             if (GameInput.ConsumePressed() && !MissionNode.TryUseNearest(this) && !DiamondPickup.TryCollectNearest(this)
                 && !RangedAmmoPickup.TryCollectNearest(this)) FoodPickup.TryConsumeNearest(this);
-            if (GameInput.AbilityOnePressed()) TryUsePower(0, GetAttackDirection(movement));
         }
 
         private void HandleAIInput()
         {
-            if (IsInAntTunnel)
-            {
-                AntTunnelEntrance.Navigate(this, aiMoveDirection);
-                return;
-            }
-            if (IsHangingVine)
-            {
-                if (aiAttack) ReleaseVine(aiMoveDirection, true);
-                aiAttack = false;
-                aiAbilitySlot = -1;
-                return;
-            }
-            SimulateMovement(aiMoveDirection, aiSprint, false, false, false);
+            SimulateMovement(aiMoveDirection, aiSprint, false);
             if (aiAttack)
             {
-                if (aiRangedAttack) TryRangedAttack(aiMoveDirection);
-                else TryBasicAttack(aiMoveDirection);
+                if (aiRangedAttack) TryRangedAttack(aiAttackDirection);
+                else TryBasicAttack(aiAttackDirection);
             }
-            if (aiAbilitySlot >= 0) TryUsePower(aiAbilitySlot, aiMoveDirection);
+            if (aiAbilitySlot >= 0) TryUsePower(aiAbilitySlot, aiAttackDirection.sqrMagnitude > 0.01f ? aiAttackDirection : aiMoveDirection);
             aiAttack = false;
             aiRangedAttack = false;
             aiAbilitySlot = -1;
         }
 
-        private void SimulateMovement(Vector3 direction, bool sprint, bool jumpPressed, bool jumpHeld, bool descendHeld)
+        private void SimulateMovement(Vector3 direction, bool sprint, bool jumpPressed)
         {
-            visualMotion?.SetLocomotion(direction.sqrMagnitude > 0.01f, sprint, IsFlying || IsClimbing || !characterController.isGrounded);
             bool grounded = characterController.isGrounded;
-            if (grounded)
-            {
-                monkeyAirJumpsUsed = 0;
-                if (verticalVelocity.y < 0f) verticalVelocity.y = -2f;
-            }
+            bool abilityDashing = Time.time < abilityDashUntil;
+            visualMotion?.SetLocomotion(direction.sqrMagnitude > 0.01f || abilityDashing, sprint || abilityDashing, !grounded);
+            if (grounded && verticalVelocity.y < 0f) verticalVelocity.y = -2f;
+            if (jumpPressed && grounded) verticalVelocity.y = stats.JumpForce;
 
-            if (animalType == AnimalType.Eagle && jumpPressed && !IsFlying && CanStartEagleFlight())
-            {
-                BeginEagleFlight(5.5f);
-            }
-            else if (jumpPressed && grounded && !IsFlying && !IsClimbing && !IsBurrowed)
-            {
-                verticalVelocity.y = stats.JumpForce;
-            }
-            else if (animalType == AnimalType.Monkey && jumpPressed && !grounded && monkeyAirJumpsUsed < MonkeyMaxAirJumps && TrySpendMobilityEnergy(MonkeyAirJumpEnergyCost))
-            {
-                monkeyAirJumpsUsed++;
-                verticalVelocity.y = 8.8f;
-                extraVelocity += transform.forward * 2.8f;
-                AttackVfx.CreateSlash(transform.position + Vector3.up, transform.forward, new Color(0.42f, 1f, 0.25f), 1.8f);
-            }
-
-            if (direction.sqrMagnitude > 0.01f)
+            if (direction.sqrMagnitude > 0.01f && !abilityDashing)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(direction, Vector3.up);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
             }
 
             float speed = sprint ? stats.SprintSpeed : stats.MoveSpeed;
-            if (IsBurrowed) speed *= 0.58f;
-            if (Time.time < antFuryUntil || Time.time < monkeyFuryUntil) speed *= 1.2f;
             if (Time.time < slowUntil) speed *= slowMultiplier;
             if (IsSwimming) speed *= 0.72f;
             else if (IsWading && !(ForestMissionDirector.Instance != null && ForestMissionDirector.Instance.LakePassageOpen))
                 speed *= CentralLake.Instance.MovementMultiplier;
-            Vector3 horizontal = direction * speed;
-            if (Time.time < tigerPounceUntil || Time.time < eagleDiveUntil) horizontal = dashDirection * 19f;
 
-            DrainFlightEnergy();
-
-            if (IsFlying || IsClimbing)
+            Vector3 horizontal = abilityDashing ? dashDirection * abilityDashSpeed : direction * speed;
+            if (abilityDashing && Time.time >= nextAbilityDamage)
             {
-                float verticalInput = 0f;
-                if (jumpHeld) verticalInput += 1f;
-                if (descendHeld) verticalInput -= 1f;
-                verticalVelocity.y = Mathf.MoveTowards(verticalVelocity.y, verticalInput * 5.5f, 18f * Time.deltaTime);
-                if (IsFlying) horizontal *= 1.35f;
+                nextAbilityDamage = Time.time + 0.24f;
+                DamageArea(abilityRadius, abilityDamage, abilityKnockback, dashDirection, abilityColor, abilitySlow);
             }
-            else if (IsSwimming)
+
+            if (IsSwimming)
             {
-                // Buoyancy: every animal floats with the head above the water and
-                // paddles toward the shore or the portal ramp. Space gives a hop
-                // strong enough to leave the water at the edges.
                 float surfaceTarget = CentralLake.Instance.SurfaceHeight - stats.ControllerHeight * 0.55f;
                 float lift = Mathf.Clamp((surfaceTarget - transform.position.y) * 4.5f, -3f, 7f);
                 verticalVelocity.y = Mathf.MoveTowards(verticalVelocity.y, lift, 30f * Time.deltaTime);
-                if (jumpPressed) verticalVelocity.y = stats.JumpForce * 0.8f;
             }
             else verticalVelocity.y += gravity * Time.deltaTime;
 
             extraVelocity = Vector3.Lerp(extraVelocity, Vector3.zero, 4.5f * Time.deltaTime);
             characterController.Move((horizontal + verticalVelocity + extraVelocity) * Time.deltaTime);
-
-            if (IsFlying && characterController.isGrounded && verticalVelocity.y < 0f)
-            {
-                flightUntil = 0f;
-                verticalVelocity.y = -2f;
-            }
-
-            if (Time.time < eagleDiveUntil && Time.time >= nextDashDamage)
-            {
-                nextDashDamage = Time.time + 0.38f;
-                DamageArea(1.75f, 19f, 10f, dashDirection, new Color(0.8f, 0.95f, 1f));
-            }
         }
-
-        private bool IsClimbing => Time.time < climbUntil;
 
         private Vector3 GetCameraRelativeDirection(Vector2 input)
         {
@@ -435,198 +293,152 @@ namespace AnimalBattleRoyale
             return Vector3.ClampMagnitude(forward.normalized * input.y + right.normalized * input.x, 1f);
         }
 
-        private Vector3 GetAttackDirection(Vector3 movementDirection)
-        {
-            return movementDirection.sqrMagnitude > 0.01f ? movementDirection.normalized : transform.forward;
-        }
+        private Vector3 GetAttackDirection(Vector3 movementDirection) => movementDirection.sqrMagnitude > 0.01f
+            ? movementDirection.normalized : transform.forward;
 
-        private Vector3 GetRangedAttackDirection(Vector3 movementDirection)
-        {
-            if (cameraTransform != null)
-            {
-                Vector3 aimPoint = cameraTransform.position + cameraTransform.forward * 60f;
-                RaycastHit[] hits = Physics.RaycastAll(cameraTransform.position, cameraTransform.forward, 60f,
-                    ~0, QueryTriggerInteraction.Ignore);
-                float nearestDistance = float.MaxValue;
-                foreach (RaycastHit hit in hits)
-                {
-                    if (hit.collider == null) continue;
-                    Transform hitTransform = hit.collider.transform;
-                    if (hitTransform == transform || hitTransform.IsChildOf(transform) || hit.distance >= nearestDistance) continue;
-                    nearestDistance = hit.distance;
-                    aimPoint = hit.point;
-                }
+        private Vector3 GetRangedAttackDirection(Vector3 movementDirection) => cameraTransform != null
+            ? ViewAimDirection : GetAttackDirection(movementDirection);
 
-                Vector3 launchPoint = transform.position + Vector3.up * (stats.ControllerHeight * 0.62f + 0.3f);
-                Vector3 aim = aimPoint - launchPoint;
-                if (aim.sqrMagnitude > 0.01f) return aim.normalized;
-            }
-            return movementDirection.sqrMagnitude > 0.01f ? movementDirection.normalized : transform.forward;
+        public bool TryGetRangedAimViewportPosition(out Vector2 viewportPosition)
+        {
+            viewportPosition = new Vector2(0.5f, 0.5f);
+            if (cameraTransform == null || cameraTransform.GetComponent<Camera>() is not Camera aimCamera) return false;
+            Vector3 launchPoint = transform.position + Vector3.up * (stats.ControllerHeight * 0.62f + 0.3f);
+            Vector3 projected = aimCamera.WorldToViewportPoint(launchPoint + ViewAimDirection * 60f);
+            if (projected.z <= 0f) return false;
+            viewportPosition = new Vector2(Mathf.Clamp(projected.x, 0.06f, 0.94f), Mathf.Clamp(projected.y, 0.1f, 0.92f));
+            return true;
         }
 
         private void TryRangedAttack(Vector3 direction)
         {
-            if (IsBurrowed || IsHangingVine || Time.time < nextBasicAttackTime || rangedAmmo <= 0) return;
+            if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return;
+            if (Time.time < nextBasicAttackTime || rangedAmmo <= 0) return;
             direction = direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
             rangedAmmo--;
             nextBasicAttackTime = Time.time + RangedAttackCooldown();
             Vector3 flatDirection = new Vector3(direction.x, 0f, direction.z);
-            if (flatDirection.sqrMagnitude > 0.01f)
-            {
-                transform.rotation = Quaternion.LookRotation(flatDirection.normalized, Vector3.up);
-            }
-            visualMotion?.TriggerAttack();
+            if (flatDirection.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(flatDirection.normalized, Vector3.up);
+            visualMotion?.TriggerAttack(false);
             RangedProjectile.Fire(this, direction);
         }
 
-        private float RangedAttackCooldown()
+        private float RangedAttackCooldown() => animalType switch
         {
-            return animalType switch
-            {
-                AnimalType.Eagle => 0.68f,
-                AnimalType.Monkey => 0.72f,
-                AnimalType.Ant => 0.86f,
-                AnimalType.Tiger => 0.92f,
-                _ => 0.8f
-            };
-        }
+            AnimalType.Chicken => 0.6f,
+            AnimalType.Cat => 0.64f,
+            AnimalType.Dog => 0.7f,
+            AnimalType.Deer => 0.76f,
+            AnimalType.Penguin => 0.78f,
+            AnimalType.Tiger => 0.86f,
+            AnimalType.Horse => 0.9f,
+            _ => 0.8f
+        };
 
         private void TryBasicAttack(Vector3 direction)
         {
-            if (IsBurrowed || IsHangingVine || Time.time < nextBasicAttackTime) return;
+            if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return;
+            if (Time.time < nextBasicAttackTime) return;
             direction = direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
-            nextBasicAttackTime = Time.time + BasicCooldown();
-            ForestMissionDirector.Instance?.NotifyTigerAttack(this);
+            nextBasicAttackTime = Time.time + stats.AttackCooldown;
             CombatFeedback.PlayBasic(animalType, transform.position);
             visualMotion?.TriggerAttack();
-            switch (animalType)
-            {
-                case AnimalType.Ant:
-                    PerformMeleeAttack(direction, stats.AttackDamage, stats.AttackRange, 16f, new Color(0.9f, 0.26f, 0.06f), 1.45f);
-                    AttackVfx.CreateSlash(transform.position + Vector3.up * 0.55f, direction, new Color(0.48f, 0.12f, 0.04f), 1.05f);
-                    break;
-                case AnimalType.Monkey:
-                    PerformMeleeAttack(direction, stats.AttackDamage, stats.AttackRange, 9f, new Color(1f, 0.76f, 0.15f), 1.55f);
-                    break;
-                case AnimalType.Tiger:
-                    bool aerialCombo = Time.time < tigerClawComboUntil;
-                    float tigerDamage = stats.AttackDamage * (aerialCombo ? 1.2f : 1f);
-                    PerformMeleeAttack(direction, tigerDamage, stats.AttackRange, aerialCombo ? 15f : 10f,
-                        new Color(1f, 0.28f, 0.04f), aerialCombo ? 2.25f : 1.9f);
-                    CreateTigerClawMarks(direction, aerialCombo);
-                    if (aerialCombo) tigerClawComboUntil = 0f;
-                    break;
-                case AnimalType.Eagle:
-                    PerformMeleeAttack(direction, stats.AttackDamage, stats.AttackRange, 7f, new Color(0.8f, 0.95f, 1f), 1.4f);
-                    break;
-            }
+            StartCoroutine(ResolveBasicAttackAfterDelay(direction, visualMotion != null ? visualMotion.MeleeImpactDelay : 0f));
         }
 
-        private float BasicCooldown() => stats.AttackCooldown;
+        private IEnumerator ResolveBasicAttackAfterDelay(Vector3 direction, float delay)
+        {
+            if (delay > 0f) yield return new WaitForSeconds(delay);
+            if (IsDefeated || health.IsDead) yield break;
+            Color color = Color.Lerp(stats.MainColor, Color.white, 0.24f);
+            PerformMeleeAttack(direction, stats.AttackDamage, stats.AttackRange, MeleeKnockback(), color, 1.65f);
+        }
+
+        private float MeleeKnockback() => animalType switch
+        {
+            AnimalType.Horse => 15f,
+            AnimalType.Deer => 13f,
+            AnimalType.Tiger => 11f,
+            AnimalType.Penguin => 10f,
+            _ => 8f
+        };
 
         private void TryUsePower(int slot, Vector3 direction)
         {
-            if (slot != 0 || IsBurrowed || IsHangingVine || Time.time < nextPowerTimes[0]) return;
-            if (animalType == AnimalType.Monkey && !VineAnchor.IsLookedAtBy(this)) return;
-            if (animalType == AnimalType.Monkey && slot == 0 && !HasMobilityEnergy(MonkeyVineLeapEnergyCost)) return;
-            nextPowerTimes[slot] = Time.time + stats.AbilityCooldowns[slot];
-            lastPowerSlot = slot;
+            if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return;
+            if (slot != 0 || Time.time < nextPowerTimes[0]) return;
+            nextPowerTimes[0] = Time.time + stats.AbilityCooldowns[0];
+            lastPowerSlot = 0;
             direction = direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
-            CombatFeedback.PlayPower(animalType, slot, transform.position);
-            AttackVfx.CreatePower(animalType, slot, transform.position, direction);
-            visualMotion?.TriggerPower(slot);
+            CombatFeedback.PlayPower(animalType, 0, transform.position);
+            AttackVfx.CreatePower(animalType, 0, transform.position, direction);
+            visualMotion?.TriggerPower(0);
+            ForestMissionDirector.Instance?.NotifyAbilityUsed(this);
+            UseAnimalAbility(direction);
+        }
+
+        private void UseAnimalAbility(Vector3 direction)
+        {
+            abilityHitTargets.Clear();
             switch (animalType)
             {
-                case AnimalType.Ant: UseAntPower(slot, direction); break;
-                case AnimalType.Monkey: UseMonkeyPower(slot, direction); break;
-                case AnimalType.Tiger: UseTigerPower(slot, direction); break;
-                case AnimalType.Eagle: UseEaglePower(slot, direction); break;
+                case AnimalType.Tiger:
+                    BeginDash(direction, 0.58f, 21f, 24f, 12f, 1.85f, 1f, new Color(1f, 0.28f, 0.04f));
+                    verticalVelocity.y = 7.5f;
+                    break;
+                case AnimalType.Deer:
+                    BeginDash(direction, 0.78f, 23f, 22f, 18f, 1.9f, 1f, new Color(0.88f, 0.64f, 0.28f));
+                    break;
+                case AnimalType.Horse:
+                    BeginDash(direction, 1.05f, 25f, 19f, 22f, 2.1f, 1f, new Color(0.72f, 0.44f, 0.2f));
+                    break;
+                case AnimalType.Chicken:
+                    verticalVelocity.y = 8.5f;
+                    DamageArea(4f, 14f, 14f, direction, new Color(1f, 0.82f, 0.22f), 0.62f);
+                    break;
+                case AnimalType.Dog:
+                    health.Heal(28f);
+                    DamageArea(3.6f, 12f, 16f, direction, new Color(0.35f, 0.78f, 1f), 0.78f);
+                    break;
+                case AnimalType.Cat:
+                    health.Heal(22f);
+                    resistanceUntil = Time.time + 4.5f;
+                    extraVelocity += direction * 9f;
+                    break;
+                case AnimalType.Penguin:
+                    BeginDash(direction, 0.95f, 20f, 16f, 12f, 2.2f, 0.55f, new Color(0.38f, 0.86f, 1f));
+                    break;
             }
         }
 
-        private void TryMonkeyVineChain(Vector3 direction)
+        private void BeginDash(Vector3 direction, float duration, float speed, float damage, float knockback,
+            float radius, float targetSlow, Color color)
         {
-            if (animalType != AnimalType.Monkey || Time.time < nextVineChainTime || !HasMobilityEnergy(MonkeyVineLeapEnergyCost)) return;
-            if (!VineAnchor.TryUseNearest(this, direction)) return;
-            nextVineChainTime = Time.time + MonkeyVineChainCooldown;
-            lastPowerSlot = 0;
-            CombatFeedback.PlayPower(animalType, 0, transform.position);
-            visualMotion?.TriggerPower(0);
-        }
-
-        private void UseAntPower(int slot, Vector3 direction)
-        {
-            if (slot == 0)
-            {
-                DamageArea(3.0f, 8f, 28f, direction, new Color(1f, 0.34f, 0.06f));
-            }
-        }
-
-        private void UseMonkeyPower(int slot, Vector3 direction)
-        {
-            if (slot == 0)
-            {
-                VineAnchor.TryUseNearest(this, direction);
-            }
-        }
-
-        private void UseTigerPower(int slot, Vector3 direction)
-        {
-            if (slot == 0)
-            {
-                dashDirection = direction;
-                tigerPounceUntil = Time.time + 0.62f;
-                tigerClawComboUntil = Time.time + 1.15f;
-                verticalVelocity.y = 10.5f;
-                extraVelocity += direction * 9f;
-                AttackVfx.CreateSlash(transform.position + Vector3.up, direction, new Color(1f, 0.3f, 0.05f), 3f);
-            }
-        }
-
-        private void UseEaglePower(int slot, Vector3 direction)
-        {
-            if (slot == 0)
-            {
-                StartEagleDive(direction);
-            }
-        }
-
-        private void StartEagleDive(Vector3 direction)
-        {
-            dashDirection = direction;
-            eagleDiveUntil = Time.time + 0.68f;
-            nextDashDamage = Time.time;
-            verticalVelocity.y = characterController.isGrounded ? 4.5f : -8f;
-            extraVelocity += direction * 9f;
-            AttackVfx.CreateSlash(transform.position + Vector3.up, direction, new Color(0.82f, 0.96f, 1f), 3.1f);
-        }
-
-        private void CreateTigerClawMarks(Vector3 direction, bool aerialCombo)
-        {
-            Vector3 right = Vector3.Cross(Vector3.up, direction).normalized;
-            float size = aerialCombo ? 2.25f : 1.65f;
-            for (int claw = -1; claw <= 1; claw++)
-            {
-                Vector3 origin = transform.position + Vector3.up * (0.65f + (claw + 1) * 0.1f) + right * claw * 0.20f;
-                AttackVfx.CreateSlash(origin, direction, new Color(1f, 0.72f, 0.22f), size - Mathf.Abs(claw) * 0.12f);
-            }
+            dashDirection = new Vector3(direction.x, 0f, direction.z).normalized;
+            if (dashDirection.sqrMagnitude < 0.01f) dashDirection = transform.forward;
+            transform.rotation = Quaternion.LookRotation(dashDirection, Vector3.up);
+            abilityDashUntil = Time.time + duration;
+            nextAbilityDamage = Time.time;
+            abilityDashSpeed = speed;
+            abilityDamage = damage;
+            abilityKnockback = knockback;
+            abilityRadius = radius;
+            abilitySlow = targetSlow;
+            abilityColor = color;
         }
 
         private void PerformMeleeAttack(Vector3 direction, float damage, float range, float knockback, Color color, float visualSize)
         {
             AttackVfx.CreateSlash(transform.position + Vector3.up * (stats.ControllerHeight * 0.58f), direction, color, visualSize);
-            int hitCount = Physics.OverlapSphereNonAlloc(
-                transform.position + Vector3.up * 0.8f + direction * (range * 0.48f),
+            int hitCount = Physics.OverlapSphereNonAlloc(transform.position + Vector3.up * 0.8f + direction * (range * 0.48f),
                 range, combatHits, ~0, QueryTriggerInteraction.Ignore);
-            const float dotThreshold = 0.18f;
             for (int i = 0; i < hitCount; i++)
             {
-                Collider hit = combatHits[i];
-                Health other = hit.GetComponentInParent<Health>();
-                if (other == null || other == health || other.IsDead || other.Owner != null && other.Owner.IsBurrowed) continue;
+                Health other = combatHits[i].GetComponentInParent<Health>();
+                if (other == null || other == health || other.IsDead) continue;
                 Vector3 targetDirection = other.transform.position - transform.position;
                 targetDirection.y = 0f;
-                if (targetDirection.sqrMagnitude > 0.01f && Vector3.Dot(direction, targetDirection.normalized) < dotThreshold) continue;
+                if (targetDirection.sqrMagnitude > 0.01f && Vector3.Dot(direction, targetDirection.normalized) < 0.18f) continue;
                 other.TakeDamage(damage, this);
                 CombatFeedback.NotifyHit(animalType, other.transform.position, damage);
                 if (other.Owner != null) other.Owner.ReceiveKnockback(targetDirection.normalized * knockback);
@@ -634,197 +446,34 @@ namespace AnimalBattleRoyale
             }
         }
 
-        private void DamageArea(float radius, float damage, float knockback, Vector3 direction, Color color)
+        private void DamageArea(float radius, float damage, float knockback, Vector3 direction, Color color, float targetSlow)
         {
             AttackVfx.CreateBurst(transform.position + Vector3.up * 0.2f, color, radius);
-            int hitCount = Physics.OverlapSphereNonAlloc(transform.position + Vector3.up, radius,
-                combatHits, ~0, QueryTriggerInteraction.Ignore);
+            int hitCount = Physics.OverlapSphereNonAlloc(transform.position + Vector3.up, radius, combatHits, ~0, QueryTriggerInteraction.Ignore);
             for (int i = 0; i < hitCount; i++)
             {
-                Collider hit = combatHits[i];
-                Health other = hit.GetComponentInParent<Health>();
-                if (other == null || other == health || other.IsDead || other.Owner != null && other.Owner.IsBurrowed) continue;
+                Health other = combatHits[i].GetComponentInParent<Health>();
+                if (other == null || other == health || other.IsDead || abilityHitTargets.Contains(other)) continue;
+                abilityHitTargets.Add(other);
                 other.TakeDamage(damage, this);
                 CombatFeedback.NotifyHit(animalType, other.transform.position, damage);
                 Vector3 push = other.transform.position - transform.position;
                 push.y = 0.15f;
-                if (other.Owner != null) other.Owner.ReceiveKnockback((push.sqrMagnitude > 0.01f ? push.normalized : direction) * knockback);
-            }
-        }
-
-        private void ApplySlowToTargets(float radius, float multiplier, float duration)
-        {
-            int hitCount = Physics.OverlapSphereNonAlloc(transform.position + Vector3.up, radius,
-                combatHits, ~0, QueryTriggerInteraction.Ignore);
-            for (int i = 0; i < hitCount; i++)
-            {
-                Collider hit = combatHits[i];
-                Health other = hit.GetComponentInParent<Health>();
-                if (other?.Owner == null || other == health || other.Owner.IsBurrowed) continue;
-                other.Owner.slowMultiplier = multiplier;
-                other.Owner.slowUntil = Time.time + duration;
-            }
-        }
-
-        private bool CanClimb()
-        {
-            Vector3 origin = transform.position + Vector3.up * (stats.ControllerHeight * 0.65f);
-            return Physics.Raycast(origin, transform.forward, 1.6f, ~0, QueryTriggerInteraction.Ignore);
-        }
-
-        private bool TryPerch()
-        {
-            if (cameraTransform == null) return false;
-            int hitCount = Physics.RaycastNonAlloc(new Ray(cameraTransform.position, cameraTransform.forward),
-                surfaceHits, 80f, ~0, QueryTriggerInteraction.Ignore);
-            RaycastHit hit = default;
-            bool foundSurface = false;
-            for (int i = 0; i < hitCount; i++)
-            {
-                RaycastHit candidate = surfaceHits[i];
-                if (candidate.transform == transform || candidate.transform.IsChildOf(transform)) continue;
-                if (!foundSurface || candidate.distance < hit.distance) { hit = candidate; foundSurface = true; }
-            }
-            if (!foundSurface) return false;
-            flightUntil = 0f;
-            verticalVelocity = Vector3.zero;
-            transform.position = hit.point + hit.normal * (characterController.height * 0.52f);
-            AttackVfx.CreateBurst(transform.position, new Color(0.85f, 0.95f, 1f), 1.7f);
-            return true;
-        }
-
-        private void UpdateBurrowVisual()
-        {
-            Transform visual = transform.Find("VisualRoot");
-            if (visual != null && visual.gameObject.activeSelf == IsBurrowed) visual.gameObject.SetActive(!IsBurrowed);
-        }
-
-        private void UpdateTunnelCollisionState()
-        {
-            bool shouldDisableController = IsInAntTunnel;
-            if (shouldDisableController == tunnelControllerDisabled || characterController == null) return;
-            characterController.enabled = !shouldDisableController;
-            tunnelControllerDisabled = shouldDisableController;
-        }
-
-        private void UpdateVineHang()
-        {
-            if (heldVine == null)
-            {
-                if (vineControllerDisabled && characterController != null && !defeated)
+                if (other.Owner != null)
                 {
-                    characterController.enabled = true;
-                    vineControllerDisabled = false;
+                    other.Owner.ReceiveKnockback((push.sqrMagnitude > 0.01f ? push.normalized : direction) * knockback);
+                    if (targetSlow < 0.99f) other.Owner.ApplySlow(targetSlow, 2.8f);
                 }
-                return;
             }
+        }
 
-            if (characterController != null && characterController.enabled)
-            {
-                characterController.enabled = false;
-                vineControllerDisabled = true;
-            }
-            transform.position = heldVine.position - Vector3.up * (stats.ControllerHeight * 0.92f);
-            verticalVelocity = Vector3.zero;
-            extraVelocity = Vector3.zero;
+        public void ApplySlow(float multiplier, float duration)
+        {
+            slowMultiplier = Mathf.Clamp(multiplier, 0.25f, 1f);
+            slowUntil = Mathf.Max(slowUntil, Time.time + Mathf.Max(0f, duration));
         }
 
         public void ReceiveKnockback(Vector3 force) => extraVelocity += force;
-
-        public bool TryGrabVine(Transform vine)
-        {
-            if (animalType != AnimalType.Monkey || vine == null || IsHangingVine) return false;
-            if (!TrySpendMobilityEnergy(MonkeyVineLeapEnergyCost)) return false;
-            return AttachToVine(vine);
-        }
-
-        private bool AttachToVine(Transform vine)
-        {
-            if (vine == null || IsHangingVine) return false;
-            pendingVineGrab = null;
-            heldVine = vine;
-            leftHandVineGrip = !leftHandVineGrip;
-            UpdateVineHang();
-            visualMotion?.SetVineHanging(true, leftHandVineGrip);
-            AttackVfx.CreateBurst(vine.position, new Color(0.35f, 1f, 0.45f), 1.25f);
-            return true;
-        }
-
-        public bool IsHoldingVine(Transform vine) => heldVine != null && heldVine == vine;
-
-        private void ReleaseVine(Vector3 direction, bool launch)
-        {
-            if (heldVine == null) return;
-            heldVine = null;
-            pendingVineGrab = null;
-            if (characterController != null && vineControllerDisabled && !defeated)
-            {
-                characterController.enabled = true;
-                vineControllerDisabled = false;
-            }
-            visualMotion?.SetVineHanging(false);
-            if (!launch) return;
-            direction.y = 0f;
-            direction = direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
-            verticalVelocity.y = 6.5f;
-            extraVelocity += direction * 10f;
-            AttackVfx.CreateSlash(transform.position + Vector3.up, direction, new Color(0.38f, 1f, 0.28f), 2.1f);
-        }
-
-        public bool TryLaunchFromVine(Vector3 direction)
-        {
-            if (animalType != AnimalType.Monkey || !TrySpendMobilityEnergy(MonkeyVineLeapEnergyCost)) return false;
-            direction = direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
-            verticalVelocity.y = 11.5f;
-            extraVelocity += direction * 16f;
-            AttackVfx.CreateSlash(transform.position + Vector3.up, direction, new Color(0.4f, 1f, 0.25f), 2.9f);
-            return true;
-        }
-
-        public bool TryLaunchToVine(Transform vine)
-        {
-            if (animalType != AnimalType.Monkey || vine == null || !TrySpendMobilityEnergy(MonkeyVineLeapEnergyCost)) return false;
-            Vector3 vinePosition = vine.position;
-            Vector3 toVine = vinePosition - transform.position;
-            toVine.y = 0f;
-            Vector3 direction = toVine.sqrMagnitude > 0.01f ? toVine.normalized : transform.forward;
-            if (heldVine != null) ReleaseVine(direction, false);
-            pendingVineGrab = vine;
-            pendingVineGrabAllowedAt = Time.time + 0.12f;
-            pendingVineGrabExpiresAt = Time.time + 1.4f;
-            float horizontalSpeed = Mathf.Clamp(toVine.magnitude * 1.05f, 16f, 26f);
-            verticalVelocity.y = Mathf.Max(verticalVelocity.y, 12.5f);
-            extraVelocity += direction * horizontalSpeed;
-            transform.rotation = Quaternion.LookRotation(direction, Vector3.up);
-            AttackVfx.CreateSlash(transform.position + Vector3.up, direction, new Color(0.4f, 1f, 0.25f), 3.2f);
-            return true;
-        }
-
-        private void UpdatePendingVineGrab()
-        {
-            if (pendingVineGrab == null || IsHangingVine) return;
-            if (Time.time > pendingVineGrabExpiresAt)
-            {
-                pendingVineGrab = null;
-                return;
-            }
-            if (Time.time < pendingVineGrabAllowedAt) return;
-            if ((pendingVineGrab.position - transform.position).sqrMagnitude > 3.4f * 3.4f) return;
-            AttachToVine(pendingVineGrab);
-        }
-
-        public void RestoreMobilityEnergy(float amount)
-        {
-            if (!UsesMobilityEnergy || amount <= 0f) return;
-            mobilityEnergy = Mathf.Min(MaxMobilityEnergy, mobilityEnergy + amount);
-        }
-
-        private void RechargeMobilityEnergy()
-        {
-            if (!IsMobilityRecharging) return;
-            float rechargePerSecond = MaxMobilityEnergy / MobilityRechargeDuration;
-            mobilityEnergy = Mathf.Min(MaxMobilityEnergy, mobilityEnergy + rechargePerSecond * Time.deltaTime);
-        }
 
         public bool TryRefillRangedAmmo(RangedSupplyKind supplyKind, int amount)
         {
@@ -834,56 +483,49 @@ namespace AnimalBattleRoyale
             return true;
         }
 
-        private bool HasMobilityEnergy(float amount) => !UsesMobilityEnergy || mobilityEnergy >= amount;
-
-        private bool TrySpendMobilityEnergy(float amount)
-        {
-            if (!UsesMobilityEnergy) return true;
-            if (mobilityEnergy < amount) return false;
-            mobilityEnergy -= amount;
-            return true;
-        }
-
-        private bool CanStartEagleFlight() => mobilityEnergy >= EagleMinimumTakeoffEnergy;
-
-        private void BeginEagleFlight(float lift)
-        {
-            flightUntil = float.PositiveInfinity;
-            verticalVelocity.y = lift;
-            AttackVfx.CreateBurst(transform.position, new Color(0.72f, 0.92f, 1f), 2.3f);
-        }
-
-        private void DrainFlightEnergy()
-        {
-            if (!IsFlying) return;
-            mobilityEnergy = Mathf.Max(0f, mobilityEnergy - EagleFlightDrainPerSecond * Time.deltaTime);
-            if (mobilityEnergy > 0f) return;
-            flightUntil = 0f;
-            verticalVelocity.y = Mathf.Min(verticalVelocity.y, -3.5f);
-            AttackVfx.CreateBurst(transform.position, new Color(0.45f, 0.58f, 0.68f), 1.2f);
-        }
+        public void RestoreMobilityEnergy(float amount) { }
+        public bool TryGrabVine(Transform vine) => false;
+        public bool IsHoldingVine(Transform vine) => false;
+        public bool TryLaunchFromVine(Vector3 direction) => false;
+        public bool TryLaunchToVine(Transform vine) => false;
 
         public void TeleportTo(Vector3 worldPosition)
         {
-            bool controllerWasEnabled = characterController.enabled;
+            bool wasEnabled = characterController.enabled;
             characterController.enabled = false;
             transform.position = worldPosition;
             verticalVelocity = Vector3.zero;
             extraVelocity = Vector3.zero;
-            characterController.enabled = controllerWasEnabled;
+            characterController.enabled = wasEnabled;
         }
 
         public float ModifyIncomingDamage(float damage)
         {
-            if (animalType == AnimalType.Ant) damage *= 0.88f;
-            if (IsBurrowed) damage *= 0.2f;
+            if (Time.time < resistanceUntil) damage *= 0.52f;
             return damage;
+        }
+
+        public void SetDefeated()
+        {
+            if (defeated) return;
+            defeated = true;
+            verticalVelocity = Vector3.zero;
+            extraVelocity = Vector3.zero;
+            if (characterController != null) characterController.enabled = false;
+            foreach (Collider collider in GetComponentsInChildren<Collider>()) if (collider != null) collider.enabled = false;
+            Transform visual = transform.Find("VisualRoot");
+            if (visual != null)
+            {
+                visualMotion?.Freeze();
+                visual.gameObject.SetActive(false);
+            }
+            AttackVfx.CreateBurst(transform.position + Vector3.up * (stats.ControllerHeight * 0.45f), new Color(0.92f, 0.08f, 0.045f), 1.9f);
+            Destroy(gameObject, DefeatedCleanupDelay);
         }
 
         private void OnDestroy()
         {
-            if (!Application.isPlaying) return;
-            BattleRoyaleManager.Instance?.HandleFighterDisconnected(this);
+            if (Application.isPlaying) BattleRoyaleManager.Instance?.HandleFighterDisconnected(this);
         }
     }
 }

@@ -42,20 +42,24 @@ def model(r,brown,cream,gold,black,white):
     dark = material('Eagle_DarkFeather', (.10, .04, .018))
     spark = material('Eagle_Spark', (1, 1, .96))
 
-    body = OrganicBody('EagleBody', resolution=0.035)
+    body = OrganicBody('EagleBody', resolution=0.030)
     # Streamlined teardrop torso with a keeled chest.
-    body.ball((0, .80, -.10), .27)
-    body.ball((0, .74, .05), .28)
-    body.ball((0, .64, .10), .21)
-    body.ball((0, .72, -.28), .21)
-    body.chain((0, .73, -.34), (0, .74, -.50), .16, .11, 4)
+    body.ball((0, .80, -.10), .32)
+    body.ball((0, .74, .05), .33)
+    body.ball((0, .64, .10), .25)
+    body.ball((0, .72, -.28), .24)
+    body.chain((0, .73, -.34), (0, .74, -.50), .18, .12, 5)
     # Shoulder roots so the feathered wings emerge from the plumage.
     body.ball((-.24, .93, -.02), .12)
     body.ball((.24, .93, -.02), .12)
     # Neck flowing into the head, brow and cheeks.
-    body.chain((0, .92, .12), (0, 1.10, .28), .17, .14, 4)
-    body.ball((0, 1.20, .34), .165)
-    body.ball((0, 1.28, .38), .10)
+    body.chain((0, .92, .12), (0, 1.08, .27), .21, .19, 5)
+    # Bald-eagle chick proportions: oversized rounded skull, full cheeks and
+    # short neck sitting on a compact teardrop body.
+    body.ball((0, 1.19, .34), .31)
+    body.ball((0, 1.31, .37), .25)
+    body.ball((-.13, 1.19, .40), .16)
+    body.ball((.13, 1.19, .40), .16)
     # Feathered thighs ("trousers").
     for s in (-1, 1):
         body.chain((s*.14, .60, .08), (s*.16, .34, .10), .11, .05, 4)
@@ -65,33 +69,44 @@ def model(r,brown,cream,gold,black,white):
     ))
 
     # Short, stout hooked beak.
-    tapered_limb('Beak', (0, 1.18, .46), (0, 1.16, .63), .065, .025, gold, r, 'Head')
-    claw('BeakHook', (0, 1.14, .645), .06, .02, gold, r, 'Head', pitch=2.8)
+    tapered_limb('Beak', (0, 1.18, .49), (0, 1.15, .70), .09, .032, gold, r, 'Head')
+    claw('BeakHook', (0, 1.12, .715), .085, .028, gold, r, 'Head', pitch=2.8)
 
     # Fierce eyes: layered eye plus an angled dark brow ridge.
     for s, label in ((-1, 'L'), (1, 'R')):
-        cartoon_eye('Eye_'+label, (s*.082, 1.255, .455), (s*.24, .03, 1.0),
-                    .036, r, 'Head', gold, gold, black, spark)
-        oriented_detail_sphere('Brow_'+label, (s*.082, 1.300, .452),
-                               (.044, .012, .032), (0, 0, -s*.28), dark, r, 'Head')
+        cartoon_eye('Eye_'+label, (s*.112, 1.29, .515), (s*.18, .02, 1.0),
+                    .088, r, 'Head', white, gold, black, spark)
+        oriented_detail_sphere('Brow_'+label, (s*.112, 1.355, .51),
+                               (.084, .018, .046), (0, 0, -s*.24), cream, r, 'Head')
+
+    # Layered white neck ruff replaces a hard color boundary with real feather tips.
+    for i in range(11):
+        angle = math.radians(-150 + i * 30)
+        x = math.sin(angle) * .25
+        z = .18 + math.cos(angle) * .11
+        oriented_detail_sphere('NeckRuff_%02d' % i, (x, 1.04, z),
+                               (.065, .022, .13), (0, angle, 0), cream, r, 'Head')
+    for i, x in enumerate((-.09, 0, .09)):
+        oriented_detail_sphere('CrownTuft_%d' % i, (x, 1.48, .30 + abs(x)*.2),
+                               (.052, .018, .105), (0, x*2.8, 0), cream, r, 'Head')
 
     # Wings: covert base plus fanned secondary and primary feathers.
     for s, label in ((-1, 'L'), (1, 'R')):
         oriented_detail_sphere('WingBase_'+label, (s*.55, .98, -.02),
-                               (.29, .035, .15), (0, 0, 0), brown, r, 'Wing_'+label)
+                               (.34, .05, .18), (0, 0, 0), brown, r, 'Wing_'+label)
         oriented_detail_sphere('WingTipBase_'+label, (s*1.10, 1.005, -.05),
-                               (.33, .028, .12), (0, -s*.06, 0), brown, r, 'WingTip_'+label)
-        for i in range(6):  # secondaries trail the inner wing
+                               (.38, .04, .15), (0, -s*.06, 0), brown, r, 'WingTip_'+label)
+        for i in range(7):  # secondaries trail the inner wing
             x = .34 + i * .10
             oriented_detail_sphere('Secondary_%s_%d' % (label, i),
-                                   (s*x, .965, -.17), (.05, .016, .13 + i*.008),
+                                   (s*x, .965, -.17), (.06, .022, .16 + i*.009),
                                    (0, 0, 0), dark, r, 'Wing_'+label)
-        for i in range(7):  # primaries sweep outward from the wing tip
+        for i in range(8):  # primaries sweep outward from the wing tip
             x = .80 + i * .105
             sweep = -s * math.radians(4 + i * 6)
             oriented_detail_sphere('Primary_%s_%d' % (label, i),
                                    (s*x, 1.0, -.13 - i*.022),
-                                   (.05, .014, .16 + i*.02), (0, sweep, 0),
+                                   (.06, .02, .19 + i*.021), (0, sweep, 0),
                                    dark, r, 'WingTip_'+label)
 
     # Tail: a fan of five cream feathers.
@@ -105,7 +120,7 @@ def model(r,brown,cream,gold,black,white):
     # Bare lower legs and three-toed talons with black claws.
     for s, label in ((-1, 'L'), (1, 'R')):
         tapered_limb('LowerLeg_'+label, (s*.16, .34, .10), (s*.18, .11, .14),
-                     .04, .028, gold, r, 'LowerLeg_'+label)
+                     .055, .034, gold, r, 'LowerLeg_'+label)
         for toe, dx in ((-1, -.06), (0, 0), (1, .06)):
             tip = (s*.18 + dx, .05, .32 + abs(dx) * -.35)
             tapered_limb('Toe_%s_%d' % (label, toe), (s*.18, .09, .16), tip,
@@ -121,7 +136,9 @@ def act(r,n,end,frames):
     for f,ro,lo in frames:key(r,f,ro,lo)
     r.animation_data.action.use_fake_user=True
 def animations(r):
-    act(r,'Eagle_Idle',30,[(1,{'Head':(2,0,0),'WingTip_L':(0,0,-3),'WingTip_R':(0,0,3)},None),(15,{'Head':(-2,0,0),'WingTip_L':(0,0,3),'WingTip_R':(0,0,-3)},None),(30,{'Head':(2,0,0),'WingTip_L':(0,0,-3),'WingTip_R':(0,0,3)},None)])
+    folded_a={'Head':(2,0,0),'Wing_L':(-68,0,26),'Wing_R':(-68,0,-26),'WingTip_L':(-38,0,20),'WingTip_R':(-38,0,-20)}
+    folded_b={'Head':(-2,0,0),'Wing_L':(-64,0,23),'Wing_R':(-64,0,-23),'WingTip_L':(-34,0,17),'WingTip_R':(-34,0,-17)}
+    act(r,'Eagle_Idle',30,[(1,folded_a,None),(15,folded_b,None),(30,folded_a,None)])
     up={'Wing_L':(0,0,-28),'Wing_R':(0,0,28)};down={'Wing_L':(0,0,34),'Wing_R':(0,0,-34)}
     fly_up={**up,'WingTip_L':(0,0,-18),'WingTip_R':(0,0,18),'Tail':(-5,0,0)}
     fly_down={**down,'WingTip_L':(0,0,28),'WingTip_R':(0,0,-28),'Tail':(7,0,0)}
@@ -136,6 +153,6 @@ def animations(r):
         (22,up,None)
     ])
     act(r,'Eagle_Gust',20,[(1,up,None),(10,down,None),(20,up,None)])
-    act(r,'Eagle_Perch',20,[(1,{'Wing_L':(0,0,30),'Wing_R':(0,0,-30)},None),(12,{},None),(20,{},None)])
+    act(r,'Eagle_Perch',20,[(1,folded_a,None),(12,folded_b,None),(20,folded_a,None)])
     r.animation_data.action=bpy.data.actions['Eagle_Idle']
 clear();B=material('Eagle_Brown',(.12,.038,.014));C=material('Eagle_Cream',(.78,.70,.50));G=material('Eagle_Gold',(.72,.34,.025));K=material('Eagle_Black',(.014,.007,.004));W=material('Eagle_White',(.86,.82,.66));R=make_rig();model(R,B,C,G,K,W);animations(R);os.makedirs(OUT,exist_ok=True);bpy.ops.object.select_all(action='SELECT');bpy.context.view_layer.objects.active=R;bpy.context.preferences.filepaths.save_version=0;bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT,'Eagle_Source.blend'));bpy.ops.export_scene.fbx(filepath=os.path.join(OUT,'Eagle.fbx'),use_selection=True,object_types={'ARMATURE','MESH'},add_leaf_bones=False,bake_anim=True,bake_anim_use_all_actions=True,bake_anim_use_nla_strips=False,bake_anim_force_startend_keying=True,mesh_smooth_type='FACE',apply_scale_options='FBX_SCALE_UNITS')

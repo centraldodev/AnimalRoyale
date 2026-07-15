@@ -49,20 +49,37 @@ fill.data.energy = 700
 fill.data.size = 4.0
 look_at(fill, (0, 0, 1.0))
 
-bpy.ops.object.camera_add(location=(3.8, -7.2, 3.0))
+scene = bpy.context.scene
+scene.render.engine = "BLENDER_EEVEE_NEXT"
+scene.view_settings.look = "AgX - Medium High Contrast"
+bpy.context.view_layer.update()
+
+# Frame every species by its evaluated bounds rather than using one distant
+# camera that made the monkey and ant unreadably small.
+corners = []
+for obj in bpy.context.scene.objects:
+    if obj.type != "MESH":
+        continue
+    corners.extend(obj.matrix_world @ Vector(corner) for corner in obj.bound_box)
+minimum = Vector((min(point.x for point in corners), min(point.y for point in corners), min(point.z for point in corners)))
+maximum = Vector((max(point.x for point in corners), max(point.y for point in corners), max(point.z for point in corners)))
+center = (minimum + maximum) * 0.5
+extent = max(maximum.x - minimum.x, maximum.y - minimum.y, maximum.z - minimum.z)
+direction = Vector((0.9, -2.45, 0.72)).normalized()
+bpy.ops.object.camera_add(location=center + direction * extent * 2.35)
 camera = bpy.context.object
-camera.data.lens = 58
-look_at(camera, (0, 0, 1.0))
+camera.data.lens = 62
+look_at(camera, center + Vector((0, 0, extent * 0.03)))
 bpy.context.scene.camera = camera
 
-scene = bpy.context.scene
-scene.render.engine = "BLENDER_WORKBENCH"
-scene.display.shading.light = "STUDIO"
-scene.display.shading.color_type = "MATERIAL"
-scene.display.shading.show_shadows = True
-scene.display.shading.show_cavity = True
-scene.render.resolution_x = 640
-scene.render.resolution_y = 640
+bpy.ops.mesh.primitive_plane_add(size=extent * 7.0, location=(center.x, center.y, minimum.z - .025))
+ground = bpy.context.object
+ground_material = bpy.data.materials.new("PreviewGround")
+ground_material.diffuse_color = (0.035, 0.11, 0.045, 1)
+ground.data.materials.append(ground_material)
+
+scene.render.resolution_x = 900
+scene.render.resolution_y = 900
 scene.render.resolution_percentage = 100
 scene.render.image_settings.file_format = "PNG"
 scene.render.film_transparent = False

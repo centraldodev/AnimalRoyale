@@ -38,7 +38,7 @@ namespace AnimalBattleRoyale
 
         private void Tick(Transform viewer, float time)
         {
-            bool closeEnough = viewer == null || (viewer.position - transform.position).sqrMagnitude <= 90f * 90f;
+            bool closeEnough = viewer == null || (viewer.position - transform.position).sqrMagnitude <= 72f * 72f;
             if (!closeEnough)
             {
                 if (isSwaying) transform.localRotation = restingRotation;

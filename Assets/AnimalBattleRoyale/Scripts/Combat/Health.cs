@@ -33,6 +33,7 @@ namespace AnimalBattleRoyale
         public void TakeDamage(float amount, ThirdPersonAnimalController attacker = null)
         {
             if (IsDead || amount <= 0f) return;
+            if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return;
 
             if (Owner != null) amount = Owner.ModifyIncomingDamage(amount);
 

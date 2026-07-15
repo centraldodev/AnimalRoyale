@@ -119,23 +119,7 @@ namespace AnimalBattleRoyale
 
         public static bool TryEnter(ThirdPersonAnimalController ant)
         {
-            if (ant == null || ant.AnimalType != AnimalType.Ant || IsTraveling(ant)) return false;
-            AntTunnelEntrance source = FindNearest(ant.transform.position, EnterRange, null);
-            if (source == null || entrances.Count < 2) return false;
-
-            AntTunnelEntrance closestExit = FindNearest(source.transform.position, float.MaxValue, source);
-            if (closestExit == null) return false;
-
-            sessions[ant] = new TunnelSession
-            {
-                Source = source,
-                SelectedExit = closestExit,
-                ExpiresAt = Time.time + TunnelDuration,
-                SelectionStartedAt = -1f
-            };
-            AttackVfx.CreateBurst(source.transform.position, new Color(0.52f, 0.2f, 0.05f), 1.9f);
-            CombatFeedback.PlayPower(AnimalType.Ant, 1, source.transform.position);
-            return true;
+            return false;
         }
 
         /// <summary>WASD chooses an exit by direction. Holding it briefly travels to that exit.</summary>
@@ -177,7 +161,7 @@ namespace AnimalBattleRoyale
             sessions.Remove(ant);
             ant.TeleportTo(destination.transform.position + Vector3.up * 0.18f);
             AttackVfx.CreateBurst(destination.transform.position, new Color(0.65f, 0.28f, 0.06f), 2.1f);
-            CombatFeedback.PlayPower(AnimalType.Ant, 1, destination.transform.position);
+            CombatFeedback.PlayPower(ant.AnimalType, 0, destination.transform.position);
         }
 
         private static AntTunnelEntrance FindNearest(Vector3 position, float maximumDistance, AntTunnelEntrance exclude)

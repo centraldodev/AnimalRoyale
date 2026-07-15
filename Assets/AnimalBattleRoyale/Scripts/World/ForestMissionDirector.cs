@@ -7,7 +7,7 @@ namespace AnimalBattleRoyale
 {
     public enum GlobalForestMission { AncientTotems, PortalRunes, ForestSanctuary, Territory }
     public enum ForestEventType { FruitRain, DenseFog, WildfireSurge, PortalPulse, RareBloom, LakeGuardian }
-    public enum MissionNodeKind { Totem, Rune, Offering, Territory, AntSeal, TigerMark, EaglePerch, Lore }
+    public enum MissionNodeKind { Totem, Rune, Offering, Territory, Lore }
 
     /// <summary>Randomizes match missions, animal objectives, forest events, lore and mastery rewards.</summary>
     public sealed class ForestMissionDirector : MonoBehaviour
@@ -26,7 +26,6 @@ namespace AnimalBattleRoyale
         private bool animalComplete;
         private bool matchActive;
         private bool summaryRecorded;
-        private bool monkeyWasHanging;
         private float territoryProgress;
         private ThirdPersonAnimalController territoryHolder;
         private float nextCarrierPulse;
@@ -142,10 +141,13 @@ namespace AnimalBattleRoyale
 
         public void NotifyTigerAttack(ThirdPersonAnimalController fighter)
         {
-            if (fighter == localPlayer && fighter.AnimalType == AnimalType.Tiger && !animalComplete)
-            {
-                MissionNode.TryStrikeNearest(fighter);
-            }
+        }
+
+        public void NotifyAbilityUsed(ThirdPersonAnimalController fighter)
+        {
+            if (fighter != localPlayer || animalComplete) return;
+            animalProgress++;
+            if (animalProgress >= animalGoal) CompleteAnimalMission();
         }
 
         public void RecordElimination(ThirdPersonAnimalController attacker)
@@ -204,24 +206,7 @@ namespace AnimalBattleRoyale
         private void SpawnAnimalMission()
         {
             if (localPlayer == null) return;
-            switch (localPlayer.AnimalType)
-            {
-                case AnimalType.Ant:
-                    animalGoal = 3;
-                    SpawnNodes(MissionNodeKind.AntSeal, animalGoal, 18f);
-                    break;
-                case AnimalType.Monkey:
-                    animalGoal = 4;
-                    break;
-                case AnimalType.Tiger:
-                    animalGoal = 3;
-                    SpawnNodes(MissionNodeKind.TigerMark, animalGoal, 20f);
-                    break;
-                case AnimalType.Eagle:
-                    animalGoal = 3;
-                    SpawnNodes(MissionNodeKind.EaglePerch, animalGoal, 38f);
-                    break;
-            }
+            animalGoal = 3;
         }
 
         private void SpawnNodes(MissionNodeKind kind, int count, float centerClearance)
@@ -240,32 +225,6 @@ namespace AnimalBattleRoyale
 
         private void UpdateAnimalMission()
         {
-            if (animalComplete || localPlayer.Health.IsDead) return;
-            if (localPlayer.AnimalType == AnimalType.Monkey)
-            {
-                bool hanging = localPlayer.IsHangingVine;
-                if (hanging && !monkeyWasHanging)
-                {
-                    animalProgress++;
-                    if (animalProgress >= animalGoal) CompleteAnimalMission();
-                }
-                monkeyWasHanging = hanging;
-                return;
-            }
-
-            MissionNodeKind expected = localPlayer.AnimalType == AnimalType.Ant ? MissionNodeKind.AntSeal : MissionNodeKind.EaglePerch;
-            if (localPlayer.AnimalType != AnimalType.Ant && localPlayer.AnimalType != AnimalType.Eagle) return;
-            foreach (MissionNode node in missionNodes)
-            {
-                if (node == null || node.IsActivated || node.Kind != expected) continue;
-                Vector3 offset = node.transform.position - localPlayer.transform.position;
-                offset.y = 0f;
-                if (offset.sqrMagnitude < 3.2f * 3.2f && (expected != MissionNodeKind.EaglePerch || !localPlayer.IsFlying))
-                {
-                    ActivateNode(localPlayer, node);
-                    break;
-                }
-            }
         }
 
         private void UpdateTerritoryMission()
@@ -325,13 +284,8 @@ namespace AnimalBattleRoyale
             animalComplete = true;
             localMissionsCompleted++;
             localPlayer.RestoreMobilityEnergy(100f);
-            switch (localPlayer.AnimalType)
-            {
-                case AnimalType.Ant: diamondRevealUntil = Time.time + 24f; break;
-                case AnimalType.Monkey: diamondRevealUntil = Time.time + 18f; break;
-                case AnimalType.Tiger: carrierRevealUntil = Time.time + 35f; break;
-                case AnimalType.Eagle: diamondRevealUntil = Time.time + 30f; carrierRevealUntil = Time.time + 20f; break;
-            }
+            diamondRevealUntil = Time.time + 24f;
+            carrierRevealUntil = Time.time + 12f;
             eventMessage = $"MISSÃO DO {localPlayer.Stats.DisplayName.ToUpperInvariant()} CONCLUÍDA";
             eventUntil = Time.time + 7f;
         }
@@ -464,14 +418,7 @@ namespace AnimalBattleRoyale
         {
             if (localPlayer == null) return string.Empty;
             if (animalComplete) return "✓ Missão do animal concluída";
-            return localPlayer.AnimalType switch
-            {
-                AnimalType.Ant => $"FORMIGA: visite selos de túnel  {animalProgress}/{animalGoal}",
-                AnimalType.Monkey => $"MACACO: agarre cipós  {animalProgress}/{animalGoal}",
-                AnimalType.Tiger => $"TIGRE: ataque marcas de garras  {animalProgress}/{animalGoal}",
-                AnimalType.Eagle => $"ÁGUIA: pouse nos poleiros  {animalProgress}/{animalGoal}",
-                _ => string.Empty
-            };
+            return $"{localPlayer.Stats.DisplayName.ToUpperInvariant()}: use a habilidade Q  {animalProgress}/{animalGoal}";
         }
 
         private bool IsGlobalNode(MissionNodeKind kind)
@@ -483,7 +430,7 @@ namespace AnimalBattleRoyale
 
         private static bool IsAnimalNode(MissionNodeKind kind)
         {
-            return kind == MissionNodeKind.AntSeal || kind == MissionNodeKind.TigerMark || kind == MissionNodeKind.EaglePerch;
+            return false;
         }
 
         private void OnDestroy()
@@ -532,13 +479,6 @@ namespace AnimalBattleRoyale
 
         public static bool TryStrikeNearest(ThirdPersonAnimalController fighter)
         {
-            foreach (MissionNode node in activeNodes)
-            {
-                if (node == null || node.IsActivated || node.Kind != MissionNodeKind.TigerMark) continue;
-                if ((node.transform.position - fighter.transform.position).sqrMagnitude > 3.5f * 3.5f) continue;
-                ForestMissionDirector.Instance?.ActivateNode(fighter, node);
-                return node.IsActivated;
-            }
             return false;
         }
 
@@ -568,7 +508,7 @@ namespace AnimalBattleRoyale
             GameObject symbol = GameObject.CreatePrimitive(primitive);
             symbol.name = "MissionSymbol";
             symbol.transform.SetParent(transform, false);
-            symbol.transform.localPosition = Vector3.up * (Kind == MissionNodeKind.EaglePerch ? 2.2f : 0.75f);
+            symbol.transform.localPosition = Vector3.up * 0.75f;
             symbol.transform.localScale = ScaleFor(Kind);
             symbol.transform.localRotation = Quaternion.Euler(Kind == MissionNodeKind.Rune ? 45f : 0f, 25f, Kind == MissionNodeKind.Rune ? 45f : 0f);
             symbol.GetComponent<Renderer>().sharedMaterial = material;
@@ -581,7 +521,7 @@ namespace AnimalBattleRoyale
 
             GameObject labelObject = new GameObject("MissionLabel");
             labelObject.transform.SetParent(transform, false);
-            labelObject.transform.localPosition = Vector3.up * (Kind == MissionNodeKind.EaglePerch ? 4.2f : 2f);
+            labelObject.transform.localPosition = Vector3.up * 2f;
             label = labelObject.AddComponent<TextMesh>();
             label.text = LabelFor(Kind);
             label.anchor = TextAnchor.MiddleCenter;
@@ -605,23 +545,20 @@ namespace AnimalBattleRoyale
         {
             MissionNodeKind.Totem => new Color(0.2f, 1f, 0.45f), MissionNodeKind.Rune => new Color(0.18f, 0.78f, 1f),
             MissionNodeKind.Offering => new Color(1f, 0.72f, 0.12f), MissionNodeKind.Territory => new Color(0.72f, 0.2f, 1f),
-            MissionNodeKind.AntSeal => new Color(1f, 0.32f, 0.1f), MissionNodeKind.TigerMark => new Color(1f, 0.48f, 0.06f),
-            MissionNodeKind.EaglePerch => new Color(0.76f, 0.94f, 1f), MissionNodeKind.Lore => new Color(0.85f, 0.38f, 1f), _ => Color.white
+            MissionNodeKind.Lore => new Color(0.85f, 0.38f, 1f), _ => Color.white
         };
 
         private static Vector3 ScaleFor(MissionNodeKind kind) => kind switch
         {
             MissionNodeKind.Totem => new Vector3(0.65f, 1.8f, 0.65f), MissionNodeKind.Rune => Vector3.one * 0.85f,
-            MissionNodeKind.Offering => new Vector3(1f, 0.35f, 1f), MissionNodeKind.AntSeal => new Vector3(1.2f, 0.15f, 1.2f),
-            MissionNodeKind.TigerMark => new Vector3(0.18f, 1.35f, 1f), MissionNodeKind.EaglePerch => new Vector3(1.7f, 0.18f, 1.7f),
+            MissionNodeKind.Offering => new Vector3(1f, 0.35f, 1f),
             MissionNodeKind.Lore => new Vector3(0.65f, 0.85f, 0.18f), _ => Vector3.one
         };
 
         private static string LabelFor(MissionNodeKind kind) => kind switch
         {
             MissionNodeKind.Totem => "F  ATIVAR TOTEM", MissionNodeKind.Rune => "F  ATIVAR RUNA", MissionNodeKind.Offering => "F  RECOLHER OFERENDA",
-            MissionNodeKind.Territory => "CLAREIRA SAGRADA", MissionNodeKind.AntSeal => "SELO DE TÚNEL", MissionNodeKind.TigerMark => "ATAQUE A MARCA",
-            MissionNodeKind.EaglePerch => "POUSE NO POLEIRO", MissionNodeKind.Lore => "F  MEMÓRIA DA FLORESTA", _ => string.Empty
+            MissionNodeKind.Territory => "CLAREIRA SAGRADA", MissionNodeKind.Lore => "F  MEMÓRIA DA FLORESTA", _ => string.Empty
         };
     }
 
@@ -666,10 +603,10 @@ namespace AnimalBattleRoyale
             1 => "A grande queimada começou quando o coração da floresta se partiu.",
             2 => "Dez pedras guardavam a passagem para além das montanhas.",
             3 => "Os antigos animais prometeram que apenas um cruzaria o portal.",
-            4 => "As formigas abriram túneis para proteger as últimas sementes.",
-            5 => "Os macacos esconderam runas entre os cipós mais altos.",
+            4 => "Os cervos guardaram as últimas sementes nos vales.",
+            5 => "Os gatos esconderam runas entre os cipós mais altos.",
             6 => "Os tigres marcaram caminhos que somente caçadores conseguem ler.",
-            7 => "As águias viram o incêndio nascer atrás dos picos.",
+            7 => "Os pinguins atravessaram o lago antes do grande incêndio.",
             8 => "O guardião do lago protege a saída, não os diamantes.",
             9 => "Cada cristal carrega uma lembrança de quem não escapou.",
             10 => "A floresta muda seus caminhos para testar novos sobreviventes.",

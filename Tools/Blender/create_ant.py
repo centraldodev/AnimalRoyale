@@ -36,23 +36,28 @@ def limb(n,a,b,rad,m,r,bone):
  a,b=Vector(a),Vector(b);d=b-a;bpy.ops.mesh.primitive_cylinder_add(vertices=10,radius=rad,depth=d.length,location=(a+b)*.5);o=bpy.context.object;o.rotation_mode='QUATERNION';o.rotation_quaternion=Vector((0,0,1)).rotation_difference(d.normalized());bpy.ops.object.transform_apply(location=False,rotation=False,scale=True);return bind(o,n,m,r,bone)
 def model(r,red,dark,eye):
  shine=mat('Ant_Shine',(1,1,.94),rough=.15,coat=0)
+ iris=mat('Ant_Iris',(.42,.12,.025),rough=.18,coat=.12)
  # Three glossy shell segments joined by a narrow petiole waist.
- sph('Abdomen',(0,.48,-.42),(.42,.35,.53),red,r,'Abdomen')
- ring('AbdomenBand_0',(0,.48,-.56),.40,.335,dark,r,'Abdomen')
- ring('AbdomenBand_1',(0,.48,-.74),.335,.28,dark,r,'Abdomen')
- sph('Petiole',(0,.50,-.16),(.14,.13,.12),red,r,'Thorax')
- sph('Thorax',(0,.52,.02),(.30,.30,.33),red,r,'Thorax')
- sph('Neck',(0,.56,.28),(.14,.13,.12),red,r,'Head')
+ sph('Abdomen',(0,.48,-.42),(.44,.37,.56),red,r,'Abdomen')
+ ring('AbdomenBand_0',(0,.48,-.54),.425,.355,dark,r,'Abdomen')
+ ring('AbdomenBand_1',(0,.48,-.72),.36,.30,dark,r,'Abdomen')
+ sph('Petiole',(0,.50,-.16),(.15,.14,.13),red,r,'Thorax')
+ sph('Thorax',(0,.53,.02),(.32,.32,.35),red,r,'Thorax')
+ sph('Neck',(0,.58,.30),(.16,.15,.14),red,r,'Head')
  # Heart-shaped head: wide cranium tapering to the jaws.
- sph('Head',(0,.62,.49),(.36,.32,.30),red,r,'Head')
- sph('Cranium',(0,.72,.42),(.30,.24,.24),red,r,'Head')
+ sph('Head',(0,.64,.53),(.46,.40,.38),red,r,'Head')
+ sph('Cranium',(0,.76,.43),(.39,.31,.30),red,r,'Head')
+ sph('Face',(0,.58,.72),(.32,.24,.22),red,r,'Head')
  for side,label in ((-1,'L'),(1,'R')):
-  # Big glossy compound eyes with a specular glint.
-  sph('Eye_'+label,(side*.18,.70,.72),(.090,.108,.058),eye,r,'Head')
-  sph('EyeSpark_'+label,(side*.20,.73,.763),(.018,.018,.010),shine,r,'Head')
+  # Large compound eyes retain a dark insect globe, but layered irises and
+  # broad catchlights give the friendly expression from the reference.
+  sph('Eye_'+label,(side*.245,.73,.755),(.145,.16,.09),eye,r,'Head')
+  sph('Iris_'+label,(side*.245,.735,.825),(.088,.10,.035),iris,r,'Head')
+  sph('Pupil_'+label,(side*.245,.738,.852),(.052,.064,.018),dark,r,'Head')
+  sph('EyeSpark_'+label,(side*.218,.775,.872),(.026,.030,.010),shine,r,'Head')
   # Curved mandibles: a tapered arm plus an inward-hooked tip.
-  tapered_limb('Mandible_'+label,(side*.13,.56,.74),(side*.30,.47,.90),.07,.04,dark,r,'Mandible_'+label)
-  claw('MandibleTip_'+label,(side*.30,.465,.905),.14,.045,dark,r,'Mandible_'+label,pitch=1.0)
+  tapered_limb('Mandible_'+label,(side*.15,.54,.76),(side*.34,.46,.94),.08,.045,dark,r,'Mandible_'+label)
+  claw('MandibleTip_'+label,(side*.34,.455,.945),.15,.048,dark,r,'Mandible_'+label,pitch=1.0)
   for z,key in ((.30,'F'),(0,'M'),(-.28,'B')):
    hip=(side*.20,.46,z);knee=(side*.42,.27,z+.04);foot=(side*.64,.08,z+.10)
    # Coxa ball into a muscular femur, thin tibia and a tiny tarsus tip.
@@ -62,9 +67,9 @@ def model(r,red,dark,eye):
    tapered_limb('Tibia_'+key+'_'+label,knee,foot,.038,.02,dark,r,'LowerLeg_'+key+'_'+label)
    claw('Tarsus_'+key+'_'+label,foot,.07,.018,dark,r,'LowerLeg_'+key+'_'+label,pitch=.9)
   # Elbowed antennae: scape up, flagellum sweeping forward.
-  elbow=(side*.22,1.0,.62)
-  tapered_limb('Scape_'+label,(side*.10,.84,.58),elbow,.022,.016,dark,r,'Head')
-  tapered_limb('Flagellum_'+label,elbow,(side*.30,1.12,.92),.016,.010,dark,r,'Head')
+  elbow=(side*.27,1.08,.62)
+  tapered_limb('Scape_'+label,(side*.12,.91,.60),elbow,.026,.018,dark,r,'Head')
+  tapered_limb('Flagellum_'+label,elbow,(side*.36,1.23,.96),.018,.010,dark,r,'Head')
 def key(r,f,rots=None,loc=None):
  for b in r.pose.bones:b.rotation_euler=(0,0,0);b.location=(0,0,0)
  for n,v in (rots or {}).items():r.pose.bones[n].rotation_euler=tuple(math.radians(q) for q in v)

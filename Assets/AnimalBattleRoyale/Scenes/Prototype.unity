@@ -45,5 +45,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   botCount: 15
-  initialAnimal: 2
+  initialAnimal: 0
   generateJungleOnStart: 1

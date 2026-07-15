@@ -14,22 +14,25 @@ namespace AnimalBattleRoyale
         private GUIStyle cardTitleStyle;
         private GUIStyle statStyle;
         private GUIStyle statValueStyle;
-        private readonly Texture2D[] conceptArt = new Texture2D[4];
+        private readonly RenderTexture[] conceptArt = new RenderTexture[AnimalRoster.Count];
 
         public void Initialize(GameBootstrap gameBootstrap, AnimalType initialSelection)
         {
             bootstrap = gameBootstrap;
             selected = initialSelection;
-            conceptArt[(int)AnimalType.Ant] = Resources.Load<Texture2D>("CharacterConcepts/AntPortrait");
-            conceptArt[(int)AnimalType.Monkey] = Resources.Load<Texture2D>("CharacterConcepts/MonkeyPortrait");
-            conceptArt[(int)AnimalType.Tiger] = Resources.Load<Texture2D>("CharacterConcepts/TigerPortrait");
-            conceptArt[(int)AnimalType.Eagle] = Resources.Load<Texture2D>("CharacterConcepts/EaglePortrait");
+            ThirdPersonCamera.SetCursorLocked(false);
+            for (int i = 0; i < AnimalRoster.Count; i++) conceptArt[i] = AnimalPreviewRenderer.Create((AnimalType)i, 256);
         }
 
         private void Update()
         {
+            if (Cursor.lockState != CursorLockMode.None || !Cursor.visible)
+            {
+                ThirdPersonCamera.SetCursorLocked(false);
+            }
+
             int index = GameInput.ReadAnimalSelection();
-            if (index >= 0 && index <= 3) selected = (AnimalType)index;
+            if (index >= 0 && index < AnimalRoster.Count) selected = (AnimalType)index;
             if (GameInput.ConfirmPressed()) StartMatch();
         }
 
@@ -53,25 +56,35 @@ namespace AnimalBattleRoyale
             GUI.Label(new Rect(x, 58f, width, 24f), "ESCOLHA SEU ANIMAL", subtitleStyle);
 
             const float gap = 10f;
-            float cardY = 94f;
-            float cardHeight = Mathf.Clamp(viewHeight - 260f, 330f, 390f);
-            float cardWidth = (width - gap * 3f) / 4f;
-            for (int i = 0; i < 4; i++)
+            const int columns = 4;
+            float cardY = 88f;
+            float cardHeight = Mathf.Clamp((viewHeight - 220f) * 0.5f, 218f, 270f);
+            float cardWidth = (width - gap * (columns - 1f)) / columns;
+            for (int i = 0; i < AnimalRoster.Count; i++)
             {
                 AnimalType type = (AnimalType)i;
                 AnimalStats stats = AnimalDefinition.Get(type);
-                float cardX = x + i * (cardWidth + gap);
+                int row = i / columns;
+                int column = i % columns;
+                float cardX = x + column * (cardWidth + gap);
+                if (row == 1 && AnimalRoster.Count % columns != 0)
+                {
+                    int lastRowCount = AnimalRoster.Count % columns;
+                    float lastRowWidth = lastRowCount * cardWidth + (lastRowCount - 1) * gap;
+                    cardX = x + (width - lastRowWidth) * 0.5f + column * (cardWidth + gap);
+                }
+                float currentCardY = cardY + row * (cardHeight + gap);
                 bool isSelected = selected == type;
-                Rect cardRect = new Rect(cardX, cardY, cardWidth, cardHeight);
+                Rect cardRect = new Rect(cardX, currentCardY, cardWidth, cardHeight);
                 DrawCartoonPanel(cardRect,
                     isSelected ? new Color(0.045f, 0.105f, 0.078f, 0.98f) : new Color(0.028f, 0.05f, 0.052f, 0.96f),
                     isSelected ? new Color(0.36f, 0.94f, 0.62f, 1f) : new Color(0.19f, 0.31f, 0.29f, 0.95f), isSelected ? 2f : 1f);
                 RuntimeGuiTheme.DrawRoundedRect(new Rect(cardRect.x + 8f, cardRect.y + 8f, cardRect.width - 16f, 4f),
                     Color.Lerp(stats.MainColor, Color.white, 0.28f));
 
-                Texture2D concept = conceptArt[i];
-                float portraitHeight = Mathf.Clamp(cardHeight * 0.43f, 136f, 168f);
-                Rect portraitRect = new Rect(cardX + 10f, cardY + 18f, cardWidth - 20f, portraitHeight);
+                Texture concept = conceptArt[i];
+                float portraitHeight = Mathf.Clamp(cardHeight * 0.39f, 82f, 112f);
+                Rect portraitRect = new Rect(cardX + 10f, currentCardY + 14f, cardWidth - 20f, portraitHeight);
                 RuntimeGuiTheme.DrawRoundedRect(portraitRect, new Color(0.015f, 0.026f, 0.026f, 0.82f));
                 if (concept != null)
                 {
@@ -81,12 +94,12 @@ namespace AnimalBattleRoyale
                 float infoY = portraitRect.yMax + 8f;
                 GUI.Label(new Rect(cardX + 12f, infoY, cardWidth - 24f, 27f), stats.DisplayName, cardTitleStyle);
                 GUI.Label(new Rect(cardX + 12f, infoY + 29f, cardWidth - 24f, 32f), stats.AbilityNames[0], textStyle);
-                float metricsY = infoY + 67f;
+                float metricsY = infoY + 58f;
                 DrawMetric(new Rect(cardX + 14f, metricsY, cardWidth - 28f, 22f), "VIDA", stats.MaxHealth / 200f, $"{stats.MaxHealth:0}", new Color(0.22f, 0.82f, 0.48f));
                 DrawMetric(new Rect(cardX + 14f, metricsY + 27f, cardWidth - 28f, 22f), "DANO", stats.AttackDamage / 25f, $"{stats.AttackDamage:0}", new Color(0.98f, 0.56f, 0.2f));
                 DrawMetric(new Rect(cardX + 14f, metricsY + 54f, cardWidth - 28f, 22f), "VELOCIDADE", stats.SprintSpeed / 9f, $"{stats.SprintSpeed:0.0}", new Color(0.3f, 0.72f, 0.94f));
 
-                float masteryY = cardRect.yMax - 38f;
+                float masteryY = cardRect.yMax - 26f;
                 GUI.Label(new Rect(cardX + 12f, masteryY, cardWidth - 24f, 20f),
                     $"MAESTRIA {ForestProgression.GetLevel(type)}  •  {ForestProgression.GetCosmeticName(type)}", selectedStyle);
                 if (isSelected)
@@ -99,7 +112,7 @@ namespace AnimalBattleRoyale
                 if (GUI.Button(cardRect, GUIContent.none, GUIStyle.none)) selected = type;
             }
 
-            float footerY = cardY + cardHeight + 12f;
+            float footerY = cardY + cardHeight * 2f + gap + 8f;
             GUI.Label(new Rect(x, footerY, width, 22f),
                 $"{ForestProgression.DailyContract}   •   MEMÓRIAS {ForestProgression.LoreCount}/12   •   CONQUISTAS {ForestProgression.AchievementCount}/2", selectedStyle);
             Rect playButton = new Rect(x + width * 0.5f - 130f, footerY + 30f, 260f, 48f);
@@ -107,6 +120,11 @@ namespace AnimalBattleRoyale
             GUI.Label(playButton, "INICIAR PARTIDA", buttonStyle);
             if (GUI.Button(playButton, GUIContent.none, GUIStyle.none)) StartMatch();
             GUI.matrix = previousMatrix;
+        }
+
+        private void OnDestroy()
+        {
+            for (int i = 0; i < conceptArt.Length; i++) AnimalPreviewRenderer.Release(conceptArt[i]);
         }
 
         private void DrawMetric(Rect rect, string label, float normalized, string value, Color color)

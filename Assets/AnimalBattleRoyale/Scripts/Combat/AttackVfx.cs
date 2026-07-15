@@ -41,25 +41,26 @@ namespace AnimalBattleRoyale
         {
             switch (type)
             {
-                case AnimalType.Ant:
-                    if (slot == 0) CreateBurst(position, new Color(1f, 0.28f, 0.06f), 3f);
-                    else if (slot == 1) CreateBurst(position, new Color(0.5f, 0.2f, 0.04f), 2.5f);
-                    else CreateBurst(position, new Color(1f, 0.28f, 0.06f), 3f);
-                    break;
-                case AnimalType.Monkey:
-                    if (slot == 0) CreateSlash(position + Vector3.up, direction, new Color(0.32f, 1f, 0.2f), 3f);
-                    else if (slot == 1) CreateBurst(position, new Color(1f, 0.75f, 0.12f), 3.6f);
-                    else CreateBurst(position + Vector3.up, new Color(1f, 0.64f, 0.08f), 2.1f);
-                    break;
                 case AnimalType.Tiger:
-                    if (slot == 0) CreateSlash(position + Vector3.up, direction, new Color(1f, 0.22f, 0.03f), 3.4f);
-                    else if (slot == 1) CreateSlash(position + Vector3.up, direction, new Color(1f, 0.92f, 0.4f), 2.5f);
-                    else CreateBurst(position, new Color(1f, 0.48f, 0.08f), 5.2f);
+                    CreateSlash(position + Vector3.up, direction, new Color(1f, 0.22f, 0.03f), 3.4f);
                     break;
-                case AnimalType.Eagle:
-                    if (slot == 0) CreateSlash(position + Vector3.up, direction, new Color(0.68f, 0.92f, 1f), 3.2f);
-                    else if (slot == 1) CreateBurst(position, new Color(0.4f, 0.84f, 1f), 5f);
-                    else CreateBurst(position + Vector3.up, new Color(0.9f, 0.98f, 1f), 1.8f);
+                case AnimalType.Deer:
+                    CreateSlash(position + Vector3.up, direction, new Color(0.9f, 0.68f, 0.3f), 3.1f);
+                    break;
+                case AnimalType.Horse:
+                    CreateBurst(position, new Color(0.76f, 0.48f, 0.22f), 4.2f);
+                    break;
+                case AnimalType.Chicken:
+                    CreateBurst(position + Vector3.up, new Color(1f, 0.84f, 0.24f), 4f);
+                    break;
+                case AnimalType.Dog:
+                    CreateBurst(position, new Color(0.35f, 0.8f, 1f), 3.6f);
+                    break;
+                case AnimalType.Cat:
+                    CreateSlash(position + Vector3.up, direction, new Color(0.75f, 0.42f, 1f), 2.8f);
+                    break;
+                case AnimalType.Penguin:
+                    CreateSlash(position + Vector3.up * 0.5f, direction, new Color(0.42f, 0.9f, 1f), 3.4f);
                     break;
             }
         }

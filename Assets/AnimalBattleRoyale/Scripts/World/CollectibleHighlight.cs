@@ -7,13 +7,19 @@ namespace AnimalBattleRoyale
     public sealed class CollectibleHighlight : MonoBehaviour
     {
         private const int RingSegments = 48;
+        private const float VisibleDistanceSqr = 72f * 72f;
         private static Material ringMaterial;
+        private static Transform cachedViewer;
+        private static int nextUpdateGroup;
 
         private readonly LineRenderer[] rings = new LineRenderer[3];
         private Color color = Color.white;
         private float radius = 0.9f;
         private float height = 0.18f;
         private float phaseOffset;
+        private int updateGroup;
+        private bool ringsBuilt;
+        private bool ringsVisible;
 
         public static CollectibleHighlight Attach(Transform parent, Color color, float radius = 0.9f, float height = 0.18f)
         {
@@ -31,12 +37,13 @@ namespace AnimalBattleRoyale
             radius = Mathf.Max(0.05f, highlightRadius);
             height = highlightHeight;
             phaseOffset = Random.value * Mathf.PI * 2f;
+            updateGroup = nextUpdateGroup++ & 1;
             EnsureMaterial();
-            BuildRings();
         }
 
         private void BuildRings()
         {
+            if (ringsBuilt) return;
             for (int i = 0; i < rings.Length; i++)
             {
                 GameObject ring = new GameObject("AuraRing_" + i);
@@ -53,10 +60,28 @@ namespace AnimalBattleRoyale
                 line.sharedMaterial = ringMaterial;
                 rings[i] = line;
             }
+            ringsBuilt = true;
+            ringsVisible = true;
         }
 
         private void Update()
         {
+            if ((Time.frameCount & 1) != updateGroup) return;
+            if (cachedViewer == null && Camera.main != null) cachedViewer = Camera.main.transform;
+            bool shouldBeVisible = cachedViewer == null
+                                   || (cachedViewer.position - transform.position).sqrMagnitude <= VisibleDistanceSqr;
+            if (shouldBeVisible && !ringsBuilt) BuildRings();
+            if (!ringsBuilt) return;
+            if (shouldBeVisible != ringsVisible)
+            {
+                ringsVisible = shouldBeVisible;
+                foreach (LineRenderer ring in rings)
+                {
+                    if (ring != null) ring.enabled = ringsVisible;
+                }
+            }
+            if (!ringsVisible) return;
+
             float pulse = (Mathf.Sin(Time.time * 4.4f + phaseOffset) + 1f) * 0.5f;
             for (int i = 0; i < rings.Length; i++)
             {

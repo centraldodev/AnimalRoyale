@@ -12,6 +12,7 @@ namespace AnimalBattleRoyale
         [SerializeField] private float collisionRadius = 0.25f;
         [SerializeField] private float minPitch = -25f;
         [SerializeField] private float maxPitch = 70f;
+        [SerializeField] private float neutralAimPitch = 18f;
 
         private float yaw;
         private float pitch = 18f;
@@ -19,20 +20,32 @@ namespace AnimalBattleRoyale
         private readonly RaycastHit[] collisionHits = new RaycastHit[32];
 
         public Transform Target => target;
+        public Vector3 AimDirection => Quaternion.Euler(pitch - neutralAimPitch, yaw, 0f) * Vector3.forward;
 
         private void Start()
         {
             yaw = transform.eulerAngles.y;
-            LockCursor(true);
+            bool resultScreenOpen = BattleRoyaleManager.Instance != null
+                                    && BattleRoyaleManager.Instance.MatchFinished;
+            SetCursorLocked(!resultScreenOpen);
         }
 
         private void LateUpdate()
         {
             if (target == null) return;
 
-            if (GameInput.EscapePressed())
+            bool resultScreenOpen = BattleRoyaleManager.Instance != null
+                                    && BattleRoyaleManager.Instance.MatchFinished;
+            if (resultScreenOpen)
             {
-                LockCursor(Cursor.lockState != CursorLockMode.Locked);
+                if (Cursor.lockState != CursorLockMode.None || !Cursor.visible)
+                {
+                    SetCursorLocked(false);
+                }
+            }
+            else if (GameInput.EscapePressed())
+            {
+                SetCursorLocked(Cursor.lockState != CursorLockMode.Locked);
             }
 
             if (Cursor.lockState == CursorLockMode.Locked)
@@ -77,7 +90,7 @@ namespace AnimalBattleRoyale
             return origin + direction.normalized * nearestDistance;
         }
 
-        private static void LockCursor(bool locked)
+        public static void SetCursorLocked(bool locked)
         {
             Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
             Cursor.visible = !locked;

@@ -13,7 +13,7 @@ import bpy
 from mathutils import Vector
 
 
-TARGET_BODY_TRIANGLES = 14000
+TARGET_BODY_TRIANGLES = 28000
 
 
 def material(name, color, roughness=0.55, metallic=0.0, coat=0.0):
@@ -38,6 +38,33 @@ def material(name, color, roughness=0.55, metallic=0.0, coat=0.0):
     principled.inputs["Metallic"].default_value = metallic
     if coat > 0.0 and "Coat Weight" in principled.inputs:
         principled.inputs["Coat Weight"].default_value = coat
+    # Give skin, fur, chitin and feathers a real micro-surface in the Blender
+    # source. Glossy eyes and claws stay optically clean.
+    if roughness >= 0.4:
+        texcoord = mat.node_tree.nodes.new("ShaderNodeTexCoord")
+        noise = mat.node_tree.nodes.new("ShaderNodeTexNoise")
+        if name.startswith("Ant_"):
+            noise_scale, bump_strength, bump_distance = 5.5, 0.045, 0.012
+        elif name.startswith("Eagle_"):
+            noise_scale, bump_strength, bump_distance = 24.0, 0.07, 0.009
+        else:
+            noise_scale, bump_strength, bump_distance = 34.0, 0.065, 0.008
+        noise.inputs["Scale"].default_value = noise_scale
+        noise.inputs["Detail"].default_value = 3.0
+        noise.inputs["Roughness"].default_value = 0.62
+        ramp = mat.node_tree.nodes.new("ShaderNodeValToRGB")
+        dark = tuple(max(0.0, component * 0.72) for component in color)
+        light = tuple(min(1.0, component * 1.20 + 0.015) for component in color)
+        ramp.color_ramp.elements[0].color = (*dark, 1.0)
+        ramp.color_ramp.elements[1].color = (*light, 1.0)
+        bump = mat.node_tree.nodes.new("ShaderNodeBump")
+        bump.inputs["Strength"].default_value = bump_strength
+        bump.inputs["Distance"].default_value = bump_distance
+        mat.node_tree.links.new(texcoord.outputs["Generated"], noise.inputs["Vector"])
+        mat.node_tree.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+        mat.node_tree.links.new(ramp.outputs["Color"], principled.inputs["Base Color"])
+        mat.node_tree.links.new(noise.outputs["Fac"], bump.inputs["Height"])
+        mat.node_tree.links.new(bump.outputs["Normal"], principled.inputs["Normal"])
     return mat
 
 

@@ -6,7 +6,7 @@ namespace AnimalBattleRoyale
     /// <summary>Runtime feedback: authored animal sounds and floating damage confirmation.</summary>
     public static class CombatFeedback
     {
-        private const string SfxResourcePath = "Audio/Sfx";
+        private const string AnimalAudioRoot = "Audio/Animals";
         private const float CombatSoundInterval = 0.08f;
         private const int MaxConcurrentSoundsPerAnimal = 3;
 
@@ -16,72 +16,50 @@ namespace AnimalBattleRoyale
         private static readonly Dictionary<string, float> nextMixGroupTimes = new Dictionary<string, float>();
         private static readonly Dictionary<AudioSource, string> voiceMixGroups = new Dictionary<AudioSource, string>();
         private static readonly List<AudioSource> voices = new List<AudioSource>();
-        private static AudioClip[] allSfxClips;
 
         public static void PlayBasic(AnimalType type, Vector3 position)
         {
             float volume = type switch
             {
-                AnimalType.Ant => 0.36f,
-                AnimalType.Monkey => 0.34f,
                 AnimalType.Tiger => 0.3f,
-                AnimalType.Eagle => 0.32f,
+                AnimalType.Horse => 0.38f,
+                AnimalType.Chicken => 0.3f,
                 _ => 0.34f
             };
-            if (PlayAuthored(position, "basic_" + type, BasicKeywords(type), volume, 0.94f, 1.06f,
+            if (PlayAuthored(position, "basic_" + type, type, "basic", volume, 0.94f, 1.06f,
                     28f, 0.85f, CombatMixGroup(type), CombatSoundInterval, MaxConcurrentSoundsPerAnimal)) return;
-
-            float tone = type switch
-            {
-                AnimalType.Ant => 130f,
-                AnimalType.Monkey => 105f,
-                AnimalType.Tiger => 82f,
-                AnimalType.Eagle => 260f,
-                _ => 160f
-            };
-            PlayProcedural(position, "basic_" + type, tone, 0.17f, volume, 0.18f);
         }
 
         public static void PlayPower(AnimalType type, int slot, Vector3 position)
         {
             float volume = type switch
             {
-                AnimalType.Ant => 0.48f,
-                AnimalType.Monkey => 0.46f,
                 AnimalType.Tiger => 0.45f,
-                AnimalType.Eagle => 0.44f,
+                AnimalType.Horse => 0.5f,
                 _ => 0.46f
             };
-            if (PlayAuthored(position, "power_" + type + "_" + slot, PowerKeywords(type, slot), volume, 0.96f, 1.04f,
+            if (PlayAuthored(position, "power_" + type + "_" + slot, type, "power", volume, 0.96f, 1.04f,
                     32f, 0.85f, CombatMixGroup(type), CombatSoundInterval, MaxConcurrentSoundsPerAnimal)) return;
-
-            float tone = type switch
-            {
-                AnimalType.Ant => new[] { 220f, 75f, 180f }[slot],
-                AnimalType.Monkey => new[] { 310f, 90f, 150f }[slot],
-                AnimalType.Tiger => new[] { 170f, 240f, 65f }[slot],
-                AnimalType.Eagle => new[] { 380f, 230f, 290f }[slot],
-                _ => 160f
-            };
-            PlayProcedural(position, "power_" + type + "_" + slot, tone, 0.32f, volume, 0.24f);
         }
 
         public static void NotifyHit(AnimalType attacker, Vector3 position, float damage)
         {
             Color color = attacker switch
             {
-                AnimalType.Ant => new Color(1f, 0.36f, 0.08f),
-                AnimalType.Monkey => new Color(1f, 0.82f, 0.16f),
                 AnimalType.Tiger => new Color(1f, 0.22f, 0.04f),
-                AnimalType.Eagle => new Color(0.7f, 0.94f, 1f),
+                AnimalType.Deer => new Color(0.9f, 0.66f, 0.28f),
+                AnimalType.Horse => new Color(0.72f, 0.45f, 0.2f),
+                AnimalType.Chicken => new Color(1f, 0.84f, 0.2f),
+                AnimalType.Dog => new Color(0.36f, 0.8f, 1f),
+                AnimalType.Cat => new Color(0.78f, 0.46f, 1f),
+                AnimalType.Penguin => new Color(0.42f, 0.9f, 1f),
                 _ => Color.white
             };
             AttackVfx.CreateHitSpark(position + Vector3.up * 0.8f, color);
             DamageNumber.Create(position + Vector3.up * 1.4f, Mathf.RoundToInt(damage), color);
             const float hitVolume = 0.24f;
-            if (PlayAuthored(position, "hit_" + attacker, HitKeywords(attacker), hitVolume, 0.92f, 1.08f,
-                    24f, 0.9f, CombatMixGroup(attacker), CombatSoundInterval, MaxConcurrentSoundsPerAnimal)) return;
-            PlayProcedural(position, "hit_" + attacker, 330f, 0.1f, hitVolume, 0.12f);
+            PlayAuthored(position, "hit_" + attacker, attacker, "hit", hitVolume, 0.92f, 1.08f,
+                24f, 0.9f, CombatMixGroup(attacker), CombatSoundInterval, MaxConcurrentSoundsPerAnimal);
         }
 
         public static void PlayFoodPickup(Vector3 position)
@@ -99,10 +77,11 @@ namespace AnimalBattleRoyale
             PlayProcedural(position, "objective_portal", 420f, 0.72f, 0.82f, 0.04f);
         }
 
-        private static bool PlayAuthored(Vector3 position, string key, string[] keywords, float volume, float minPitch, float maxPitch,
+        private static bool PlayAuthored(Vector3 position, string key, AnimalType type, string category,
+            float volume, float minPitch, float maxPitch,
             float maxDistance, float spatialBlend, string mixGroup, float minInterval, int maxConcurrent)
         {
-            AudioClip[] group = GetSfxGroup(key, keywords);
+            AudioClip[] group = GetSfxGroup(key, type, category);
             if (group.Length == 0) return false;
 
             if (!string.IsNullOrEmpty(mixGroup))
@@ -149,38 +128,44 @@ namespace AnimalBattleRoyale
 
         private static string CombatMixGroup(AnimalType type)
         {
-            return type switch
-            {
-                AnimalType.Ant => "combat_ant",
-                AnimalType.Monkey => "combat_monkey",
-                AnimalType.Tiger => "combat_tiger",
-                AnimalType.Eagle => "combat_eagle",
-                _ => "combat_other"
-            };
+            return "combat_" + type.ToString().ToLowerInvariant();
         }
 
-        private static AudioClip[] GetSfxGroup(string key, string[] keywords)
+        private static AudioClip[] GetSfxGroup(string key, AnimalType type, string category)
         {
             if (sfxGroups.TryGetValue(key, out AudioClip[] group)) return group;
-            if (allSfxClips == null) allSfxClips = Resources.LoadAll<AudioClip>(SfxResourcePath);
+            AudioClip[] animalClips = Resources.LoadAll<AudioClip>($"{AnimalAudioRoot}/{type}");
 
             List<AudioClip> matches = new List<AudioClip>();
-            for (int i = 0; i < allSfxClips.Length; i++)
+            for (int i = 0; i < animalClips.Length; i++)
             {
-                AudioClip clip = allSfxClips[i];
+                AudioClip clip = animalClips[i];
                 if (clip == null) continue;
                 string clipName = clip.name.ToLowerInvariant();
-                for (int keywordIndex = 0; keywordIndex < keywords.Length; keywordIndex++)
-                {
-                    if (!clipName.Contains(keywords[keywordIndex])) continue;
+                if (MatchesCategory(clipName, category))
                     matches.Add(clip);
-                    break;
-                }
             }
+
+            // A clip without an event suffix is treated as the basic animal sound.
+            if (matches.Count == 0 && category == "basic")
+                matches.AddRange(animalClips);
 
             group = matches.ToArray();
             sfxGroups[key] = group;
             return group;
+        }
+
+        private static bool MatchesCategory(string clipName, string category)
+        {
+            return category switch
+            {
+                "basic" => clipName.Contains("basic") || clipName.Contains("attack") || clipName.Contains("ataque"),
+                "power" => clipName.Contains("power") || clipName.Contains("skill") || clipName.Contains("ability") ||
+                           clipName.Contains("special") || clipName.Contains("habilidade"),
+                "hit" => clipName.Contains("hit") || clipName.Contains("hurt") || clipName.Contains("damage") ||
+                         clipName.Contains("impact") || clipName.Contains("dano"),
+                _ => false
+            };
         }
 
         private static AudioClip PickClip(string key, AudioClip[] group)
@@ -199,43 +184,6 @@ namespace AnimalBattleRoyale
             }
             lastPlayedClip[key] = selected;
             return selected;
-        }
-
-        private static string[] BasicKeywords(AnimalType type)
-        {
-            return type switch
-            {
-                AnimalType.Ant => new[] { "giant_ant_mandibles" },
-                AnimalType.Monkey => new[] { "monkey_hands" },
-                AnimalType.Tiger => new[] { "large_tiger_claws" },
-                AnimalType.Eagle => new[] { "powerful_eagle_wings" },
-                _ => new string[0]
-            };
-        }
-
-        private static string[] PowerKeywords(AnimalType type, int slot)
-        {
-            return type switch
-            {
-                AnimalType.Ant => new[] { "giant_ant", "insect", "sharp_crea" },
-                AnimalType.Monkey => new[] { "monkey_swinging", "monkey_releasing", "agile_monkey_jumping", "light_monkey_landing" },
-                AnimalType.Tiger when slot == 0 => new[] { "short_powerful_tiger", "powerful_tiger_launc", "large_tiger_crouchin" },
-                AnimalType.Tiger => new[] { "large_tiger_crouchin", "heavy_tiger_landing" },
-                AnimalType.Eagle => new[] { "giant_eagle", "large_eagle_flying", "powerful_eagle_wings", "large_eagle_gliding" },
-                _ => new string[0]
-            };
-        }
-
-        private static string[] HitKeywords(AnimalType type)
-        {
-            return type switch
-            {
-                AnimalType.Ant => new[] { "small_but_sharp_crea" },
-                AnimalType.Monkey => new[] { "light_monkey_landing" },
-                AnimalType.Tiger => new[] { "heavy_tiger_landing" },
-                AnimalType.Eagle => new[] { "a_giant_eagle_rapidl" },
-                _ => new string[0]
-            };
         }
 
         private static void PlayProcedural(Vector3 position, string key, float tone, float duration, float volume, float noise)
