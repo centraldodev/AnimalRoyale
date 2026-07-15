@@ -32,14 +32,9 @@ namespace AnimalBattleRoyale
 
         public static void PlayPower(AnimalType type, int slot, Vector3 position)
         {
-            float volume = type switch
-            {
-                AnimalType.Tiger => 0.45f,
-                AnimalType.Horse => 0.5f,
-                _ => 0.46f
-            };
-            if (PlayAuthored(position, "power_" + type + "_" + slot, type, "power", volume, 0.96f, 1.04f,
-                    32f, 0.85f, CombatMixGroup(type), CombatSoundInterval, MaxConcurrentSoundsPerAnimal)) return;
+            // Ability/power vocalisations (e.g. the tiger roar, Tiger_power_01.wav) are
+            // intentionally disabled: only footstep, _basic (attack) and _hit sounds play.
+            // Call sites are kept so abilities can re-enable a sound later if desired.
         }
 
         public static void NotifyHit(AnimalType attacker, Vector3 position, float damage)

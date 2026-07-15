@@ -118,7 +118,12 @@ namespace AnimalBattleRoyale
         {
             Quaternion targetAlignment = Quaternion.identity;
             Transform owner = transform.parent;
-            if (!airborne && owner != null)
+            // Only tilt the model to the ground slope while actually moving. When the
+            // animal is standing still the down-ray can flip between overlapping
+            // colliders on the dense procedural map, which made a stationary animal
+            // rock back and forth like it was rolling over speed bumps. A still animal
+            // now settles to a stable upright pose.
+            if (!airborne && moving && owner != null)
             {
                 Vector3 origin = owner.position + Vector3.up * 1.6f + owner.forward * 0.22f;
                 int hitCount = Physics.RaycastNonAlloc(origin, Vector3.down, surfaceHits, 4.2f, ~0, QueryTriggerInteraction.Ignore);
