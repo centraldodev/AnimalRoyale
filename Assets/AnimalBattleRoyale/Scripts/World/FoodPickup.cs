@@ -214,8 +214,7 @@ namespace AnimalBattleRoyale
             Color32 packed = color;
             int key = packed.GetHashCode() ^ (emissive ? int.MinValue : 0);
             if (sharedMaterials.TryGetValue(key, out Material cached) && cached != null) return cached;
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
+            Shader shader = ShaderLibrary.Lit;
             Material material = new Material(shader) { color = color, enableInstancing = true };
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
             if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", emissive ? 0.48f : 0.22f);

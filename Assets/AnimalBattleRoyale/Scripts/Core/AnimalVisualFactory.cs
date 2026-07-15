@@ -86,7 +86,7 @@ namespace AnimalBattleRoyale
             if (collider != null) collider.enabled = false;
             Renderer renderer = marker.GetComponent<Renderer>();
             if (renderer == null) return;
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            Shader shader = ShaderLibrary.Lit;
             renderer.sharedMaterial = new Material(shader) { color = color };
         }
     }

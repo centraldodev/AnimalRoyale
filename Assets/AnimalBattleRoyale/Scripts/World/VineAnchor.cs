@@ -98,8 +98,7 @@ namespace AnimalBattleRoyale
         private static void EnsureIndicatorMaterial()
         {
             if (sharedIndicatorMaterial != null) return;
-            Shader shader = Shader.Find("Sprites/Default");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
+            Shader shader = ShaderLibrary.Sprite;
             sharedIndicatorMaterial = new Material(shader)
             {
                 name = "SharedMonkeyVineIndicator",
@@ -171,7 +170,7 @@ namespace AnimalBattleRoyale
             float bestScore = float.MaxValue;
             float bestLookDot = 0.7f;
             float lookedAtDistance = float.MaxValue;
-            Camera camera = Camera.main;
+            Transform camera = CameraCache.MainTransform;
             Vector3 viewAimDirection = monkey.ViewAimDirection;
             float useRange = GetUseRange(monkey);
             foreach (VineAnchor anchor in anchors)
@@ -184,7 +183,7 @@ namespace AnimalBattleRoyale
                 float lookBonus = 0f;
                 if (camera != null)
                 {
-                    Vector3 fromCamera = anchor.transform.position - camera.transform.position;
+                    Vector3 fromCamera = anchor.transform.position - camera.position;
                     if (fromCamera.sqrMagnitude > 0.01f)
                     {
                         float lookDot = Vector3.Dot(viewAimDirection, fromCamera.normalized);

@@ -127,7 +127,7 @@ namespace AnimalBattleRoyale
             lineRenderer.numCornerVertices = 2;
             lineRenderer.numCapVertices = 2;
 
-            Shader shader = Shader.Find("Sprites/Default");
+            Shader shader = ShaderLibrary.Sprite;
             lineRenderer.sharedMaterial = new Material(shader);
             lineRenderer.widthMultiplier = 0.38f;
             lineRenderer.startColor = new Color(1f, 0.72f, 0.06f, 0.98f);

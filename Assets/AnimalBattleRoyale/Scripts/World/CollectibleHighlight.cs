@@ -107,8 +107,7 @@ namespace AnimalBattleRoyale
         private static void EnsureMaterial()
         {
             if (ringMaterial != null) return;
-            Shader shader = Shader.Find("Sprites/Default");
-            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
+            Shader shader = ShaderLibrary.Sprite;
             ringMaterial = new Material(shader) { color = Color.white, enableInstancing = true };
         }
     }

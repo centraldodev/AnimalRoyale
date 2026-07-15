@@ -217,16 +217,16 @@ namespace AnimalBattleRoyale
 
         private void LateUpdate()
         {
-            if (label != null && Camera.main != null)
+            Transform viewer = CameraCache.MainTransform;
+            if (label != null && viewer != null)
             {
-                label.transform.rotation = Quaternion.LookRotation(label.transform.position - Camera.main.transform.position);
+                label.transform.rotation = Quaternion.LookRotation(label.transform.position - viewer.position);
             }
         }
 
         private void BuildVisual()
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
+            Shader shader = ShaderLibrary.Lit;
             Material stone = CreateMaterial(shader, new Color(0.16f, 0.2f, 0.28f), false);
             Material rampStone = CreateMaterial(shader, new Color(0.24f, 0.28f, 0.35f), false);
             Material glowBlue = CreateMaterial(shader, new Color(0.05f, 0.62f, 1f), true);

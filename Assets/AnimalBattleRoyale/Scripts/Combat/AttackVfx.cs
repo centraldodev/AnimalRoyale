@@ -170,7 +170,7 @@ namespace AnimalBattleRoyale
         private static Material GetSharedLineMaterial()
         {
             if (sharedLineMaterial != null) return sharedLineMaterial;
-            Shader shader = Shader.Find("Sprites/Default");
+            Shader shader = ShaderLibrary.Sprite;
             sharedLineMaterial = new Material(shader)
             {
                 name = "SharedCartoonAttackVfx",

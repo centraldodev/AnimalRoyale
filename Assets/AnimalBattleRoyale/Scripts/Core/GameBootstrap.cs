@@ -62,7 +62,7 @@ namespace AnimalBattleRoyale
             RenderSettings.ambientGroundColor = new Color(0.12f, 0.2f, 0.085f);
             RenderSettings.reflectionIntensity = 0.82f;
 
-            Shader skyShader = Shader.Find("Skybox/Procedural");
+            Shader skyShader = ShaderLibrary.Find("Skybox/Procedural");
             if (skyShader != null)
             {
                 if (cartoonSkyMaterial == null) cartoonSkyMaterial = new Material(skyShader) { name = "CartoonJungleSky" };

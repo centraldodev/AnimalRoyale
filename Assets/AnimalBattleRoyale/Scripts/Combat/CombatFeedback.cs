@@ -277,7 +277,8 @@ namespace AnimalBattleRoyale
         private void Update()
         {
             transform.position += Vector3.up * (1.35f * Time.deltaTime);
-            if (Camera.main != null) transform.rotation = Quaternion.LookRotation(transform.position - Camera.main.transform.position);
+            Transform viewer = CameraCache.MainTransform;
+            if (viewer != null) transform.rotation = Quaternion.LookRotation(transform.position - viewer.position);
             float progress = Mathf.InverseLerp(expiresAt - 0.7f, expiresAt, Time.time);
             Color faded = color;
             faded.a = 1f - progress;

@@ -171,7 +171,7 @@ namespace AnimalBattleRoyale
             {
                 if (!sharedProjectileMaterials.TryGetValue(type, out Material material))
                 {
-                    Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+                    Shader shader = ShaderLibrary.Lit;
                     material = new Material(shader) { name = type + "_ProjectileMaterial", color = impactColor, enableInstancing = true };
                     sharedProjectileMaterials.Add(type, material);
                 }
@@ -191,7 +191,7 @@ namespace AnimalBattleRoyale
             trail.endColor = new Color(impactColor.r, impactColor.g, impactColor.b, 0f);
             if (sharedTrailMaterial == null)
             {
-                Shader shader = Shader.Find("Sprites/Default");
+                Shader shader = ShaderLibrary.Sprite;
                 if (shader != null)
                 {
                     sharedTrailMaterial = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };

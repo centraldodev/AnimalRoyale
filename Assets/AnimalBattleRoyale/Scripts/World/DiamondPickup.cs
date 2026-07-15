@@ -142,8 +142,7 @@ namespace AnimalBattleRoyale
         private static void EnsureMaterials()
         {
             if (diamondMaterial != null && baseMaterial != null) return;
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
+            Shader shader = ShaderLibrary.Lit;
             diamondMaterial = new Material(shader) { color = new Color(0.08f, 0.72f, 1f), enableInstancing = true };
             if (diamondMaterial.HasProperty("_BaseColor")) diamondMaterial.SetColor("_BaseColor", new Color(0.08f, 0.72f, 1f));
             if (diamondMaterial.HasProperty("_EmissionColor"))

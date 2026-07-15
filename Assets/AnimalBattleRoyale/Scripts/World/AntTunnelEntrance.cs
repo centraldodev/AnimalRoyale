@@ -209,7 +209,7 @@ namespace AnimalBattleRoyale
             marker.transform.SetParent(transform, false);
             marker.transform.localPosition = Vector3.up * 0.2f;
 
-            markerMaterial = new Material(Shader.Find("Sprites/Default"));
+            markerMaterial = new Material(ShaderLibrary.Sprite);
             markerMaterial.color = new Color(0.25f, 1f, 0.65f, 0.96f);
 
             exitRing = marker.AddComponent<LineRenderer>();
@@ -266,7 +266,8 @@ namespace AnimalBattleRoyale
             exitText.text = selected ? "SAIR\nWASD" : "SAÍDA";
             exitText.color = color;
 
-            if (Camera.main != null) exitText.transform.rotation = Camera.main.transform.rotation;
+            Transform viewer = CameraCache.MainTransform;
+            if (viewer != null) exitText.transform.rotation = viewer.rotation;
         }
     }
 }

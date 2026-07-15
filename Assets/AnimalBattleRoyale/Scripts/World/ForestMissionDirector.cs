@@ -534,7 +534,7 @@ namespace AnimalBattleRoyale
 
         public static Material CreateMaterial(Color color, bool emissive)
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit"); if (shader == null) shader = Shader.Find("Standard");
+            Shader shader = ShaderLibrary.Lit;
             Material material = new Material(shader) { color = color, enableInstancing = true };
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
             if (emissive && material.HasProperty("_EmissionColor")) { material.EnableKeyword("_EMISSION"); material.SetColor("_EmissionColor", color * 1.5f); }
