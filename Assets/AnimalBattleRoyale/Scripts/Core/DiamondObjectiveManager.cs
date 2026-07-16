@@ -36,9 +36,8 @@ namespace AnimalBattleRoyale
             initialized = true;
             jungle = generatedJungle;
             Physics.SyncTransforms();
-            Vector3 portalPosition = FindPortalPosition(out bool usesLakeAccess);
-            portal = EscapePortal.Create(portalPosition, usesLakeAccess);
-            SafeZoneController.Instance?.SetFinalCenter(portalPosition);
+            // Escape portal removed: the match is now won by being the last fighter standing
+            // (3-lives battle royale), so no portal or crystal-escape objective is created.
 
             BattleRoyaleManager manager = BattleRoyaleManager.Instance;
             if (manager == null) return;
@@ -217,16 +216,16 @@ namespace AnimalBattleRoyale
 
         private void LateUpdate()
         {
-            if (label != null && Camera.main != null)
+            Transform viewer = CameraCache.MainTransform;
+            if (label != null && viewer != null)
             {
-                label.transform.rotation = Quaternion.LookRotation(label.transform.position - Camera.main.transform.position);
+                label.transform.rotation = Quaternion.LookRotation(label.transform.position - viewer.position);
             }
         }
 
         private void BuildVisual()
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
+            Shader shader = ShaderLibrary.Lit;
             Material stone = CreateMaterial(shader, new Color(0.16f, 0.2f, 0.28f), false);
             Material rampStone = CreateMaterial(shader, new Color(0.24f, 0.28f, 0.35f), false);
             Material glowBlue = CreateMaterial(shader, new Color(0.05f, 0.62f, 1f), true);

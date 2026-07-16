@@ -119,26 +119,21 @@ namespace AnimalBattleRoyale
 
         public static bool TryEnter(ThirdPersonAnimalController ant)
         {
-            if (ant == null || ant.AnimalType != AnimalType.Ant || IsTraveling(ant)) return false;
-            AntTunnelEntrance source = FindNearest(ant.transform.position, EnterRange, null);
-            if (source == null || entrances.Count < 2) return false;
-
-            AntTunnelEntrance closestExit = FindNearest(source.transform.position, float.MaxValue, source);
-            if (closestExit == null) return false;
-
+            if (ant == null || sessions.ContainsKey(ant)) return false;
+            AntTunnelEntrance nearest = FindNearest(ant.transform.position, EnterRange, null);
+            if (nearest == null) return false;
             sessions[ant] = new TunnelSession
             {
-                Source = source,
-                SelectedExit = closestExit,
+                Source = nearest,
+                SelectedExit = null,
                 ExpiresAt = Time.time + TunnelDuration,
                 SelectionStartedAt = -1f
             };
-            AttackVfx.CreateBurst(source.transform.position, new Color(0.52f, 0.2f, 0.05f), 1.9f);
-            CombatFeedback.PlayPower(AnimalType.Ant, 1, source.transform.position);
+            AttackVfx.CreateBurst(nearest.transform.position, new Color(0.65f, 0.28f, 0.06f), 2.1f);
             return true;
         }
 
-        /// <summary>WASD chooses an exit by direction. Holding it briefly travels to that exit.</summary>
+        /// <summary>The configured movement keys choose an exit by direction. Holding them briefly travels to that exit.</summary>
         public static void Navigate(ThirdPersonAnimalController ant, Vector3 movementDirection)
         {
             if (ant == null || !sessions.TryGetValue(ant, out TunnelSession session)) return;
@@ -177,7 +172,7 @@ namespace AnimalBattleRoyale
             sessions.Remove(ant);
             ant.TeleportTo(destination.transform.position + Vector3.up * 0.18f);
             AttackVfx.CreateBurst(destination.transform.position, new Color(0.65f, 0.28f, 0.06f), 2.1f);
-            CombatFeedback.PlayPower(AnimalType.Ant, 1, destination.transform.position);
+            CombatFeedback.PlayPower(ant.AnimalType, 0, destination.transform.position);
         }
 
         private static AntTunnelEntrance FindNearest(Vector3 position, float maximumDistance, AntTunnelEntrance exclude)
@@ -225,7 +220,7 @@ namespace AnimalBattleRoyale
             marker.transform.SetParent(transform, false);
             marker.transform.localPosition = Vector3.up * 0.2f;
 
-            markerMaterial = new Material(Shader.Find("Sprites/Default"));
+            markerMaterial = new Material(ShaderLibrary.Sprite);
             markerMaterial.color = new Color(0.25f, 1f, 0.65f, 0.96f);
 
             exitRing = marker.AddComponent<LineRenderer>();
@@ -279,10 +274,11 @@ namespace AnimalBattleRoyale
             exitRing.endColor = color;
             exitBeam.startColor = color;
             exitBeam.endColor = color;
-            exitText.text = selected ? "SAIR\nWASD" : "SAÍDA";
+            exitText.text = selected ? "SAIR\nMOVIMENTO" : "SAÍDA";
             exitText.color = color;
 
-            if (Camera.main != null) exitText.transform.rotation = Camera.main.transform.rotation;
+            Transform viewer = CameraCache.MainTransform;
+            if (viewer != null) exitText.transform.rotation = viewer.rotation;
         }
     }
 }

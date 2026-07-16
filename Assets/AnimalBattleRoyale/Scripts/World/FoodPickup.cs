@@ -17,11 +17,18 @@ namespace AnimalBattleRoyale
     {
         private static readonly List<FoodPickup> activePickups = new List<FoodPickup>();
         private static readonly Dictionary<int, Material> sharedMaterials = new Dictionary<int, Material>();
+        private static int nextMotionGroup;
         private FoodKind foodKind;
         private float amount;
         private Vector3 basePosition;
         private Color effectColor;
         private bool collected;
+        private int motionGroup;
+
+        private void Awake()
+        {
+            motionGroup = nextMotionGroup++ & 1;
+        }
 
         private void OnEnable()
         {
@@ -61,8 +68,9 @@ namespace AnimalBattleRoyale
 
         private void Update()
         {
+            if ((Time.frameCount & 1) != motionGroup) return;
             transform.position = basePosition + Vector3.up * (Mathf.Sin(Time.time * 2.5f + transform.position.x) * 0.18f);
-            transform.Rotate(0f, 70f * Time.deltaTime, 0f, Space.World);
+            transform.Rotate(0f, 24f * Time.deltaTime, 0f, Space.World);
         }
 
         public static bool TryConsumeNearest(ThirdPersonAnimalController animal)
@@ -206,8 +214,7 @@ namespace AnimalBattleRoyale
             Color32 packed = color;
             int key = packed.GetHashCode() ^ (emissive ? int.MinValue : 0);
             if (sharedMaterials.TryGetValue(key, out Material cached) && cached != null) return cached;
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
+            Shader shader = ShaderLibrary.Lit;
             Material material = new Material(shader) { color = color, enableInstancing = true };
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
             if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", emissive ? 0.48f : 0.22f);
@@ -265,9 +272,20 @@ namespace AnimalBattleRoyale
 
     public sealed class PickupLabel : MonoBehaviour
     {
+        private static Transform cachedCamera;
+        private static int nextUpdateGroup;
+        private int updateGroup;
+
+        private void Awake()
+        {
+            updateGroup = nextUpdateGroup++ % 3;
+        }
+
         private void LateUpdate()
         {
-            if (Camera.main != null) transform.rotation = Quaternion.LookRotation(transform.position - Camera.main.transform.position);
+            if (Time.frameCount % 3 != updateGroup) return;
+            if (cachedCamera == null && Camera.main != null) cachedCamera = Camera.main.transform;
+            if (cachedCamera != null) transform.rotation = Quaternion.LookRotation(transform.position - cachedCamera.position);
         }
     }
 }

@@ -8,12 +8,14 @@ namespace AnimalBattleRoyale
     {
         private const string BedResourcePath = "Audio/Ambience/Beds";
         private const string LoopResourcePath = "Audio/Ambience/Loops";
+        private const string MusicResourcePath = "Audio/Ambience/Music";
 
         public static AmbientAudioController Instance { get; private set; }
 
         [Header("Mix")]
         [SerializeField, Range(0f, 1f)] private float bedVolume = 0.38f;
         [SerializeField, Range(0f, 1f)] private float loopVolume = 0.16f;
+        [SerializeField, Range(0f, 1f)] private float musicVolume = 0.2f;
         [SerializeField, Min(0.1f)] private float fadeSeconds = 2.5f;
 
         [Header("Variation")]
@@ -24,8 +26,10 @@ namespace AnimalBattleRoyale
         private readonly List<Coroutine> runningRoutines = new List<Coroutine>();
         private readonly List<AudioSource[]> shortLoopSources = new List<AudioSource[]>();
         private AudioSource[] bedSources;
+        private AudioSource musicSource;
         private AudioClip[] bedClips;
         private AudioClip[] loopClips;
+        private AudioClip[] musicClips;
         private bool matchAmbiencePlaying;
 
         private void Awake()
@@ -38,6 +42,7 @@ namespace AnimalBattleRoyale
 
             Instance = this;
             bedSources = CreateSourcePair("JungleAmbienceBed");
+            musicSource = CreateMusicSource();
             for (int i = 0; i < shortLoopLayers; i++)
             {
                 shortLoopSources.Add(CreateSourcePair($"JungleAmbienceLoop_{i + 1}"));
@@ -49,13 +54,21 @@ namespace AnimalBattleRoyale
         {
             if (matchAmbiencePlaying) return;
             LoadClips();
-            if ((bedClips == null || bedClips.Length == 0) && (loopClips == null || loopClips.Length == 0))
+            if ((bedClips == null || bedClips.Length == 0) && (loopClips == null || loopClips.Length == 0)
+                && (musicClips == null || musicClips.Length == 0))
             {
                 Debug.LogWarning("No ambient audio clips found in Resources/Audio/Ambience.");
                 return;
             }
 
             matchAmbiencePlaying = true;
+
+            if (musicClips != null && musicClips.Length > 0)
+            {
+                musicSource.clip = PickClip(musicClips, null);
+                musicSource.volume = musicVolume;
+                musicSource.Play();
+            }
 
             if (bedClips != null && bedClips.Length > 0)
             {
@@ -83,6 +96,11 @@ namespace AnimalBattleRoyale
             runningRoutines.Clear();
 
             StopSources(bedSources);
+            if (musicSource != null)
+            {
+                musicSource.Stop();
+                musicSource.clip = null;
+            }
             for (int i = 0; i < shortLoopSources.Count; i++)
             {
                 StopSources(shortLoopSources[i]);
@@ -98,6 +116,7 @@ namespace AnimalBattleRoyale
         {
             if (bedClips == null || bedClips.Length == 0) bedClips = Resources.LoadAll<AudioClip>(BedResourcePath);
             if (loopClips == null || loopClips.Length == 0) loopClips = Resources.LoadAll<AudioClip>(LoopResourcePath);
+            if (musicClips == null || musicClips.Length == 0) musicClips = Resources.LoadAll<AudioClip>(MusicResourcePath);
         }
 
         private IEnumerator RunLoopingLayer(AudioSource[] sources, AudioClip[] clips, float targetVolume, Vector2 changeSeconds, float initialDelay)
@@ -191,6 +210,19 @@ namespace AnimalBattleRoyale
                 sources[i] = source;
             }
             return sources;
+        }
+
+        private AudioSource CreateMusicSource()
+        {
+            GameObject sourceObject = new GameObject("JungleMusic");
+            sourceObject.transform.SetParent(transform, false);
+            AudioSource source = sourceObject.AddComponent<AudioSource>();
+            source.playOnAwake = false;
+            source.loop = true;
+            source.spatialBlend = 0f;
+            source.priority = 160;
+            source.dopplerLevel = 0f;
+            return source;
         }
 
         private static void StopSources(AudioSource[] sources)

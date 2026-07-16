@@ -84,19 +84,22 @@ def limb(name, start, end, radius, material, arm, bone):
 
 
 def model(arm, brown, tan, dark, white, gold):
-    body = OrganicBody("MonkeyBody", resolution=0.04)
+    body = OrganicBody("MonkeyBody", resolution=0.032)
 
     # Pear-shaped torso: wide hips, soft belly, narrower chest and shoulders.
-    body.ball((0, 0.62, 0), 0.24)
-    body.ball((0, 0.78, 0.02), 0.27)
-    body.ball((0, 0.98, 0.01), 0.25)
-    body.ball((-0.17, 1.08, 0), 0.14)
-    body.ball((0.17, 1.08, 0), 0.14)
-    # Head with brow and short muzzle.
-    body.chain((0, 1.14, 0.02), (0, 1.28, 0.04), 0.15, 0.15, 3)
-    body.ball((0, 1.43, 0.05), 0.215)
-    body.ball((0, 1.51, 0.12), 0.115)
-    body.ball((0, 1.34, 0.27), 0.125)
+    body.ball((0, 0.62, 0), 0.27)
+    body.ball((0, 0.78, 0.02), 0.30)
+    body.ball((0, 0.98, 0.01), 0.27)
+    body.ball((-0.18, 1.08, 0), 0.16)
+    body.ball((0.18, 1.08, 0), 0.16)
+    # Infant-primate proportions: a broad cranium and rounded cheeks on a
+    # compact pear torso, with a short but clearly projecting muzzle.
+    body.chain((0, 1.14, 0.02), (0, 1.27, 0.04), 0.18, 0.19, 4)
+    body.ball((0, 1.43, 0.06), 0.32)
+    body.ball((0, 1.57, 0.08), 0.25)
+    body.ball((-0.18, 1.42, 0.12), 0.19)
+    body.ball((0.18, 1.42, 0.12), 0.19)
+    body.ball((0, 1.34, 0.29), 0.17)
 
     for side in (-1, 1):
         shoulder = (side * 0.26, 1.10, 0)
@@ -106,15 +109,15 @@ def model(arm, brown, tan, dark, white, gold):
         knee = (side * 0.24, 0.30, 0.03)
         ankle = (side * 0.29, 0.10, 0.08)
         # Long tapered arms ending in mitt hands with a thumb bump.
-        body.chain((side * 0.22, 1.10, 0), shoulder, 0.13, 0.11, 3)
-        body.chain(shoulder, elbow, 0.11, 0.085, 5)
-        body.chain(elbow, wrist, 0.085, 0.075, 5)
-        body.ball((side * 0.67, 0.40, 0.12), 0.10)
-        body.ball((side * 0.71, 0.36, 0.20), 0.055)
+        body.chain((side * 0.22, 1.10, 0), shoulder, 0.15, 0.125, 3)
+        body.chain(shoulder, elbow, 0.125, 0.095, 6)
+        body.chain(elbow, wrist, 0.095, 0.08, 5)
+        body.ball((side * 0.67, 0.40, 0.12), 0.115)
+        body.ball((side * 0.71, 0.36, 0.20), 0.065)
         # Shorter legs with long gripping feet.
-        body.chain(hip, knee, 0.12, 0.095, 4)
-        body.chain(knee, ankle, 0.095, 0.08, 4)
-        body.chain(ankle, (side * 0.29, 0.08, 0.30), 0.08, 0.06, 4)
+        body.chain(hip, knee, 0.14, 0.105, 5)
+        body.chain(knee, ankle, 0.105, 0.085, 4)
+        body.chain(ankle, (side * 0.29, 0.08, 0.30), 0.09, 0.07, 5)
     # Expressive tail following one smooth S-curve.
     body.curve((0, 0.70, -0.16), (0.18, 0.78, -0.52), (0.50, 0.95, -0.78),
                (0.10, 1.08, -1.02), 0.06, 0.032, samples=20)
@@ -126,30 +129,43 @@ def model(arm, brown, tan, dark, white, gold):
         (tan, lambda c: abs(c.x) > 0.58 and c.y < 0.50),                   # hands
     ))
 
-    # Smaller ears and forward-projecting muzzle give the head primate planes.
+    # Round external ears with recessed inner bowls are a defining monkey cue.
     for side, label in ((-1, "L"), (1, "R")):
-        oriented_detail_sphere("Ear_" + label, (side * 0.225, 1.45, 0.04),
-                               (0.045, 0.082, 0.068), (0, side * 0.5, 0), brown, arm, "Head")
-        oriented_detail_sphere("EarInner_" + label, (side * 0.242, 1.45, 0.055),
-                               (0.027, 0.055, 0.045), (0, side * 0.5, 0), tan, arm, "Head")
+        oriented_detail_sphere("Ear_" + label, (side * 0.315, 1.46, 0.04),
+                               (0.105, 0.135, 0.072), (0, side * 0.5, 0), brown, arm, "Head")
+        oriented_detail_sphere("EarInner_" + label, (side * 0.327, 1.46, 0.065),
+                               (0.068, 0.092, 0.047), (0, side * 0.5, 0), tan, arm, "Head")
 
-    oriented_detail_sphere("Muzzle", (0, 1.345, 0.315),
-                           (0.13, 0.095, 0.105), (0, 0, 0), tan, arm, "Head")
-    oriented_detail_sphere("Brow", (0, 1.505, 0.215),
-                           (0.16, 0.055, 0.055), (0, 0, 0), brown, arm, "Head")
+    oriented_detail_sphere("FaceMask", (0, 1.445, 0.255),
+                           (0.245, 0.225, 0.075), (0, 0, 0), tan, arm, "Head")
+    oriented_detail_sphere("Muzzle", (0, 1.34, 0.38),
+                           (0.16, 0.115, 0.12), (0, 0, 0), tan, arm, "Head")
+    oriented_detail_sphere("Brow", (0, 1.565, 0.24),
+                           (0.22, 0.065, 0.065), (0, 0, 0), brown, arm, "Head")
 
-    # Small dark-set eyes replace the surprised cartoon spheres.
+    # Large but anatomically seated eyes: sclera, warm iris, pupil and catchlight.
     spark = mat("Monkey_Spark", (1, 1, 0.96))
     for side, label in ((-1, "L"), (1, "R")):
-        oriented_detail_sphere("EyeSocket_" + label, (side * 0.072, 1.47, 0.264),
-                               (0.047, 0.037, 0.024), (0, 0, 0), dark, arm, "Head")
-        oriented_detail_sphere("Eye_" + label, (side * 0.072, 1.47, 0.281),
-                               (0.031, 0.025, 0.012), (0, 0, 0), gold, arm, "Head")
-        oriented_detail_sphere("Pupil_" + label, (side * 0.072, 1.47, 0.291),
-                               (0.010, 0.017, 0.005), (0, 0, 0), dark, arm, "Head")
-        oriented_detail_sphere("EyeSpark_" + label, (side * 0.066, 1.478, 0.296),
-                               (0.004, 0.004, 0.002), (0, 0, 0), spark, arm, "Head")
-    detail_sphere("Nose", (0, 1.385, 0.405), (0.060, 0.038, 0.028), dark, arm, "Head")
+        oriented_detail_sphere("EyeWhite_" + label, (side * 0.105, 1.49, 0.325),
+                               (0.085, 0.092, 0.045), (0, 0, 0), white, arm, "Head")
+        oriented_detail_sphere("Iris_" + label, (side * 0.105, 1.49, 0.365),
+                               (0.053, 0.058, 0.018), (0, 0, 0), gold, arm, "Head")
+        oriented_detail_sphere("Pupil_" + label, (side * 0.105, 1.49, 0.38),
+                               (0.024, 0.034, 0.009), (0, 0, 0), dark, arm, "Head")
+        oriented_detail_sphere("EyeSpark_" + label, (side * 0.088, 1.515, 0.39),
+                               (0.010, 0.012, 0.004), (0, 0, 0), spark, arm, "Head")
+    detail_sphere("Nose", (0, 1.385, 0.49), (0.072, 0.044, 0.032), dark, arm, "Head")
+    oriented_detail_sphere("Smile", (0, 1.305, 0.48), (0.105, 0.025, 0.055),
+                           (0, 0, 0), dark, arm, "Head")
+    oriented_detail_sphere("SmileTeeth", (0, 1.33, 0.505), (0.065, 0.012, 0.022),
+                           (0, 0, 0), white, arm, "Head")
+
+    # Three swept tufts break the spherical skull silhouette like the reference cub.
+    for tuft, (start, end) in enumerate((((-.04, 1.72, .04), (-.08, 1.86, .08)),
+                                         ((0, 1.74, .04), (.01, 1.90, .12)),
+                                         ((.04, 1.72, .04), (.10, 1.84, .06)))):
+        tapered_limb("HeadTuft_%d" % tuft, start, end, 0.045, 0.004,
+                     brown, arm, "Head", vertices=10)
 
     # Four long fingers and a shorter thumb make vine grabbing readable.
     for side, label in ((-1, "L"), (1, "R")):

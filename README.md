@@ -50,7 +50,7 @@ Copie `Assets/AnimalBattleRoyale` para qualquer projeto Unity 6 existente. O ger
 - Arena procedural de 360 m, com solo irregular de colinas, vales e depressões para cobertura natural, além de árvores altas, arbustos grandes, rochas, formações escaláveis, formigueiros gigantes e 16 casas abertas para abrigo.
 - Quase metade das árvores possui cipós utilizáveis pelo Macaco; 30 entradas de túnel conectam a rede subterrânea da Formiga; seis montanhas altas servem de rota e poleiro para a Águia.
 - Alimentos temáticos de cura (carne para o Tigre, peixe para a Águia, fruta para o Macaco e néctar para a Formiga) e cristais de escudo espalhados pelo mapa.
-- 16 participantes por padrão: 1 jogador e 15 bots.
+- 10 participantes por partida: os jogadores online ocupam as primeiras vagas e o host completa as restantes com bots.
 - Combate corpo a corpo, vida, dano, eliminação e vitória/derrota.
 - Área segura circular que diminui; fora dela, a chuva ácida causa 10 de dano por segundo e exibe gotas tóxicas no animal.
 - Todos os animais nadam no lago central (flutuação automática; Espaço dá impulso), e uma rampa de pedra circular leva à ilha do portal.
@@ -85,12 +85,30 @@ Assets/AnimalBattleRoyale/
     └── World/
 ```
 
+## Testar o multiplayer
+
+### Na mesma rede local
+
+1. Abra uma instância como host e clique em **HOST LOCAL** no painel multiplayer.
+2. Nas outras instâncias, informe o IP local do host e clique em **LAN**. Na mesma máquina, use `127.0.0.1`.
+3. Cada jogador escolhe seu animal. Os clientes clicam em **INICIAR PARTIDA** para ficar prontos; o host inicia a partida.
+4. A sala sempre começa com 10 participantes. Exemplo: com 3 humanos, o host cria 7 bots.
+
+### Pela internet com Unity Relay
+
+1. No Editor, abra **Edit > Project Settings > Services** e vincule o projeto a um Unity Cloud Project.
+2. No host, clique em **CRIAR ONLINE** e envie o código exibido aos demais jogadores.
+3. Os clientes digitam o código e clicam em **ENTRAR**.
+4. Depois que todos escolherem o animal, o host clica em **INICIAR PARTIDA**.
+
+O protótipo usa Unity Multiplayer Services, Relay, autenticação anônima e Netcode for GameObjects. O host é a autoridade de vida, dano, bots, zona segura e estado da partida. Para testar duas instâncias no mesmo computador, gere uma build standalone e deixe a outra instância aberta no Editor.
+
 ## Próximas etapas recomendadas
 
 1. Substituir os animais de formas geométricas por modelos com Animator.
 2. Adicionar itens, sons, partículas e feedback visual de dano mais elaborado.
 3. Transformar a selva procedural em Terrain com LOD e vegetação instanciada.
-4. Adicionar lobby e multiplayer autoritativo com servidor.
+4. Migrar a autoridade do host para servidores dedicados antes de uma versão competitiva pública.
 
 ## Observação de desempenho
 

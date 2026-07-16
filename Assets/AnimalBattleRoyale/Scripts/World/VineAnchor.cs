@@ -6,72 +6,83 @@ namespace AnimalBattleRoyale
     /// <summary>Hang point on jungle trees used by the monkey's Q leap.</summary>
     public sealed class VineAnchor : MonoBehaviour
     {
-        private const float UseRange = 34f;
-        private const float IndicatorRange = 34f;
-        private const int IndicatorSegments = 28;
+        public const float GroundUseRange = 10f;
+        public const float ChainUseRange = 12f;
+        private const int IndicatorSegments = 24;
         private static readonly List<VineAnchor> anchors = new List<VineAnchor>();
+        private static Material sharedIndicatorMaterial;
         private LineRenderer gripIndicator;
-        private Material indicatorMaterial;
-
-        private void Awake()
-        {
-            CreateGripIndicator();
-        }
 
         private void OnEnable()
         {
             if (!anchors.Contains(this)) anchors.Add(this);
         }
 
-        private void OnDisable() => anchors.Remove(this);
-
-        private void OnDestroy()
+        private void OnDisable()
         {
-            if (indicatorMaterial != null) Destroy(indicatorMaterial);
+            anchors.Remove(this);
+            if (gripIndicator != null) gripIndicator.enabled = false;
         }
 
         internal static void TickIndicators(ThirdPersonAnimalController player, Camera camera, float time)
         {
+            bool monkeyActive = player != null && camera != null && player.AnimalType == AnimalType.Monkey
+                && !player.IsDefeated && !player.IsVineLeaping
+                && (!player.IsHangingVine || player.CanChainToAnotherVine);
+            Vector3 playerPosition = monkeyActive ? player.transform.position : Vector3.zero;
+            Vector3 cameraPosition = monkeyActive ? camera.transform.position : Vector3.zero;
+            Vector3 aimDirection = monkeyActive ? player.ViewAimDirection : Vector3.forward;
+            float indicatorRange = monkeyActive ? GetUseRange(player) : 0f;
+            float indicatorRangeSqr = indicatorRange * indicatorRange;
+            float pulse = Mathf.Sin(time * 7f);
+            float radius = 0.2f + pulse * 0.018f;
+            float width = 0.022f + pulse * 0.003f;
+            Vector3 cameraRight = monkeyActive ? camera.transform.right : Vector3.right;
+            Vector3 cameraUp = monkeyActive ? camera.transform.up : Vector3.up;
+
             foreach (VineAnchor anchor in anchors)
             {
-                if (anchor == null || anchor.gripIndicator == null) continue;
-                bool visible = player != null && player.AnimalType == AnimalType.Monkey && camera != null;
+                if (anchor == null) continue;
+                bool visible = monkeyActive;
                 if (visible)
                 {
-                    Vector3 toVine = anchor.transform.position - camera.transform.position;
-                    float distanceToPlayer = (anchor.transform.position - player.transform.position).sqrMagnitude;
+                    Vector3 anchorPosition = anchor.transform.position;
+                    Vector3 toVine = anchorPosition - cameraPosition;
+                    float distanceToPlayer = (anchorPosition - playerPosition).sqrMagnitude;
                     float lookDot = toVine.sqrMagnitude > 0.01f
-                        ? Vector3.Dot(camera.transform.forward, toVine.normalized)
+                        ? Vector3.Dot(aimDirection, toVine.normalized)
                         : 0f;
-                    visible = distanceToPlayer <= IndicatorRange * IndicatorRange && lookDot >= 0.84f;
+                    visible = distanceToPlayer <= indicatorRangeSqr && lookDot >= 0.84f;
                 }
 
                 if (!visible)
                 {
-                    anchor.gripIndicator.enabled = false;
+                    if (anchor.gripIndicator != null) anchor.gripIndicator.enabled = false;
                     continue;
                 }
 
+                anchor.EnsureGripIndicator();
                 anchor.gripIndicator.enabled = true;
-                anchor.gripIndicator.transform.rotation = camera.transform.rotation;
-                float radius = 0.32f + Mathf.Sin(time * 7f) * 0.035f;
-                float width = 0.035f + Mathf.Sin(time * 7f) * 0.006f;
                 anchor.gripIndicator.widthMultiplier = width;
                 for (int i = 0; i <= IndicatorSegments; i++)
                 {
                     float angle = i * Mathf.PI * 2f / IndicatorSegments;
-                    anchor.gripIndicator.SetPosition(i, new Vector3(Mathf.Cos(angle) * radius, Mathf.Sin(angle) * radius, 0f));
+                    Vector3 point = anchor.transform.position
+                                    + cameraRight * (Mathf.Cos(angle) * radius)
+                                    + cameraUp * (Mathf.Sin(angle) * radius);
+                    anchor.gripIndicator.SetPosition(i, point);
                 }
             }
         }
 
-        private void CreateGripIndicator()
+        private void EnsureGripIndicator()
         {
+            if (gripIndicator != null) return;
             GameObject circle = new GameObject("MonkeyGripCircle");
             circle.transform.SetParent(transform, false);
             circle.transform.localPosition = Vector3.zero;
             gripIndicator = circle.AddComponent<LineRenderer>();
-            gripIndicator.useWorldSpace = false;
+            gripIndicator.useWorldSpace = true;
             gripIndicator.loop = false;
             gripIndicator.positionCount = IndicatorSegments + 1;
             gripIndicator.numCornerVertices = 3;
@@ -79,12 +90,23 @@ namespace AnimalBattleRoyale
             gripIndicator.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             gripIndicator.receiveShadows = false;
             gripIndicator.sortingOrder = 20;
-            indicatorMaterial = new Material(Shader.Find("Sprites/Default"));
-            indicatorMaterial.color = new Color(1f, 0.86f, 0.1f, 0.96f);
-            gripIndicator.material = indicatorMaterial;
+            EnsureIndicatorMaterial();
+            gripIndicator.sharedMaterial = sharedIndicatorMaterial;
             gripIndicator.startColor = new Color(1f, 0.98f, 0.45f, 1f);
             gripIndicator.endColor = new Color(0.2f, 1f, 0.8f, 1f);
             gripIndicator.enabled = false;
+        }
+
+        private static void EnsureIndicatorMaterial()
+        {
+            if (sharedIndicatorMaterial != null) return;
+            Shader shader = ShaderLibrary.Sprite;
+            sharedIndicatorMaterial = new Material(shader)
+            {
+                name = "SharedMonkeyVineIndicator",
+                color = new Color(1f, 0.86f, 0.1f, 0.96f),
+                enableInstancing = true
+            };
         }
 
         public static VineAnchor Create(Transform tree, Vector3 localStart, Vector3 localEnd, Material material)
@@ -108,28 +130,67 @@ namespace AnimalBattleRoyale
             return anchor.GetComponent<VineAnchor>();
         }
 
+        public static int RegisterExistingVines(Transform treeVisual)
+        {
+            if (treeVisual == null) return 0;
+            int registered = 0;
+            Transform[] descendants = treeVisual.GetComponentsInChildren<Transform>(true);
+            foreach (Transform vineVisual in descendants)
+            {
+                if (vineVisual == null || !vineVisual.name.Contains("HangingVine")) continue;
+                if (vineVisual.GetComponentInChildren<VineAnchor>(true) != null) continue;
+                Renderer vineRenderer = vineVisual.GetComponentInChildren<Renderer>(true);
+                if (vineRenderer == null) continue;
+
+                Bounds bounds = vineRenderer.bounds;
+                Vector3 gripPosition = new Vector3(bounds.center.x, bounds.min.y + 0.16f, bounds.center.z);
+                GameObject anchorObject = new GameObject("VineAnchor_" + vineVisual.name);
+                anchorObject.transform.SetParent(vineVisual, true);
+                anchorObject.transform.position = gripPosition;
+                anchorObject.AddComponent<VineAnchor>();
+                registered++;
+            }
+            return registered;
+        }
+
+        public static bool IsWithinUseRange(ThirdPersonAnimalController monkey, Transform vine)
+        {
+            if (monkey == null || vine == null) return false;
+            float range = GetUseRange(monkey);
+            return (vine.position - monkey.transform.position).sqrMagnitude <= range * range;
+        }
+
+        private static float GetUseRange(ThirdPersonAnimalController monkey)
+        {
+            return monkey != null && monkey.IsHangingVine ? ChainUseRange : GroundUseRange;
+        }
+
         public static bool TryUseNearest(ThirdPersonAnimalController monkey, Vector3 requestedDirection)
         {
+            if (monkey == null || monkey.AnimalType != AnimalType.Monkey || monkey.IsVineLeaping) return false;
+            if (monkey.IsHangingVine && !monkey.CanChainToAnotherVine) return false;
             VineAnchor nearest = null;
             VineAnchor lookedAt = null;
             float bestScore = float.MaxValue;
             float bestLookDot = 0.7f;
             float lookedAtDistance = float.MaxValue;
-            Camera camera = Camera.main;
+            Transform camera = CameraCache.MainTransform;
+            Vector3 viewAimDirection = monkey.ViewAimDirection;
+            float useRange = GetUseRange(monkey);
             foreach (VineAnchor anchor in anchors)
             {
                 if (anchor == null) continue;
                 if (monkey.IsHoldingVine(anchor.transform)) continue;
                 Vector3 offset = anchor.transform.position - monkey.transform.position;
                 float sqrDistance = offset.sqrMagnitude;
-                if (sqrDistance >= UseRange * UseRange) continue;
+                if (sqrDistance > useRange * useRange) continue;
                 float lookBonus = 0f;
                 if (camera != null)
                 {
-                    Vector3 fromCamera = anchor.transform.position - camera.transform.position;
+                    Vector3 fromCamera = anchor.transform.position - camera.position;
                     if (fromCamera.sqrMagnitude > 0.01f)
                     {
-                        float lookDot = Vector3.Dot(camera.transform.forward, fromCamera.normalized);
+                        float lookDot = Vector3.Dot(viewAimDirection, fromCamera.normalized);
                         lookBonus = lookDot * 260f;
                         if (lookDot > bestLookDot || (Mathf.Approximately(lookDot, bestLookDot) && sqrDistance < lookedAtDistance))
                         {
@@ -162,15 +223,19 @@ namespace AnimalBattleRoyale
 
         public static bool IsLookedAtBy(ThirdPersonAnimalController player)
         {
-            if (player == null || player.AnimalType != AnimalType.Monkey || Camera.main == null) return false;
-            Camera camera = Camera.main;
+            if (player == null || player.AnimalType != AnimalType.Monkey || player.IsDefeated || player.IsVineLeaping) return false;
+            if (player.IsHangingVine && !player.CanChainToAnotherVine) return false;
+            Transform camera = CameraCache.MainTransform;
+            Vector3 aim = player.ViewAimDirection;
+            float useRange = GetUseRange(player);
             foreach (VineAnchor anchor in anchors)
             {
-                if (anchor == null) continue;
-                Vector3 toVine = anchor.transform.position - camera.transform.position;
-                if ((anchor.transform.position - player.transform.position).sqrMagnitude > IndicatorRange * IndicatorRange
-                    || toVine.sqrMagnitude < 0.01f) continue;
-                if (Vector3.Dot(camera.transform.forward, toVine.normalized) >= 0.84f) return true;
+                if (anchor == null || player.IsHoldingVine(anchor.transform)) continue;
+                Vector3 offset = anchor.transform.position - player.transform.position;
+                if (offset.sqrMagnitude > useRange * useRange) continue;
+                if (camera == null) continue;
+                Vector3 fromCamera = anchor.transform.position - camera.position;
+                if (fromCamera.sqrMagnitude > 0.01f && Vector3.Dot(aim, fromCamera.normalized) >= 0.84f) return true;
             }
             return false;
         }

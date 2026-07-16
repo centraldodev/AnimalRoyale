@@ -4,7 +4,7 @@ using UnityEngine.Rendering;
 
 namespace AnimalBattleRoyale
 {
-    public sealed class JungleGenerator : MonoBehaviour
+    public sealed partial class JungleGenerator : MonoBehaviour
     {
         [Header("Map")]
         [SerializeField, Min(40f)] private float mapSize = 360f;
@@ -13,7 +13,7 @@ namespace AnimalBattleRoyale
 
         [Header("Terrain")]
         [SerializeField, Range(32, 160)] private int terrainResolution = 96;
-        [SerializeField, Range(1f, 12f)] private float terrainHeight = 6.5f;
+        [SerializeField, Range(1f, 12f)] private float terrainHeight = 8.2f;
 
         [Header("Central Lake")]
         [SerializeField, Range(18f, 48f)] private float lakeRadius = 31f;
@@ -21,24 +21,29 @@ namespace AnimalBattleRoyale
         [SerializeField, Range(0.3f, 0.8f)] private float lakeMovementMultiplier = 0.52f;
 
         [Header("Vegetation")]
-        [SerializeField, Range(20, 900)] private int treeCount = 520;
-        [SerializeField, Range(20, 1200)] private int bushCount = 690;
+        [SerializeField, Range(20, 900)] private int treeCount = 650;
+        [SerializeField, Range(20, 1200)] private int bushCount = 880;
+        [SerializeField, Range(0, 4000)] private int grassTuftCount = 1600;
         [SerializeField, Range(0, 220)] private int rockCount = 96;
         [SerializeField, Range(0, 100)] private int anthillCount = 40;
-        [SerializeField, Range(0, 32)] private int mountainCount = 14;
-        [SerializeField, Range(0, 200)] private int healthFoodCount = 90;
+        [SerializeField, Range(0, 48)] private int mountainCount = 26;
+        [SerializeField, Range(0, 100)] private int lifePickupCount = 24;
         [SerializeField, Range(0, 90)] private int rangedSupplyCount = 45;
         [SerializeField, Range(0, 40)] private int houseCount = 16;
-        [SerializeField, Range(0, 80)] private int tunnelEntranceCount = 30;
-        [SerializeField, Range(0, 16)] private int eagleMountainCount = 6;
+        [SerializeField, Range(0, 16)] private int eagleMountainCount = 8;
+
+        [Header("NatureStarterKit2")]
+        [SerializeField] private bool useNatureStarterVegetation = true;
+        [SerializeField, Range(0f, 0.5f)] private float natureTreeShare = 0.22f;
+        [SerializeField, Range(0f, 0.75f)] private float natureBushShare = 0.4f;
 
         [Header("Stylized Details")]
         [SerializeField, Range(0, 500)] private int flowerPatchCount = 340;
         [SerializeField, Range(0, 8)] private int waterfallCount = 2;
         [SerializeField, Range(0, 48)] private int skyCloudCount = 22;
         [SerializeField, Range(1, 10)] private int trailBranchCount = 5;
-        [SerializeField, Range(8, 40)] private int backdropMountainCount = 16;
-        [SerializeField, Range(20, 180)] private int distantCanopyCount = 96;
+        [SerializeField, Range(8, 40)] private int backdropMountainCount = 22;
+        [SerializeField, Range(20, 180)] private int distantCanopyCount = 128;
 
         private MeshCollider groundCollider;
         private static GameObject cachedTreePrefab;
@@ -46,10 +51,18 @@ namespace AnimalBattleRoyale
         private static GameObject cachedMountainPrefab;
         private static GameObject cachedRockPrefab;
         private static GameObject cachedFlowerPrefab;
+        private static GameObject cachedHighDetailTreePrefab;
+        private static GameObject cachedBroadleafPrefab;
+        private static GameObject cachedHighDetailMountainPrefab;
+        private static GameObject cachedMossyRockPrefab;
+        private static GameObject cachedFlowerClusterPrefab;
+        private static NatureEnvironmentCatalog cachedNatureCatalog;
+        private static readonly Dictionary<string, Material> detailedMaterialCache = new Dictionary<string, Material>();
         private static Mesh cachedCrystalMesh;
         private static Mesh cachedBackdropMountainMesh;
         private static Mesh cachedLakeDiscMesh;
         private static Mesh cachedLakeShoreMesh;
+        private readonly List<TrailRoute> trailRoutes = new List<TrailRoute>();
 
         public float MapSize => mapSize;
         public float LakeRadius => lakeRadius;
@@ -106,6 +119,15 @@ namespace AnimalBattleRoyale
             return RandomMapPosition(centerClearance);
         }
 
+        public void Generate(int synchronizedSeed)
+        {
+            bool previousRandomize = randomizeSeedEveryMatch;
+            seed = synchronizedSeed;
+            randomizeSeedEveryMatch = false;
+            Generate();
+            randomizeSeedEveryMatch = previousRandomize;
+        }
+
         public void Generate()
         {
             ClearGeneratedWorld();
@@ -115,7 +137,11 @@ namespace AnimalBattleRoyale
             GameObject generated = new GameObject("GeneratedJungle");
             generated.transform.SetParent(transform, false);
 
-            Material groundMaterial = CreateGroundMaterial();
+            if (cachedNatureCatalog == null)
+                cachedNatureCatalog = Resources.Load<NatureEnvironmentCatalog>("NatureEnvironmentCatalog");
+            NatureEnvironmentCatalog natureCatalog = useNatureStarterVegetation ? cachedNatureCatalog : null;
+
+            Material groundMaterial = CreateGroundMaterial(natureCatalog != null ? natureCatalog.GrassGround : null);
             Material trunkMaterial = CreateMaterial(new Color(0.31f, 0.12f, 0.035f));
             Material leafMaterial = CreateMaterial(new Color(0.035f, 0.39f, 0.075f));
             Material leafLightMaterial = CreateMaterial(new Color(0.19f, 0.62f, 0.11f));
@@ -140,13 +166,18 @@ namespace AnimalBattleRoyale
             Material waterMaterial = CreateMaterial(new Color(0.08f, 0.58f, 0.95f));
             Material cloudMaterial = CreateMaterial(new Color(0.96f, 0.98f, 1f));
             Material cloudShadeMaterial = CreateMaterial(new Color(0.7f, 0.84f, 0.95f));
-            Material trailMaterial = CreateMaterial(new Color(0.55f, 0.29f, 0.09f));
-            Material shoreMaterial = CreateMaterial(new Color(0.62f, 0.39f, 0.13f));
+            Material trailMaterial = CreateDirtTrailMaterial(natureCatalog != null ? natureCatalog.DirtGround : null);
+            Material[] grassBladeMaterials = CreateGrassDetailMaterials(natureCatalog);
+            Material shoreMaterial = CreateNaturalSurfaceMaterial(
+                natureCatalog != null ? natureCatalog.DryGround : null,
+                new Color(0.72f, 0.58f, 0.38f), 3.5f);
             Material reedMaterial = CreateMaterial(new Color(0.24f, 0.48f, 0.055f));
             Material lilyMaterial = CreateMaterial(new Color(0.08f, 0.48f, 0.13f));
             Material lakeDepthMaterial = CreateMaterial(new Color(0.025f, 0.3f, 0.5f));
             if (lakeDepthMaterial.HasProperty("_Cull")) lakeDepthMaterial.SetFloat("_Cull", (float)CullMode.Off);
             Material lakeWaterMaterial = CreateWaterMaterial(new Color(0.045f, 0.55f, 0.82f, 0.72f));
+
+            BuildTrailRoutes();
 
             CreateGround(generated.transform, groundMaterial);
             CreateBoundaries(generated.transform);
@@ -155,20 +186,37 @@ namespace AnimalBattleRoyale
             Transform treesRoot = new GameObject("Trees").transform;
             treesRoot.SetParent(generated.transform, false);
             treesRoot.gameObject.AddComponent<TreeWindSystem>();
+            WindZone treeWind = treesRoot.gameObject.AddComponent<WindZone>();
+            treeWind.mode = WindZoneMode.Directional;
+            treeWind.windMain = 0.24f;
+            treeWind.windTurbulence = 0.32f;
+            treeWind.windPulseMagnitude = 0.28f;
+            treeWind.windPulseFrequency = 0.18f;
             treesRoot.gameObject.AddComponent<VineIndicatorSystem>();
             for (int i = 0; i < treeCount; i++)
             {
-                Vector3 position = RandomMapPosition(8f);
-                CreateTree(treesRoot, position, trunkMaterial, Random.value > 0.45f ? leafMaterial : leafLightMaterial, vineMaterial, fruitRedMaterial, fruitGoldMaterial);
+                Vector3 position = RandomMapPosition(8f, 4.2f);
+                GameObject natureTree = natureCatalog != null && natureCatalog.HasTrees && Random.value < natureTreeShare
+                    ? natureCatalog.GetRandomTree()
+                    : null;
+                CreateTree(treesRoot, position, trunkMaterial, Random.value > 0.45f ? leafMaterial : leafLightMaterial,
+                    vineMaterial, fruitRedMaterial, fruitGoldMaterial, natureTree);
             }
 
             Transform bushesRoot = new GameObject("Bushes").transform;
             bushesRoot.SetParent(generated.transform, false);
             for (int i = 0; i < bushCount; i++)
             {
-                Vector3 position = RandomMapPosition(5f);
-                CreateBush(bushesRoot, position, bushMaterial);
+                Vector3 position = RandomMapPosition(5f, 3.5f);
+                GameObject natureBush = natureCatalog != null && natureCatalog.HasBushes && Random.value < natureBushShare
+                    ? natureCatalog.GetRandomBush()
+                    : null;
+                CreateBush(bushesRoot, position, bushMaterial, natureBush);
             }
+
+            Transform grassRoot = new GameObject("GrassFields").transform;
+            grassRoot.SetParent(generated.transform, false);
+            CreateGrassField(grassRoot, grassBladeMaterials);
 
             Transform rocksRoot = new GameObject("Rocks").transform;
             rocksRoot.SetParent(generated.transform, false);
@@ -190,7 +238,7 @@ namespace AnimalBattleRoyale
             mountainsRoot.SetParent(generated.transform, false);
             for (int i = 0; i < mountainCount; i++)
             {
-                Vector3 position = RandomMapPosition(34f);
+                Vector3 position = GetMountainPosition(i);
                 CreateRockFormation(mountainsRoot, position, rockMaterial);
             }
 
@@ -198,7 +246,7 @@ namespace AnimalBattleRoyale
             eagleMountainsRoot.SetParent(generated.transform, false);
             for (int i = 0; i < eagleMountainCount; i++)
             {
-                Vector3 position = RandomMapPosition(52f);
+                Vector3 position = RandomMapPosition(52f, 15f);
                 CreateEagleMountain(eagleMountainsRoot, position, rockMaterial);
             }
 
@@ -214,27 +262,36 @@ namespace AnimalBattleRoyale
                 CreateHouse(housesRoot, position, houseWallMaterial, houseRoofMaterial);
             }
 
-            Transform tunnelsRoot = new GameObject("AntTunnelNetwork").transform;
-            tunnelsRoot.SetParent(generated.transform, false);
-            for (int i = 0; i < tunnelEntranceCount; i++)
+            // Scattered life orbs: each fully restores (100%) the animal's health.
+            Transform lifeRoot = new GameObject("LifePickups").transform;
+            lifeRoot.SetParent(generated.transform, false);
+            Vector3 playerShoreSpawn = GetShoreSpawnPosition();
+            Vector3 pickupInward = new Vector3(-playerShoreSpawn.x, 0f, -playerShoreSpawn.z).normalized;
+            Vector3 pickupRight = Vector3.Cross(Vector3.up, pickupInward).normalized;
+            for (int i = 0; i < lifePickupCount; i++)
             {
-                AntTunnelEntrance.Create(RandomMapPosition(14f), moundMaterial, moundDarkMaterial).transform.SetParent(tunnelsRoot, true);
-            }
-
-            Transform foodRoot = new GameObject("HealthFoodPickups").transform;
-            foodRoot.SetParent(generated.transform, false);
-            for (int i = 0; i < healthFoodCount; i++)
-            {
-                FoodKind kind = (FoodKind)(i % 4);
-                FoodPickup.Create(RandomMapPosition(9f), kind).transform.SetParent(foodRoot, true);
+                Vector3 position = i switch
+                {
+                    0 => GetGroundPosition(playerShoreSpawn + pickupInward * 9f - pickupRight * 4f),
+                    1 => GetGroundPosition(playerShoreSpawn + pickupInward * 17f + pickupRight * 5f),
+                    _ => RandomMapPosition(9f)
+                };
+                LifePickup.Create(position).transform.SetParent(lifeRoot, true);
             }
 
             Transform rangedSuppliesRoot = new GameObject("RangedAmmoSupplies").transform;
             rangedSuppliesRoot.SetParent(generated.transform, false);
             for (int i = 0; i < rangedSupplyCount; i++)
             {
-                RangedSupplyKind kind = (RangedSupplyKind)(i % 3);
-                RangedAmmoPickup.Create(RandomMapPosition(12f), kind).transform.SetParent(rangedSuppliesRoot, true);
+                RangedSupplyKind kind = RangedSupplyKind.NaturalAmmo;
+                Vector3 position = i switch
+                {
+                    0 => GetGroundPosition(playerShoreSpawn + pickupInward * 7f + pickupRight * 4f),
+                    1 => GetGroundPosition(playerShoreSpawn + pickupInward * 14f - pickupRight * 5f),
+                    2 => GetGroundPosition(playerShoreSpawn + pickupInward * 22f + pickupRight * 2f),
+                    _ => RandomMapPosition(12f)
+                };
+                RangedAmmoPickup.Create(position, kind).transform.SetParent(rangedSuppliesRoot, true);
             }
 
             Transform flowersRoot = new GameObject("FlowerPatches").transform;
@@ -268,13 +325,13 @@ namespace AnimalBattleRoyale
             // Trees move in the centralized wind system. Their shared FBX meshes and
             // instanced materials are cheaper than static batching objects that move.
             StaticBatchingUtility.Combine(bushesRoot.gameObject);
+            StaticBatchingUtility.Combine(grassRoot.gameObject);
             StaticBatchingUtility.Combine(rocksRoot.gameObject);
             StaticBatchingUtility.Combine(anthillsRoot.gameObject);
             StaticBatchingUtility.Combine(mountainsRoot.gameObject);
             StaticBatchingUtility.Combine(eagleMountainsRoot.gameObject);
             StaticBatchingUtility.Combine(backdropRoot.gameObject);
             StaticBatchingUtility.Combine(housesRoot.gameObject);
-            StaticBatchingUtility.Combine(tunnelsRoot.gameObject);
             StaticBatchingUtility.Combine(flowersRoot.gameObject);
             StaticBatchingUtility.Combine(cloudsRoot.gameObject);
             StaticBatchingUtility.Combine(trailsRoot.gameObject);
@@ -444,28 +501,42 @@ namespace AnimalBattleRoyale
             boundary.isStatic = true;
         }
 
-        private static void CreateTree(Transform parent, Vector3 position, Material trunkMaterial, Material leafMaterial, Material vineMaterial, Material fruitRedMaterial, Material fruitGoldMaterial)
+        private static void CreateTree(Transform parent, Vector3 position, Material trunkMaterial, Material leafMaterial,
+            Material vineMaterial, Material fruitRedMaterial, Material fruitGoldMaterial, GameObject natureTreePrefab)
         {
+            if (natureTreePrefab != null)
+            {
+                CreateNatureTree(parent, position, natureTreePrefab, vineMaterial, fruitRedMaterial, fruitGoldMaterial);
+                return;
+            }
+
             if (cachedTreePrefab == null) cachedTreePrefab = Resources.Load<GameObject>("EnvironmentModels/JungleTree/JungleTree");
-            GameObject blenderTreePrefab = cachedTreePrefab;
+            if (cachedHighDetailTreePrefab == null) cachedHighDetailTreePrefab = Resources.Load<GameObject>("EnvironmentModels/JungleTreeHD/JungleTreeHD");
+            bool useHighDetail = cachedHighDetailTreePrefab != null && Random.value < 0.18f;
+            GameObject blenderTreePrefab = useHighDetail ? cachedHighDetailTreePrefab : cachedTreePrefab;
             if (blenderTreePrefab != null)
             {
-                GameObject treeRoot = new GameObject("BlenderJungleTree");
+                GameObject treeRoot = new GameObject(useHighDetail ? "HighDetailJungleTree" : "BlenderJungleTree");
                 treeRoot.transform.SetParent(parent, false);
                 treeRoot.transform.position = position;
                 treeRoot.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                treeRoot.transform.localScale = Vector3.one * Random.Range(0.9f, 1.45f);
+                treeRoot.transform.localScale = Vector3.one * (useHighDetail ? Random.Range(0.76f, 1.08f) : Random.Range(0.9f, 1.45f));
 
                 GameObject treeVisual = Object.Instantiate(blenderTreePrefab, treeRoot.transform, false);
                 treeVisual.name = "TreeVisual";
+                if (useHighDetail) EnhanceImportedMaterials(treeVisual);
+                EnableRendererInstancing(treeVisual);
                 treeVisual.AddComponent<TreeWindSway>();
                 BoxCollider treeCollider = treeRoot.AddComponent<BoxCollider>();
-                treeCollider.center = new Vector3(0f, 2.4f, 0f);
-                treeCollider.size = new Vector3(1.2f, 4.8f, 1.2f);
+                treeCollider.center = useHighDetail ? new Vector3(0f, 3.6f, 0f) : new Vector3(0f, 2.4f, 0f);
+                treeCollider.size = useHighDetail ? new Vector3(1.75f, 7.2f, 1.75f) : new Vector3(1.2f, 4.8f, 1.2f);
 
-                if (Random.value < 0.52f)
+                int registeredVines = VineAnchor.RegisterExistingVines(treeVisual.transform);
+                if (registeredVines == 0)
                 {
-                    VineAnchor.Create(treeVisual.transform, new Vector3(0.9f, 5.8f, 0.2f), new Vector3(0.95f, 2.8f, 0.35f), vineMaterial);
+                    VineAnchor.Create(treeVisual.transform,
+                        useHighDetail ? new Vector3(1.35f, 7.8f, 0.25f) : new Vector3(0.9f, 5.8f, 0.2f),
+                        useHighDetail ? new Vector3(1.55f, 3.4f, 0.45f) : new Vector3(0.95f, 2.8f, 0.35f), vineMaterial);
                 }
                 if (Random.value < 0.24f)
                 {
@@ -522,12 +593,9 @@ namespace AnimalBattleRoyale
                 crown.isStatic = true;
             }
 
-            if (Random.value < 0.48f)
-            {
-                Vector3 vineStart = new Vector3(Random.Range(-1.1f, 1.1f), Random.Range(4.8f, 6.6f), Random.Range(-1.1f, 1.1f));
-                Vector3 vineEnd = vineStart + new Vector3(Random.Range(-1.4f, 1.4f), -Random.Range(2.4f, 4.2f), Random.Range(-1.4f, 1.4f));
-                VineAnchor.Create(tree.transform, vineStart, vineEnd, vineMaterial);
-            }
+            Vector3 vineStart = new Vector3(Random.Range(-1.1f, 1.1f), Random.Range(4.8f, 6.6f), Random.Range(-1.1f, 1.1f));
+            Vector3 vineEnd = vineStart + new Vector3(Random.Range(-1.4f, 1.4f), -Random.Range(2.4f, 4.2f), Random.Range(-1.4f, 1.4f));
+            VineAnchor.Create(tree.transform, vineStart, vineEnd, vineMaterial);
 
             if (Random.value < 0.38f)
             {
@@ -547,6 +615,40 @@ namespace AnimalBattleRoyale
             }
         }
 
+        private static void CreateNatureTree(Transform parent, Vector3 position, GameObject prefab,
+            Material vineMaterial, Material fruitRedMaterial, Material fruitGoldMaterial)
+        {
+            GameObject treeRoot = new GameObject("NatureStarterTree");
+            treeRoot.transform.SetParent(parent, false);
+            treeRoot.transform.position = position;
+            treeRoot.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            treeRoot.transform.localScale = Vector3.one * Random.Range(0.82f, 1.18f);
+
+            GameObject visual = InstantiateLegacyPrefab(prefab, treeRoot.transform);
+            if (visual == null)
+            {
+                Object.Destroy(treeRoot);
+                return;
+            }
+            visual.name = prefab.name + "_Visual";
+            ApplyNatureRendererSettings(visual, true);
+
+            // Tree Creator vegetation reacts to the shared Unity WindZone. The custom sway
+            // component remains reserved for imported static meshes so trunks do not bend as one piece.
+            if (VineAnchor.RegisterExistingVines(visual.transform) == 0)
+            {
+                VineAnchor.Create(visual.transform,
+                    new Vector3(Random.Range(-0.8f, 0.8f), Random.Range(5.6f, 7.4f), Random.Range(-0.5f, 0.5f)),
+                    new Vector3(Random.Range(-1.2f, 1.2f), Random.Range(2.0f, 3.2f), Random.Range(-0.8f, 0.8f)),
+                    vineMaterial);
+            }
+
+            if (Random.value < 0.16f)
+                CreateDecorativeTreeFruit(treeRoot.transform, fruitRedMaterial, fruitGoldMaterial, vineMaterial);
+
+            ConfigureVisualOptimization(treeRoot, 0.014f);
+        }
+
         private static void CreateWoodLimb(Transform parent, string name, Vector3 start, Vector3 end, float width, Material material)
         {
             Vector3 direction = end - start;
@@ -558,6 +660,19 @@ namespace AnimalBattleRoyale
             limb.transform.up = direction.normalized;
             limb.GetComponent<Renderer>().sharedMaterial = material;
             limb.isStatic = true;
+        }
+
+        private static void EnableRendererInstancing(GameObject root)
+        {
+            if (root == null) return;
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                Material[] materials = renderer.sharedMaterials;
+                foreach (Material material in materials)
+                {
+                    if (material != null) material.enableInstancing = true;
+                }
+            }
         }
 
         private static void CreateDecorativeTreeFruit(Transform parent, Material redMaterial, Material goldMaterial, Material leafMaterial)
@@ -588,17 +703,35 @@ namespace AnimalBattleRoyale
             }
         }
 
-        private static void CreateBush(Transform parent, Vector3 position, Material material)
+        private static void CreateBush(Transform parent, Vector3 position, Material material, GameObject natureBushPrefab)
         {
+            if (natureBushPrefab != null)
+            {
+                GameObject natureBush = InstantiateLegacyPrefab(natureBushPrefab, parent);
+                if (natureBush == null) return;
+                natureBush.name = "NatureStarterBush";
+                natureBush.transform.position = position;
+                natureBush.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                natureBush.transform.localScale = Vector3.one * Random.Range(0.72f, 1.28f);
+                ApplyNatureRendererSettings(natureBush, false);
+                foreach (Collider natureCollider in natureBush.GetComponentsInChildren<Collider>(true))
+                    Object.Destroy(natureCollider);
+                ConfigureVisualOptimization(natureBush, 0.01f);
+                return;
+            }
+
             if (cachedBushPrefab == null) cachedBushPrefab = Resources.Load<GameObject>("EnvironmentModels/JungleBush/JungleBush");
-            GameObject bushPrefab = cachedBushPrefab;
+            if (cachedBroadleafPrefab == null) cachedBroadleafPrefab = Resources.Load<GameObject>("EnvironmentModels/BroadleafClusterHD/BroadleafClusterHD");
+            bool useHighDetail = cachedBroadleafPrefab != null && Random.value < 0.42f;
+            GameObject bushPrefab = useHighDetail ? cachedBroadleafPrefab : cachedBushPrefab;
             if (bushPrefab != null)
             {
                 GameObject bushModel = Object.Instantiate(bushPrefab, parent, false);
-                bushModel.name = "BlenderJungleBush";
+                bushModel.name = useHighDetail ? "HighDetailBroadleafPlant" : "BlenderJungleBush";
                 bushModel.transform.position = position;
                 bushModel.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                bushModel.transform.localScale = Vector3.one * Random.Range(0.8f, 1.35f);
+                bushModel.transform.localScale = Vector3.one * (useHighDetail ? Random.Range(0.72f, 1.3f) : Random.Range(0.8f, 1.35f));
+                if (useHighDetail) EnhanceImportedMaterials(bushModel);
                 ConfigureVisualOptimization(bushModel, 0.012f);
                 return;
             }
@@ -617,18 +750,63 @@ namespace AnimalBattleRoyale
             bush.isStatic = true;
         }
 
+        private static void ApplyNatureRendererSettings(GameObject root, bool castsShadows)
+        {
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.shadowCastingMode = castsShadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
+                renderer.receiveShadows = true;
+                renderer.lightProbeUsage = LightProbeUsage.BlendProbes;
+                renderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
+
+                foreach (Material material in renderer.sharedMaterials)
+                {
+                    if (material == null) continue;
+                    material.enableInstancing = true;
+                    if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.08f);
+                    if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.08f);
+                }
+            }
+        }
+
+        private static GameObject InstantiateLegacyPrefab(GameObject prefab, Transform parent)
+        {
+            if (prefab == null) return null;
+
+            // Force T to UnityEngine.Object. Unity 5 Tree Creator prefabs can clone through a
+            // native subobject type, which makes Instantiate<GameObject> throw in Unity 6.
+            Object clone = Object.Instantiate<Object>(prefab);
+            GameObject instance = clone as GameObject;
+            if (instance == null && clone is Component component)
+                instance = component.gameObject;
+
+            if (instance == null)
+            {
+                Debug.LogWarning($"O prefab antigo '{prefab.name}' não gerou um GameObject e foi ignorado.");
+                if (clone != null) Object.Destroy(clone);
+                return null;
+            }
+
+            instance.transform.SetParent(parent, false);
+            return instance;
+        }
+
         private static void CreateRock(Transform parent, Vector3 position, Material material)
         {
             if (cachedRockPrefab == null) cachedRockPrefab = Resources.Load<GameObject>("EnvironmentModels/JungleRock/JungleRock");
-            if (cachedRockPrefab != null)
+            if (cachedMossyRockPrefab == null) cachedMossyRockPrefab = Resources.Load<GameObject>("EnvironmentModels/MossyRockHD/MossyRockHD");
+            bool useHighDetail = cachedMossyRockPrefab != null && Random.value < 0.58f;
+            GameObject rockPrefab = useHighDetail ? cachedMossyRockPrefab : cachedRockPrefab;
+            if (rockPrefab != null)
             {
-                GameObject boulder = Object.Instantiate(cachedRockPrefab, parent, false);
-                boulder.name = "BlenderJungleRock";
+                GameObject boulder = Object.Instantiate(rockPrefab, parent, false);
+                boulder.name = useHighDetail ? "HighDetailMossyRock" : "BlenderJungleRock";
                 boulder.transform.position = position;
                 boulder.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
                 float size = Random.Range(0.55f, 1.35f);
                 boulder.transform.localScale = new Vector3(
                     size * Random.Range(0.85f, 1.2f), size * Random.Range(0.7f, 1.1f), size * Random.Range(0.85f, 1.2f));
+                if (useHighDetail) EnhanceImportedMaterials(boulder);
                 BoxCollider rockCollider = boulder.AddComponent<BoxCollider>();
                 rockCollider.center = new Vector3(0f, 0.7f, 0f);
                 rockCollider.size = new Vector3(2.2f, 1.4f, 1.8f);
@@ -646,27 +824,44 @@ namespace AnimalBattleRoyale
             rock.isStatic = true;
         }
 
+        private static GameObject cachedTunnelHolePrefab;
+
         private static void CreateAnthill(Transform parent, Vector3 position, Material moundMaterial, Material entranceMaterial)
         {
             GameObject anthill = new GameObject("GiantAnthill");
             anthill.transform.SetParent(parent, false);
             anthill.transform.position = position;
             anthill.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-            anthill.transform.localScale = Vector3.one * Random.Range(1.0f, 1.45f);
+            anthill.transform.localScale = Vector3.one * Random.Range(0.9f, 1.2f);
             anthill.isStatic = true;
 
-            CreateMoundPart(anthill.transform, "MoundBase", new Vector3(0f, 0.72f, 0f), new Vector3(4.4f, 1.45f, 4.1f), moundMaterial);
-            CreateMoundPart(anthill.transform, "MoundTop", new Vector3(0.15f, 1.5f, 0.05f), new Vector3(2.9f, 1.7f, 2.7f), moundMaterial);
+            if (cachedTunnelHolePrefab == null)
+                cachedTunnelHolePrefab = Resources.Load<GameObject>("Environment/TunnelHole");
 
-            GameObject entrance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            entrance.name = "AnthillEntrance";
-            entrance.transform.SetParent(anthill.transform, false);
-            entrance.transform.localPosition = new Vector3(0f, 0.5f, 2.05f);
-            entrance.transform.localScale = new Vector3(1.35f, 0.85f, 0.25f);
-            entrance.GetComponent<Renderer>().sharedMaterial = entranceMaterial;
-            Collider entranceCollider = entrance.GetComponent<Collider>();
-            if (entranceCollider != null) Destroy(entranceCollider);
-            entrance.isStatic = true;
+            if (cachedTunnelHolePrefab != null)
+            {
+                GameObject hole = Object.Instantiate(cachedTunnelHolePrefab, anthill.transform, false);
+                hole.name = "TunnelHoleVisual";
+                foreach (Collider c in hole.GetComponentsInChildren<Collider>(true)) if (c != null) c.enabled = false;
+            }
+            else
+            {
+                // Fallback: the old procedural dirt mound.
+                CreateMoundPart(anthill.transform, "MoundBase", new Vector3(0f, 0.72f, 0f), new Vector3(4.4f, 1.45f, 4.1f), moundMaterial);
+                CreateMoundPart(anthill.transform, "MoundTop", new Vector3(0.15f, 1.5f, 0.05f), new Vector3(2.9f, 1.7f, 2.7f), moundMaterial);
+                GameObject entrance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                entrance.name = "AnthillEntrance";
+                entrance.transform.SetParent(anthill.transform, false);
+                entrance.transform.localPosition = new Vector3(0f, 0.5f, 2.05f);
+                entrance.transform.localScale = new Vector3(1.35f, 0.85f, 0.25f);
+                entrance.GetComponent<Renderer>().sharedMaterial = entranceMaterial;
+                Collider entranceCollider = entrance.GetComponent<Collider>();
+                if (entranceCollider != null) Destroy(entranceCollider);
+                entrance.isStatic = true;
+            }
+
+            // Make the hole a working entrance for the Ant's underground tunnel network.
+            anthill.AddComponent<AntTunnelEntrance>();
         }
 
         private static void CreateRockFormation(Transform parent, Vector3 position, Material material)
@@ -677,7 +872,11 @@ namespace AnimalBattleRoyale
             formation.transform.SetParent(parent, false);
             formation.transform.position = position;
             formation.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-            formation.transform.localScale = Vector3.one * Random.Range(1.2f, 1.8f);
+            float formationWidth = Random.Range(1.55f, 2.35f);
+            formation.transform.localScale = new Vector3(
+                formationWidth,
+                formationWidth * Random.Range(0.82f, 1.08f),
+                formationWidth * Random.Range(0.82f, 1.18f));
             formation.isStatic = true;
 
             if (cachedRockPrefab != null)
@@ -722,19 +921,23 @@ namespace AnimalBattleRoyale
         private static void CreateEagleMountain(Transform parent, Vector3 position, Material material)
         {
             if (cachedMountainPrefab == null) cachedMountainPrefab = Resources.Load<GameObject>("EnvironmentModels/JungleMountain/JungleMountain");
-            GameObject mountainPrefab = cachedMountainPrefab;
+            if (cachedHighDetailMountainPrefab == null) cachedHighDetailMountainPrefab = Resources.Load<GameObject>("EnvironmentModels/MountainSpireHD/MountainSpireHD");
+            bool useHighDetail = cachedHighDetailMountainPrefab != null && Random.value < 0.72f;
+            GameObject mountainPrefab = useHighDetail ? cachedHighDetailMountainPrefab : cachedMountainPrefab;
             if (mountainPrefab != null)
             {
                 GameObject mountainModel = Object.Instantiate(mountainPrefab, parent, false);
-                mountainModel.name = "BlenderEagleMountain";
+                mountainModel.name = useHighDetail ? "HighDetailMountainSpire" : "BlenderEagleMountain";
                 mountainModel.transform.position = position;
                 mountainModel.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                mountainModel.transform.localScale = Vector3.one * Random.Range(2.2f, 3.4f);
-                // The FBX root has no mesh of its own; the peaks are children, so
-                // each one needs its collider for the eagle to land and perch.
+                mountainModel.transform.localScale = Vector3.one * (useHighDetail ? Random.Range(0.92f, 1.38f) : Random.Range(2.2f, 3.4f));
+                if (useHighDetail) EnhanceImportedMaterials(mountainModel);
+                // The FBX root has no mesh of its own; the peaks are children. Box
+                // colliders keep them solid and NavMesh-compatible even when the
+                // imported mountain meshes do not have CPU read access in builds.
                 foreach (MeshFilter meshFilter in mountainModel.GetComponentsInChildren<MeshFilter>())
                 {
-                    meshFilter.gameObject.AddComponent<MeshCollider>();
+                    meshFilter.gameObject.AddComponent<BoxCollider>();
                 }
                 ConfigureVisualOptimization(mountainModel, 0.008f);
                 return;
@@ -865,6 +1068,18 @@ namespace AnimalBattleRoyale
         private static void CreateFlowerPatch(Transform parent, Vector3 position, Material stemMaterial, Material petalMaterial)
         {
             if (cachedFlowerPrefab == null) cachedFlowerPrefab = Resources.Load<GameObject>("EnvironmentModels/JungleFlower/JungleFlower");
+            if (cachedFlowerClusterPrefab == null) cachedFlowerClusterPrefab = Resources.Load<GameObject>("EnvironmentModels/FlowerClusterHD/FlowerClusterHD");
+            if (cachedFlowerClusterPrefab != null && Random.value < 0.34f)
+            {
+                GameObject cluster = Object.Instantiate(cachedFlowerClusterPrefab, parent, false);
+                cluster.name = "HighDetailFlowerCluster";
+                cluster.transform.position = position;
+                cluster.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                cluster.transform.localScale = Vector3.one * Random.Range(0.7f, 1.22f);
+                EnhanceImportedMaterials(cluster);
+                ConfigureVisualOptimization(cluster, 0.008f);
+                return;
+            }
             if (cachedFlowerPrefab != null)
             {
                 GameObject flowerPatch = new GameObject("FlowerPatch");
@@ -1060,42 +1275,159 @@ namespace AnimalBattleRoyale
 
         private void CreateTrailNetwork(Transform parent, Material trailMaterial)
         {
-            for (int branch = 0; branch < trailBranchCount; branch++)
+            foreach (TrailRoute route in trailRoutes)
             {
-                float angle = branch * Mathf.PI * 2f / trailBranchCount + Random.Range(-0.18f, 0.18f);
-                Vector3 start = new Vector3(Mathf.Cos(angle) * (lakeRadius + 5f), 0f, Mathf.Sin(angle) * (lakeRadius + 5f));
-                start.y = CalculateGroundHeight(start.x, start.z) + 0.08f;
-                Vector3 destination = new Vector3(Mathf.Cos(angle) * Random.Range(78f, 142f), 0f, Mathf.Sin(angle) * Random.Range(78f, 142f));
-                Vector3 lateral = Vector3.Cross(Vector3.up, destination.normalized);
-                const int segments = 7;
-                for (int i = 0; i < segments; i++)
-                {
-                    float from = i / (float)segments;
-                    float to = (i + 1) / (float)segments;
-                    Vector3 a = Vector3.Lerp(start, destination, from) + lateral * Mathf.Sin(from * Mathf.PI * 2f + branch) * 9f;
-                    Vector3 b = Vector3.Lerp(start, destination, to) + lateral * Mathf.Sin(to * Mathf.PI * 2f + branch) * 9f;
-                    a.y = CalculateGroundHeight(a.x, a.z) + 0.08f;
-                    b.y = CalculateGroundHeight(b.x, b.z) + 0.08f;
-                    CreateTrailSegment(parent, a, b, trailMaterial);
-                }
+                CreateTrailRibbon(parent, route, trailMaterial);
             }
         }
 
-        private static void CreateTrailSegment(Transform parent, Vector3 start, Vector3 end, Material material)
+        private void CreateGrassField(Transform parent, Material[] materials)
         {
-            Vector3 flatDirection = end - start;
-            flatDirection.y = 0f;
-            if (flatDirection.sqrMagnitude < 0.01f) return;
-            GameObject segment = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            segment.name = "DirtTrail";
-            segment.transform.SetParent(parent, false);
-            segment.transform.position = (start + end) * 0.5f;
-            segment.transform.rotation = Quaternion.LookRotation(flatDirection.normalized, Vector3.up);
-            segment.transform.localScale = new Vector3(3.4f, 0.045f, flatDirection.magnitude + 0.35f);
-            segment.GetComponent<Renderer>().sharedMaterial = material;
-            Collider collider = segment.GetComponent<Collider>();
-            if (collider != null) collider.enabled = false;
-            segment.isStatic = true;
+            const int tuftsPerChunk = 240;
+            int created = 0;
+            int chunkIndex = 0;
+            while (created < grassTuftCount)
+            {
+                int tuftCount = Mathf.Min(tuftsPerChunk, grassTuftCount - created);
+                List<Vector3> vertices = new List<Vector3>(tuftCount * 8);
+                List<Vector2> uvs = new List<Vector2>(tuftCount * 8);
+                List<int> triangles = new List<int>(tuftCount * 12);
+
+                for (int i = 0; i < tuftCount; i++)
+                {
+                    Vector3 center = RandomMapPosition(6f, 5.3f) + Vector3.up * 0.015f;
+                    float height = Random.Range(0.28f, 0.68f);
+                    float width = Random.Range(0.07f, 0.14f);
+                    float angle = Random.Range(0f, Mathf.PI * 2f);
+                    Vector3 firstAxis = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+                    Vector3 secondAxis = Vector3.Cross(Vector3.up, firstAxis).normalized;
+                    Vector3 lean = new Vector3(Random.Range(-0.08f, 0.08f), 0f, Random.Range(-0.08f, 0.08f));
+                    AddGrassQuad(vertices, uvs, triangles, center, firstAxis, lean, width, height);
+                    AddGrassQuad(vertices, uvs, triangles, center, secondAxis, lean, width, height * Random.Range(0.86f, 1.05f));
+                }
+
+                GameObject chunk = new GameObject($"GrassMeshChunk_{chunkIndex++}");
+                chunk.transform.SetParent(parent, false);
+                Mesh mesh = new Mesh { name = "CrossedGrassTuftsMesh" };
+                mesh.SetVertices(vertices);
+                mesh.SetUVs(0, uvs);
+                mesh.SetTriangles(triangles, 0);
+                mesh.RecalculateNormals();
+                mesh.RecalculateBounds();
+                chunk.AddComponent<MeshFilter>().sharedMesh = mesh;
+                MeshRenderer renderer = chunk.AddComponent<MeshRenderer>();
+                renderer.sharedMaterial = materials[(chunkIndex - 1) % materials.Length];
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+                renderer.receiveShadows = true;
+                chunk.isStatic = true;
+                created += tuftCount;
+            }
+        }
+
+        private static void AddGrassQuad(List<Vector3> vertices, List<Vector2> uvs, List<int> triangles,
+            Vector3 center, Vector3 widthAxis, Vector3 lean, float halfWidth, float height)
+        {
+            int start = vertices.Count;
+            Vector3 bottomLeft = center - widthAxis * halfWidth;
+            Vector3 bottomRight = center + widthAxis * halfWidth;
+            Vector3 tipCenter = center + Vector3.up * height + lean;
+            Vector3 topLeft = tipCenter - widthAxis * (halfWidth * 0.32f);
+            Vector3 topRight = tipCenter + widthAxis * (halfWidth * 0.32f);
+            vertices.Add(bottomLeft);
+            vertices.Add(topLeft);
+            vertices.Add(topRight);
+            vertices.Add(bottomRight);
+            uvs.Add(new Vector2(0f, 0f));
+            uvs.Add(new Vector2(0f, 1f));
+            uvs.Add(new Vector2(1f, 1f));
+            uvs.Add(new Vector2(1f, 0f));
+
+            triangles.Add(start);
+            triangles.Add(start + 1);
+            triangles.Add(start + 2);
+            triangles.Add(start);
+            triangles.Add(start + 2);
+            triangles.Add(start + 3);
+        }
+
+        private void BuildTrailRoutes()
+        {
+            trailRoutes.Clear();
+            int routeCount = Mathf.Max(1, trailBranchCount);
+            for (int branch = 0; branch < routeCount; branch++)
+            {
+                float angle = branch * Mathf.PI * 2f / routeCount + Random.Range(-0.16f, 0.16f);
+                Vector3 direction = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
+                Vector3 start = direction * (lakeRadius + 5f);
+                Vector3 destination = direction * Random.Range(112f, 158f);
+                Vector3 lateral = Vector3.Cross(Vector3.up, direction).normalized;
+                trailRoutes.Add(new TrailRoute(start, destination, lateral, Random.Range(0f, Mathf.PI * 2f)));
+            }
+        }
+
+        private Vector3 EvaluateTrailPosition(TrailRoute route, float progress)
+        {
+            progress = Mathf.Clamp01(progress);
+            float edgeFade = Mathf.Sin(progress * Mathf.PI);
+            float curve = Mathf.Sin(progress * Mathf.PI * 2f + route.WavePhase) * edgeFade * 8f;
+            Vector3 position = Vector3.Lerp(route.Start, route.Destination, progress) + route.Lateral * curve;
+            position.y = CalculateGroundHeight(position.x, position.z);
+            return position;
+        }
+
+        private void CreateTrailRibbon(Transform parent, TrailRoute route, Material material)
+        {
+            const int segments = 32;
+            const float halfWidth = 2.35f;
+            Vector3[] vertices = new Vector3[(segments + 1) * 2];
+            Vector2[] uvs = new Vector2[vertices.Length];
+            int[] triangles = new int[segments * 6];
+
+            for (int i = 0; i <= segments; i++)
+            {
+                float progress = i / (float)segments;
+                Vector3 center = EvaluateTrailPosition(route, progress);
+                Vector3 before = EvaluateTrailPosition(route, Mathf.Max(0f, progress - 0.015f));
+                Vector3 after = EvaluateTrailPosition(route, Mathf.Min(1f, progress + 0.015f));
+                Vector3 tangent = after - before;
+                tangent.y = 0f;
+                if (tangent.sqrMagnitude < 0.001f) tangent = route.Destination - route.Start;
+                Vector3 right = Vector3.Cross(Vector3.up, tangent.normalized);
+
+                float widthVariation = 1f + Mathf.Sin(progress * 23f + route.WavePhase) * 0.1f;
+                Vector3 leftPosition = center - right * (halfWidth * widthVariation);
+                Vector3 rightPosition = center + right * (halfWidth * widthVariation);
+                leftPosition.y = CalculateGroundHeight(leftPosition.x, leftPosition.z) + 0.09f;
+                rightPosition.y = CalculateGroundHeight(rightPosition.x, rightPosition.z) + 0.09f;
+                vertices[i * 2] = leftPosition;
+                vertices[i * 2 + 1] = rightPosition;
+                uvs[i * 2] = new Vector2(0f, progress * 12f);
+                uvs[i * 2 + 1] = new Vector2(1f, progress * 12f);
+
+                if (i == segments) continue;
+                int triangle = i * 6;
+                int vertex = i * 2;
+                triangles[triangle] = vertex;
+                triangles[triangle + 1] = vertex + 2;
+                triangles[triangle + 2] = vertex + 1;
+                triangles[triangle + 3] = vertex + 1;
+                triangles[triangle + 4] = vertex + 2;
+                triangles[triangle + 5] = vertex + 3;
+            }
+
+            GameObject trail = new GameObject("TerrainFollowingDirtTrail");
+            trail.transform.SetParent(parent, false);
+            Mesh mesh = new Mesh { name = "DirtPathRibbonMesh" };
+            mesh.vertices = vertices;
+            mesh.uv = uvs;
+            mesh.triangles = triangles;
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            trail.AddComponent<MeshFilter>().sharedMesh = mesh;
+            MeshRenderer renderer = trail.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            trail.isStatic = true;
         }
 
         private static void CreateMoundPart(Transform parent, string name, Vector3 localPosition, Vector3 localScale, Material material)
@@ -1109,7 +1441,7 @@ namespace AnimalBattleRoyale
             part.isStatic = true;
         }
 
-        private Vector3 RandomMapPosition(float centerClearRadius)
+        private Vector3 RandomMapPosition(float centerClearRadius, float trailClearance = 0f)
         {
             float half = mapSize * 0.5f - 3f;
             float requiredClearRadius = Mathf.Max(centerClearRadius, lakeRadius + 4f);
@@ -1119,18 +1451,71 @@ namespace AnimalBattleRoyale
             {
                 point = new Vector2(Random.Range(-half, half), Random.Range(-half, half));
                 attempts++;
-            } while (point.magnitude < requiredClearRadius && attempts < 30);
+            } while ((point.magnitude < requiredClearRadius || IsNearTrail(point, trailClearance)) && attempts < 50);
 
             return new Vector3(point.x, CalculateGroundHeight(point.x, point.y), point.y);
         }
 
+        private bool IsNearTrail(Vector2 point, float clearance)
+        {
+            if (clearance <= 0f || trailRoutes.Count == 0) return false;
+            float clearanceSqr = clearance * clearance;
+            foreach (TrailRoute route in trailRoutes)
+            {
+                const int samples = 18;
+                Vector3 previous = EvaluateTrailPosition(route, 0f);
+                for (int i = 1; i <= samples; i++)
+                {
+                    Vector3 current = EvaluateTrailPosition(route, i / (float)samples);
+                    if (SqrDistanceToSegment(point, new Vector2(previous.x, previous.z),
+                            new Vector2(current.x, current.z)) <= clearanceSqr)
+                    {
+                        return true;
+                    }
+                    previous = current;
+                }
+            }
+            return false;
+        }
+
+        private static float SqrDistanceToSegment(Vector2 point, Vector2 start, Vector2 end)
+        {
+            Vector2 segment = end - start;
+            if (segment.sqrMagnitude < 0.0001f) return (point - start).sqrMagnitude;
+            float progress = Mathf.Clamp01(Vector2.Dot(point - start, segment) / segment.sqrMagnitude);
+            return (point - (start + segment * progress)).sqrMagnitude;
+        }
+
+        private Vector3 GetMountainPosition(int index)
+        {
+            int corridorSlots = trailRoutes.Count * 4;
+            if (index >= corridorSlots || trailRoutes.Count == 0) return RandomMapPosition(34f, 11f);
+
+            TrailRoute route = trailRoutes[(index / 4) % trailRoutes.Count];
+            int slot = index % 4;
+            float progress = slot < 2 ? Random.Range(0.4f, 0.5f) : Random.Range(0.68f, 0.8f);
+            float side = (slot & 1) == 0 ? -1f : 1f;
+            Vector3 position = EvaluateTrailPosition(route, progress)
+                + route.Lateral * (side * Random.Range(12f, 16f));
+            position.y = CalculateGroundHeight(position.x, position.z);
+            return position;
+        }
+
         private float CalculateGroundHeight(float x, float z)
         {
-            float broadNoise = Mathf.PerlinNoise((x + seed * 1.37f) * 0.012f, (z - seed * 0.73f) * 0.012f) - 0.5f;
-            float detailNoise = Mathf.PerlinNoise((x - seed * 0.21f) * 0.042f, (z + seed * 0.58f) * 0.042f) - 0.5f;
+            // PerlinNoise loses precision and can return NaN when a randomized
+            // 32-bit seed is multiplied directly into billion-scale coordinates.
+            // Fold the seed into stable offsets while preserving all seed bits.
+            uint seedBits = unchecked((uint)seed);
+            float seedX = (seedBits & 0xffffu) * (2048f / 65535f);
+            float seedZ = (seedBits >> 16) * (2048f / 65535f);
+            float broadNoise = Mathf.PerlinNoise((x + seedX * 1.37f) * 0.012f, (z - seedZ * 0.73f) * 0.012f) - 0.5f;
+            float detailNoise = Mathf.PerlinNoise((x - seedZ * 0.91f) * 0.042f, (z + seedX * 0.58f) * 0.042f) - 0.5f;
+            float ridgeSample = Mathf.PerlinNoise((x + seedX * 0.43f) * 0.0075f, (z - seedZ * 0.31f) * 0.0075f);
+            float ridgeNoise = Mathf.Pow(1f - Mathf.Abs(ridgeSample * 2f - 1f), 2.8f);
             float rolling = broadNoise * terrainHeight * 1.45f + detailNoise * terrainHeight * 0.32f;
             float shallowValley = Mathf.Sin((x + z) * 0.018f) * terrainHeight * 0.18f;
-            float naturalHeight = rolling + shallowValley;
+            float naturalHeight = rolling + shallowValley + ridgeNoise * terrainHeight * 0.38f;
             float distanceFromCenter = new Vector2(x, z).magnitude;
             float shoreProgress = Mathf.InverseLerp(lakeRadius, lakeRadius + 9f, distanceFromCenter);
             float lakeInfluence = 1f - Mathf.SmoothStep(0f, 1f, shoreProgress);
@@ -1138,143 +1523,6 @@ namespace AnimalBattleRoyale
             float depthProgress = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(distanceFromCenter / lakeRadius));
             float lakeBed = Mathf.Lerp(lakeSurfaceHeight - 3.15f, lakeSurfaceHeight - 0.38f, depthProgress);
             return Mathf.Lerp(naturalHeight, lakeBed, lakeInfluence);
-        }
-
-        public static Mesh GetCrystalMesh()
-        {
-            if (cachedCrystalMesh != null) return cachedCrystalMesh;
-
-            const int sides = 6;
-            List<Vector3> vertices = new List<Vector3>(sides * 18);
-            List<int> triangles = new List<int>(sides * 18);
-            Vector3 top = new Vector3(0f, 0.62f, 0f);
-            Vector3 bottom = new Vector3(0f, -0.52f, 0f);
-            for (int i = 0; i < sides; i++)
-            {
-                float angleA = i * Mathf.PI * 2f / sides;
-                float angleB = (i + 1) * Mathf.PI * 2f / sides;
-                Vector3 lowerA = new Vector3(Mathf.Cos(angleA) * 0.31f, -0.31f, Mathf.Sin(angleA) * 0.31f);
-                Vector3 lowerB = new Vector3(Mathf.Cos(angleB) * 0.31f, -0.31f, Mathf.Sin(angleB) * 0.31f);
-                Vector3 upperA = new Vector3(Mathf.Cos(angleA) * 0.31f, 0.25f, Mathf.Sin(angleA) * 0.31f);
-                Vector3 upperB = new Vector3(Mathf.Cos(angleB) * 0.31f, 0.25f, Mathf.Sin(angleB) * 0.31f);
-                AddFlatQuad(vertices, triangles, lowerA, upperA, upperB, lowerB);
-                AddFlatTriangle(vertices, triangles, upperA, top, upperB);
-                AddFlatTriangle(vertices, triangles, lowerA, lowerB, bottom);
-            }
-
-            cachedCrystalMesh = new Mesh { name = "FacetedCartoonCrystal" };
-            cachedCrystalMesh.SetVertices(vertices);
-            cachedCrystalMesh.SetTriangles(triangles, 0);
-            cachedCrystalMesh.RecalculateNormals();
-            cachedCrystalMesh.RecalculateBounds();
-            return cachedCrystalMesh;
-        }
-
-        private static Mesh GetLakeDiscMesh()
-        {
-            if (cachedLakeDiscMesh != null) return cachedLakeDiscMesh;
-            const int segments = 96;
-            Vector3[] vertices = new Vector3[segments + 1];
-            int[] triangles = new int[segments * 3];
-            vertices[0] = Vector3.zero;
-            for (int i = 0; i < segments; i++)
-            {
-                float angle = i * Mathf.PI * 2f / segments;
-                vertices[i + 1] = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
-                int next = (i + 1) % segments;
-                triangles[i * 3] = 0;
-                triangles[i * 3 + 1] = next + 1;
-                triangles[i * 3 + 2] = i + 1;
-            }
-            cachedLakeDiscMesh = new Mesh { name = "CentralLakeDisc" };
-            cachedLakeDiscMesh.vertices = vertices;
-            cachedLakeDiscMesh.triangles = triangles;
-            cachedLakeDiscMesh.RecalculateNormals();
-            cachedLakeDiscMesh.RecalculateBounds();
-            return cachedLakeDiscMesh;
-        }
-
-        private static Mesh GetLakeShoreMesh()
-        {
-            if (cachedLakeShoreMesh != null) return cachedLakeShoreMesh;
-            const int segments = 96;
-            Vector3[] vertices = new Vector3[segments * 2];
-            int[] triangles = new int[segments * 6];
-            for (int i = 0; i < segments; i++)
-            {
-                float angle = i * Mathf.PI * 2f / segments;
-                float wobble = 1f + Mathf.Sin(i * 1.91f) * 0.025f + Mathf.Sin(i * 0.47f) * 0.018f;
-                vertices[i * 2] = new Vector3(Mathf.Cos(angle) * 0.92f, 0f, Mathf.Sin(angle) * 0.92f);
-                vertices[i * 2 + 1] = new Vector3(Mathf.Cos(angle) * 1.14f * wobble, 0f, Mathf.Sin(angle) * 1.14f * wobble);
-                int next = (i + 1) % segments;
-                int index = i * 6;
-                triangles[index] = i * 2;
-                triangles[index + 1] = next * 2;
-                triangles[index + 2] = i * 2 + 1;
-                triangles[index + 3] = next * 2;
-                triangles[index + 4] = next * 2 + 1;
-                triangles[index + 5] = i * 2 + 1;
-            }
-            cachedLakeShoreMesh = new Mesh { name = "IrregularSandyLakeShore" };
-            cachedLakeShoreMesh.vertices = vertices;
-            cachedLakeShoreMesh.triangles = triangles;
-            cachedLakeShoreMesh.RecalculateNormals();
-            cachedLakeShoreMesh.RecalculateBounds();
-            return cachedLakeShoreMesh;
-        }
-
-        private static Mesh GetBackdropMountainMesh()
-        {
-            if (cachedBackdropMountainMesh != null) return cachedBackdropMountainMesh;
-
-            const int sides = 9;
-            List<Vector3> vertices = new List<Vector3>(sides * 30);
-            List<int> rockTriangles = new List<int>(sides * 24);
-            List<int> peakTriangles = new List<int>(sides * 6);
-            Vector3 top = new Vector3(0.06f, 1f, -0.04f);
-            for (int i = 0; i < sides; i++)
-            {
-                float angleA = i * Mathf.PI * 2f / sides;
-                float angleB = (i + 1) * Mathf.PI * 2f / sides;
-                float wobbleA = 1f + Mathf.Sin(i * 2.17f) * 0.12f;
-                float wobbleB = 1f + Mathf.Sin((i + 1) * 2.17f) * 0.12f;
-                Vector3 baseA = new Vector3(Mathf.Cos(angleA) * 0.52f * wobbleA, 0f, Mathf.Sin(angleA) * 0.52f * wobbleA);
-                Vector3 baseB = new Vector3(Mathf.Cos(angleB) * 0.52f * wobbleB, 0f, Mathf.Sin(angleB) * 0.52f * wobbleB);
-                Vector3 middleA = new Vector3(Mathf.Cos(angleA) * 0.34f * wobbleB, 0.48f, Mathf.Sin(angleA) * 0.34f * wobbleB);
-                Vector3 middleB = new Vector3(Mathf.Cos(angleB) * 0.34f * wobbleA, 0.48f, Mathf.Sin(angleB) * 0.34f * wobbleA);
-                Vector3 highA = new Vector3(Mathf.Cos(angleA) * 0.16f, 0.76f, Mathf.Sin(angleA) * 0.16f);
-                Vector3 highB = new Vector3(Mathf.Cos(angleB) * 0.16f, 0.76f, Mathf.Sin(angleB) * 0.16f);
-                AddFlatQuad(vertices, rockTriangles, baseA, middleA, middleB, baseB);
-                AddFlatQuad(vertices, rockTriangles, middleA, highA, highB, middleB);
-                AddFlatTriangle(vertices, peakTriangles, highA, top, highB);
-            }
-
-            cachedBackdropMountainMesh = new Mesh { name = "FacetedBackdropMountain" };
-            cachedBackdropMountainMesh.SetVertices(vertices);
-            cachedBackdropMountainMesh.subMeshCount = 2;
-            cachedBackdropMountainMesh.SetTriangles(rockTriangles, 0);
-            cachedBackdropMountainMesh.SetTriangles(peakTriangles, 1);
-            cachedBackdropMountainMesh.RecalculateNormals();
-            cachedBackdropMountainMesh.RecalculateBounds();
-            return cachedBackdropMountainMesh;
-        }
-
-        private static void AddFlatQuad(List<Vector3> vertices, List<int> triangles,
-            Vector3 lowerA, Vector3 upperA, Vector3 upperB, Vector3 lowerB)
-        {
-            AddFlatTriangle(vertices, triangles, lowerA, upperA, upperB);
-            AddFlatTriangle(vertices, triangles, lowerA, upperB, lowerB);
-        }
-
-        private static void AddFlatTriangle(List<Vector3> vertices, List<int> triangles, Vector3 a, Vector3 b, Vector3 c)
-        {
-            int start = vertices.Count;
-            vertices.Add(a);
-            vertices.Add(b);
-            vertices.Add(c);
-            triangles.Add(start);
-            triangles.Add(start + 1);
-            triangles.Add(start + 2);
         }
 
         private void ClearGeneratedWorld()
@@ -1285,104 +1533,21 @@ namespace AnimalBattleRoyale
             else DestroyImmediate(existing.gameObject);
         }
 
-        private static Material CreateGroundMaterial()
+        private readonly struct TrailRoute
         {
-            Material material = CreateMaterial(Color.white);
-            const int size = 128;
-            Texture2D texture = new Texture2D(size, size, TextureFormat.RGB24, true)
+            public readonly Vector3 Start;
+            public readonly Vector3 Destination;
+            public readonly Vector3 Lateral;
+            public readonly float WavePhase;
+
+            public TrailRoute(Vector3 start, Vector3 destination, Vector3 lateral, float wavePhase)
             {
-                name = "CartoonForestFloor",
-                wrapMode = TextureWrapMode.Repeat,
-                filterMode = FilterMode.Bilinear,
-                anisoLevel = 2
-            };
-            Color moss = new Color(0.075f, 0.31f, 0.055f);
-            Color grass = new Color(0.16f, 0.47f, 0.08f);
-            Color sunlitGrass = new Color(0.28f, 0.58f, 0.105f);
-            Color earth = new Color(0.31f, 0.19f, 0.07f);
-            Color[] pixels = new Color[size * size];
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float broad = Mathf.PerlinNoise(x * 0.038f, y * 0.038f);
-                    float detail = Mathf.PerlinNoise((x + 37f) * 0.115f, (y - 19f) * 0.115f);
-                    Color color = Color.Lerp(moss, grass, broad);
-                    color = Color.Lerp(color, sunlitGrass, Mathf.Clamp01((detail - 0.63f) * 1.8f));
-                    color = Color.Lerp(color, earth, Mathf.Clamp01((0.24f - broad) * 2.4f));
-                    pixels[y * size + x] = color;
-                }
+                Start = start;
+                Destination = destination;
+                Lateral = lateral;
+                WavePhase = wavePhase;
             }
-            for (int i = 0; i < size; i++)
-            {
-                pixels[(size - 1) * size + i] = pixels[i];
-                pixels[i * size + size - 1] = pixels[i * size];
-            }
-            texture.SetPixels(pixels);
-            texture.Apply(true, true);
-            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", texture);
-            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", texture);
-            return material;
         }
 
-        private static Material CreateMaterial(Color color, Color? emission = null)
-        {
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
-            Material material = new Material(shader) { color = color };
-            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
-            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.18f);
-            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.18f);
-            if (emission.HasValue && material.HasProperty("_EmissionColor"))
-            {
-                material.EnableKeyword("_EMISSION");
-                material.SetColor("_EmissionColor", emission.Value);
-                material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
-            }
-            material.enableInstancing = true;
-            return material;
-        }
-
-        private static Material CreateWaterMaterial(Color color)
-        {
-            Material material = CreateMaterial(color);
-            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
-            if (material.HasProperty("_Color")) material.SetColor("_Color", color);
-            if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
-            if (material.HasProperty("_Blend")) material.SetFloat("_Blend", 0f);
-            if (material.HasProperty("_ZWrite")) material.SetFloat("_ZWrite", 0f);
-            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.72f);
-            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.72f);
-            if (material.HasProperty("_Cull")) material.SetFloat("_Cull", (float)CullMode.Off);
-            material.SetOverrideTag("RenderType", "Transparent");
-            material.DisableKeyword("_ALPHATEST_ON");
-            material.EnableKeyword("_ALPHABLEND_ON");
-            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-            if (material.HasProperty("_SrcBlend")) material.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
-            if (material.HasProperty("_DstBlend")) material.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
-            material.renderQueue = (int)RenderQueue.Transparent;
-            return material;
-        }
-
-        private static void ConfigureVisualOptimization(GameObject root, float cullScreenHeight)
-        {
-            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0) return;
-
-            foreach (Renderer renderer in renderers)
-            {
-                foreach (Material material in renderer.sharedMaterials)
-                {
-                    if (material != null) material.enableInstancing = true;
-                }
-            }
-
-            LODGroup lodGroup = root.GetComponent<LODGroup>();
-            if (lodGroup == null) lodGroup = root.AddComponent<LODGroup>();
-            lodGroup.fadeMode = LODFadeMode.CrossFade;
-            lodGroup.animateCrossFading = true;
-            lodGroup.SetLODs(new[] { new LOD(cullScreenHeight, renderers) });
-            lodGroup.RecalculateBounds();
-        }
     }
 }

@@ -9,6 +9,7 @@ namespace AnimalBattleRoyale
 
         private void Update()
         {
+            if ((Time.frameCount & 1) != 0) return;
             if (gameCamera == null) gameCamera = Camera.main;
             ThirdPersonAnimalController player = BattleRoyaleManager.Instance != null
                 ? BattleRoyaleManager.Instance.LocalPlayer

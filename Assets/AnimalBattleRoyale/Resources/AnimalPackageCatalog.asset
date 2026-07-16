@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 30e203a6ea624f7b8e24983caf30f147, type: 3}
+  m_Name: AnimalPackageCatalog
+  m_EditorClassIdentifier: 
+  tiger: {fileID: 5470850066624385859, guid: f2e4b62caa9bf4e2da05d3c13f85ab46, type: 3}
+  ant: {fileID: 5417238682863167047, guid: beb0e54e0dc464d058dd15c63ec51f76, type: 3}
+  eagle: {fileID: 2444277559448001609, guid: ef6fee0ecbab344e08ea9639cc2189c6, type: 3}
+  monkey: {fileID: 8181154241372027256, guid: 70cad72a57b2c4512ab841f7bf5691a3, type: 3}

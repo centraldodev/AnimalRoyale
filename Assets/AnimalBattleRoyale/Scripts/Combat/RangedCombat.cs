@@ -5,14 +5,13 @@ namespace AnimalBattleRoyale
 {
     public enum RangedSupplyKind
     {
-        BananaBunch,
-        StonePile,
-        EagleNest
+        NaturalAmmo
     }
 
     public sealed class RangedProjectile : MonoBehaviour
     {
         private static Material sharedTrailMaterial;
+        private static readonly Dictionary<AnimalType, Material> sharedProjectileMaterials = new Dictionary<AnimalType, Material>();
         private readonly RaycastHit[] hitBuffer = new RaycastHit[20];
         private ThirdPersonAnimalController owner;
         private Transform visual;
@@ -31,50 +30,59 @@ namespace AnimalBattleRoyale
             projectile.Configure(source, direction);
         }
 
+        public static Vector3 GetLaunchPosition(ThirdPersonAnimalController source, Vector3 direction)
+        {
+            if (source == null) return Vector3.zero;
+            Vector3 flatDirection = new Vector3(direction.x, 0f, direction.z);
+            Vector3 forwardOffset = flatDirection.sqrMagnitude > 0.01f
+                ? flatDirection.normalized * 0.9f
+                : source.transform.forward * 0.9f;
+            return source.transform.position
+                + Vector3.up * (source.Stats.ControllerHeight * 0.62f + 0.3f)
+                + forwardOffset;
+        }
+
         private void Configure(ThirdPersonAnimalController source, Vector3 direction)
         {
             owner = source;
             direction = direction.sqrMagnitude > 0.01f ? direction.normalized : source.transform.forward;
+            // Every animal fires seeds from the back-mounted launcher: small, fast,
+            // low-arc pellets. Per-animal tuning only nudges speed/damage slightly.
             float speed;
             float lift;
-            string modelPath;
             float visualScale;
             switch (source.AnimalType)
             {
-                case AnimalType.Monkey:
-                    speed = 22f; lift = 1.8f; gravity = 5.2f; damage = 12f; radius = 0.26f;
-                    modelPath = "RangedModels/BananaProjectile/BananaProjectile"; visualScale = 0.88f;
-                    impactColor = new Color(1f, 0.74f, 0.08f);
+                case AnimalType.Tiger:
+                    speed = 32f; lift = 0.35f; gravity = 2.4f; damage = 11f; radius = 0.18f;
+                    visualScale = 0.34f; impactColor = new Color(0.85f, 0.72f, 0.42f);
                     break;
                 case AnimalType.Ant:
-                    speed = 24f; lift = 1.25f; gravity = 7.2f; damage = 14f; radius = 0.28f;
-                    modelPath = "RangedModels/RockProjectile/RockProjectile"; visualScale = 0.72f;
-                    impactColor = new Color(0.58f, 0.66f, 0.58f);
-                    break;
-                case AnimalType.Tiger:
-                    speed = 25f; lift = 1.4f; gravity = 7.8f; damage = 16f; radius = 0.32f;
-                    modelPath = "RangedModels/RockProjectile/RockProjectile"; visualScale = 0.92f;
-                    impactColor = new Color(0.72f, 0.58f, 0.38f);
+                    speed = 34f; lift = 0.3f; gravity = 2.2f; damage = 8f; radius = 0.15f;
+                    visualScale = 0.28f; impactColor = new Color(0.82f, 0.68f, 0.36f);
                     break;
                 case AnimalType.Eagle:
-                    speed = 21f; lift = 0.65f; gravity = 9.5f; damage = 11f; radius = 0.3f;
-                    modelPath = "RangedModels/EagleDropping/EagleDropping"; visualScale = 0.78f;
-                    impactColor = new Color(0.48f, 0.3f, 0.11f);
+                    speed = 33f; lift = 0.4f; gravity = 2.3f; damage = 10f; radius = 0.17f;
+                    visualScale = 0.32f; impactColor = new Color(0.8f, 0.74f, 0.5f);
+                    break;
+                case AnimalType.Monkey:
+                    speed = 33f; lift = 0.35f; gravity = 2.3f; damage = 9.5f; radius = 0.16f;
+                    visualScale = 0.3f; impactColor = new Color(0.78f, 0.7f, 0.4f);
                     break;
                 default:
-                    speed = 22f; lift = 1f; gravity = 7f; damage = 12f; radius = 0.28f;
-                    modelPath = string.Empty; visualScale = 0.7f; impactColor = Color.white;
+                    speed = 32f; lift = 0.35f; gravity = 2.3f; damage = 10f; radius = 0.17f;
+                    visualScale = 0.3f; impactColor = new Color(0.82f, 0.7f, 0.42f);
                     break;
             }
 
-            Vector3 flatDirection = new Vector3(direction.x, 0f, direction.z);
-            Vector3 forwardOffset = flatDirection.sqrMagnitude > 0.01f ? flatDirection.normalized * 0.9f : source.transform.forward * 0.9f;
-            transform.position = source.transform.position + Vector3.up * (source.Stats.ControllerHeight * 0.62f + 0.3f) + forwardOffset;
+            transform.position = GetLaunchPosition(source, direction);
             velocity = direction * speed + Vector3.up * lift;
             expiresAt = Time.time + 4.5f;
-            BuildVisual(modelPath, visualScale);
+            BuildVisual(source.AnimalType, visualScale);
             BuildTrail();
             AttackVfx.CreateBurst(transform.position, impactColor, 0.5f);
+            CombatFeedback.PlaySeedShot(transform.position);
+            CombatFeedback.PlayProjectileFly(transform.position);
         }
 
         private void Update()
@@ -125,6 +133,7 @@ namespace AnimalBattleRoyale
 
         private void ResolveImpact(RaycastHit hit)
         {
+            CombatFeedback.PlayProjectileImpact(hit.point);
             Health target = hit.collider != null ? hit.collider.GetComponentInParent<Health>() : null;
             if (target != null && target != owner.Health && !target.IsDead && (target.Owner == null || !target.Owner.IsBurrowed))
             {
@@ -140,24 +149,27 @@ namespace AnimalBattleRoyale
             Destroy(gameObject);
         }
 
-        private void BuildVisual(string modelPath, float scale)
+        private void BuildVisual(AnimalType type, float scale)
         {
-            GameObject model = !string.IsNullOrEmpty(modelPath) ? Resources.Load<GameObject>(modelPath) : null;
-            GameObject instance;
-            if (model != null)
-            {
-                instance = Instantiate(model, transform);
-            }
-            else
-            {
-                instance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                instance.transform.SetParent(transform, false);
-                Collider fallbackCollider = instance.GetComponent<Collider>();
-                if (fallbackCollider != null) fallbackCollider.enabled = false;
-            }
-            instance.name = "ProjectileVisual";
+            // Seeds: a small elongated pellet for every animal.
+            GameObject instance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            instance.transform.SetParent(transform, false);
+            instance.name = "SeedProjectileVisual";
             instance.transform.localPosition = Vector3.zero;
-            instance.transform.localScale = Vector3.one * scale;
+            instance.transform.localScale = new Vector3(0.62f, 0.62f, 1f) * scale;
+            Collider fallbackCollider = instance.GetComponent<Collider>();
+            if (fallbackCollider != null) fallbackCollider.enabled = false;
+            Renderer renderer = instance.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                if (!sharedProjectileMaterials.TryGetValue(type, out Material material))
+                {
+                    Shader shader = ShaderLibrary.Lit;
+                    material = new Material(shader) { name = type + "_ProjectileMaterial", color = impactColor, enableInstancing = true };
+                    sharedProjectileMaterials.Add(type, material);
+                }
+                renderer.sharedMaterial = material;
+            }
             visual = instance.transform;
         }
 
@@ -172,7 +184,7 @@ namespace AnimalBattleRoyale
             trail.endColor = new Color(impactColor.r, impactColor.g, impactColor.b, 0f);
             if (sharedTrailMaterial == null)
             {
-                Shader shader = Shader.Find("Sprites/Default");
+                Shader shader = ShaderLibrary.Sprite;
                 if (shader != null)
                 {
                     sharedTrailMaterial = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
@@ -184,10 +196,12 @@ namespace AnimalBattleRoyale
 
     public sealed class RangedAmmoPickup : MonoBehaviour
     {
-        private const int RefillAmount = 12;
+        private const int RefillAmount = 120; // full magazine reload
         private const float CollectRange = 2.6f;
-        private const float RespawnSeconds = 32f;
+        private const float SpinDegreesPerSecond = 24f;
+        private const float RespawnSeconds = Countdown.DurationSeconds;
         private static readonly List<RangedAmmoPickup> activePickups = new List<RangedAmmoPickup>();
+        private static int nextMotionGroup;
 
         private RangedSupplyKind supplyKind;
         private Transform visual;
@@ -196,9 +210,16 @@ namespace AnimalBattleRoyale
         private Vector3 visualBasePosition;
         private bool available = true;
         private float respawnAt;
+        private int motionGroup;
 
+        public static IReadOnlyList<RangedAmmoPickup> ActivePickups => activePickups;
         public RangedSupplyKind SupplyKind => supplyKind;
         public bool IsAvailable => available;
+
+        private void Awake()
+        {
+            motionGroup = nextMotionGroup++ & 1;
+        }
 
         private void OnEnable()
         {
@@ -260,11 +281,14 @@ namespace AnimalBattleRoyale
             if (visual != null) visual.gameObject.SetActive(false);
             if (labelObject != null) labelObject.SetActive(false);
             if (highlightObject != null) highlightObject.SetActive(false);
+            CombatFeedback.PlayAmmoPickup(transform.position);
+            Countdown.Spawn(transform.position, RespawnSeconds);
             return true;
         }
 
         private void Update()
         {
+            if ((Time.frameCount & 1) != motionGroup) return;
             if (!available)
             {
                 if (Time.time < respawnAt) return;
@@ -278,43 +302,51 @@ namespace AnimalBattleRoyale
             if (visual != null)
             {
                 visual.localPosition = visualBasePosition + Vector3.up * (Mathf.Sin(Time.time * 2.1f + transform.position.x) * 0.08f);
-                visual.Rotate(0f, 22f * Time.deltaTime, 0f, Space.Self);
+                visual.Rotate(0f, SpinDegreesPerSecond * Time.deltaTime, 0f, Space.Self);
             }
         }
 
+        private static GameObject cachedAmmoPrefab;
+        private static bool ammoPrefabLookedUp;
+
         private void BuildVisual()
         {
-            string modelPath = supplyKind switch
+            if (!ammoPrefabLookedUp)
             {
-                RangedSupplyKind.BananaBunch => "RangedModels/BananaBunch/BananaBunch",
-                RangedSupplyKind.StonePile => "RangedModels/StonePile/StonePile",
-                RangedSupplyKind.EagleNest => "RangedModels/EagleNest/EagleNest",
-                _ => string.Empty
-            };
-            GameObject model = Resources.Load<GameObject>(modelPath);
+                cachedAmmoPrefab = Resources.Load<GameObject>("Pickups/AmmoBox");
+                ammoPrefabLookedUp = true;
+            }
+
             GameObject instance;
-            if (model != null) instance = Instantiate(model, transform);
+            if (cachedAmmoPrefab != null)
+            {
+                instance = Instantiate(cachedAmmoPrefab, transform, false);
+                foreach (Collider c in instance.GetComponentsInChildren<Collider>(true)) if (c != null) c.enabled = false;
+            }
             else
             {
-                instance = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                instance = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 instance.transform.SetParent(transform, false);
                 Collider fallbackCollider = instance.GetComponent<Collider>();
                 if (fallbackCollider != null) fallbackCollider.enabled = false;
+                Renderer renderer = instance.GetComponent<Renderer>();
+                if (renderer != null) renderer.sharedMaterial = MissionNode.CreateMaterial(SupplyColor(), true);
             }
             instance.name = "SupplyVisual";
             instance.transform.localScale = Vector3.one * SupplyScale();
-            visualBasePosition = Vector3.up * 0.08f;
-            instance.transform.localPosition = visualBasePosition;
+            instance.transform.localPosition = Vector3.up * 0.08f;
+            PrepareImportedVisual(instance);
+            visualBasePosition = instance.transform.localPosition;
             visual = instance.transform;
 
-            CollectibleHighlight highlight = CollectibleHighlight.Attach(transform, SupplyColor(), SupplyKind == RangedSupplyKind.StonePile ? 1.12f : 0.98f, 0.02f);
+            CollectibleHighlight highlight = CollectibleHighlight.Attach(transform, SupplyColor(), 1.02f, 0.02f);
             highlightObject = highlight != null ? highlight.gameObject : null;
 
             labelObject = new GameObject("SupplyLabel");
             labelObject.transform.SetParent(transform, false);
             labelObject.transform.localPosition = Vector3.up * 1.45f;
             TextMesh text = labelObject.AddComponent<TextMesh>();
-            text.text = "F  " + SupplyLabel() + "\n+12 " + SupplyAmmoLabel();
+            text.text = "F  " + SupplyLabel() + "\nRECARGA " + SupplyAmmoLabel();
             text.anchor = TextAnchor.MiddleCenter;
             text.alignment = TextAlignment.Center;
             text.characterSize = 0.043f;
@@ -323,48 +355,45 @@ namespace AnimalBattleRoyale
             labelObject.AddComponent<PickupLabel>();
         }
 
+        private void PrepareImportedVisual(GameObject instance)
+        {
+            foreach (Transform child in instance.GetComponentsInChildren<Transform>(true))
+                child.gameObject.SetActive(true);
+            foreach (LODGroup lodGroup in instance.GetComponentsInChildren<LODGroup>(true))
+                lodGroup.enabled = false;
+
+            Renderer[] renderers = instance.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0) return;
+            Bounds bounds = renderers[0].bounds;
+            foreach (Renderer renderer in renderers)
+            {
+                renderer.enabled = true;
+                renderer.forceRenderingOff = false;
+                bounds.Encapsulate(renderer.bounds);
+            }
+
+            float desiredBottom = transform.position.y + 0.08f;
+            instance.transform.position += Vector3.up * (desiredBottom - bounds.min.y);
+        }
+
         private string SupplyLabel()
         {
-            return supplyKind switch
-            {
-                RangedSupplyKind.BananaBunch => "CACHO DE BANANAS",
-                RangedSupplyKind.StonePile => "PILHA DE PEDRAS",
-                RangedSupplyKind.EagleNest => "NINHO DE SUPRIMENTOS",
-                _ => "MUNIÇÃO"
-            };
+            return "MUNIÇÃO";
         }
 
         private string SupplyAmmoLabel()
         {
-            return supplyKind switch
-            {
-                RangedSupplyKind.BananaBunch => "BANANAS",
-                RangedSupplyKind.StonePile => "PEDRAS",
-                RangedSupplyKind.EagleNest => "CARGAS",
-                _ => "MUNIÇÃO"
-            };
+            return "120 BALAS";
         }
 
         private Color SupplyColor()
         {
-            return supplyKind switch
-            {
-                RangedSupplyKind.BananaBunch => new Color(1f, 0.78f, 0.12f),
-                RangedSupplyKind.StonePile => new Color(0.68f, 0.78f, 0.72f),
-                RangedSupplyKind.EagleNest => new Color(0.82f, 0.56f, 0.22f),
-                _ => Color.white
-            };
+            return new Color(0.36f, 0.86f, 0.62f);
         }
 
         private float SupplyScale()
         {
-            return supplyKind switch
-            {
-                RangedSupplyKind.BananaBunch => 1.05f,
-                RangedSupplyKind.StonePile => 1.15f,
-                RangedSupplyKind.EagleNest => 1.05f,
-                _ => 1f
-            };
+            return 0.88f;
         }
     }
 }

@@ -9,11 +9,15 @@ namespace AnimalBattleRoyale
     {
         [SerializeField] private float visionRange = 32f;
         [SerializeField] private float thinkInterval = 0.25f;
+        [SerializeField, Range(0f, 1f)] private float attackAccuracy = 0.7f;
+        [SerializeField, Range(0.05f, 0.95f)] private float fleeHealthThreshold = 0.3f;
+        [SerializeField] private float fleeDistance = 18f;
 
         private ThirdPersonAnimalController controller;
         private ThirdPersonAnimalController target;
         private float nextThinkTime;
         private float nextAbilityDecision;
+        private float nextInteractionCheck;
         private Vector3 wanderDirection;
         private float nextWanderTime;
         private NavMeshPath navigationPath;
@@ -26,6 +30,8 @@ namespace AnimalBattleRoyale
         private float nextProgressCheck;
         private Vector3 unstuckDirection;
         private float unstuckUntil;
+        private DiamondPickup cachedObjectiveDiamond;
+        private RangedAmmoPickup cachedAmmoSupply;
 
         private void Awake()
         {
@@ -33,46 +39,77 @@ namespace AnimalBattleRoyale
             navigationPath = new NavMeshPath();
             lastProgressPosition = transform.position;
             nextProgressCheck = Time.time + 1.25f;
+            nextThinkTime = Time.time + Random.Range(0f, thinkInterval);
+            nextInteractionCheck = Time.time + Random.Range(0f, 0.2f);
         }
 
         private void Update()
         {
             if (controller.IsDefeated || controller.Health.IsDead) return;
-
-            DiamondPickup.TryCollectNearest(controller);
-            MissionNode.TryUseNearest(controller);
-            RangedAmmoPickup.TryCollectNearest(controller);
-            if (controller.Health.CurrentHealth < controller.Health.MaxHealth * 0.72f)
+            BattleRoyaleManager manager = BattleRoyaleManager.Instance;
+            if (manager != null && !manager.CombatEnabled)
             {
-                FoodPickup.TryConsumeNearest(controller);
+                target = null;
+                controller.SetAIInput(Vector3.zero, transform.forward, false, false, false, -1);
+                return;
+            }
+
+            if (Time.time >= nextInteractionCheck)
+            {
+                nextInteractionCheck = Time.time + 0.2f;
+                DiamondPickup.TryCollectNearest(controller);
+                MissionNode.TryUseNearest(controller);
+                RangedAmmoPickup.TryCollectNearest(controller);
+                if (controller.Health.CurrentHealth < controller.Health.MaxHealth * 0.72f)
+                {
+                    FoodPickup.TryConsumeNearest(controller);
+                }
             }
 
             if (Time.time >= nextThinkTime)
             {
                 nextThinkTime = Time.time + thinkInterval;
                 target = FindClosestTarget();
+                cachedObjectiveDiamond = DiamondPickup.FindClosest(transform.position);
+                cachedAmmoSupply = controller.NeedsRangedAmmo
+                    ? RangedAmmoPickup.FindClosestCompatible(controller)
+                    : null;
             }
 
             Vector3 desiredDirection;
+            Vector3 attackDirection = Vector3.zero;
             bool sprint = false;
             bool attack = false;
             bool rangedAttack = false;
             int abilitySlot = -1;
             DiamondObjectiveManager objective = DiamondObjectiveManager.Instance;
-            DiamondPickup objectiveDiamond = DiamondPickup.FindClosest(transform.position);
+            DiamondPickup objectiveDiamond = cachedObjectiveDiamond;
             int carriedDiamonds = objective != null ? objective.GetCount(controller) : 0;
             bool targetHasDiamonds = target != null && objective != null && objective.GetCount(target) > 0;
             float targetDistance = target != null ? Vector3.Distance(transform.position, target.transform.position) : float.MaxValue;
             bool shouldFight = target != null && (objectiveDiamond == null || (targetHasDiamonds && targetDistance < 26f));
-            RangedAmmoPickup ammoSupply = controller.NeedsRangedAmmo
-                ? RangedAmmoPickup.FindClosestCompatible(controller)
-                : null;
+            ThirdPersonAnimalController fleeThreat = GetFleeThreat();
+            bool shouldFlee = fleeThreat != null
+                && controller.Health.MaxHealth > 0f
+                && controller.Health.CurrentHealth / controller.Health.MaxHealth < fleeHealthThreshold;
+            RangedAmmoPickup ammoSupply = cachedAmmoSupply;
 
             SafeZoneController zone = SafeZoneController.Instance;
             if (zone != null && zone.IsOutside(transform.position, 3f))
             {
                 Vector3 fallback = (zone.Center - transform.position).normalized;
                 desiredDirection = GetNavigationDirection(zone.Center, fallback);
+                sprint = true;
+            }
+            else if (shouldFlee)
+            {
+                Vector3 awayFromTarget = transform.position - fleeThreat.transform.position;
+                awayFromTarget.y = 0f;
+                Vector3 fallback = awayFromTarget.sqrMagnitude > 0.01f
+                    ? awayFromTarget.normalized
+                    : -transform.forward;
+                Vector3 fleeDestination = transform.position + fallback * fleeDistance;
+                desiredDirection = GetNavigationDirection(fleeDestination, fallback);
                 sprint = true;
             }
             else if (objective != null && carriedDiamonds >= DiamondObjectiveManager.RequiredDiamonds)
@@ -101,6 +138,7 @@ namespace AnimalBattleRoyale
                     && distance <= 26f;
                 rangedAttack = canUseRanged;
                 attack = canUseRanged || distance <= controller.Stats.AttackRange * 1.15f;
+                if (attack) attackDirection = GetAttackDirection(fallback);
                 desiredDirection = canUseRanged
                     ? fallback
                     : GetNavigationDirection(target.transform.position, fallback);
@@ -127,6 +165,7 @@ namespace AnimalBattleRoyale
                 desiredDirection = GetNavigationDirection(target.transform.position, toTarget.normalized);
                 sprint = true;
                 attack = distance <= controller.Stats.AttackRange * 1.15f;
+                if (attack) attackDirection = GetAttackDirection(toTarget.normalized);
             }
             else
             {
@@ -135,7 +174,35 @@ namespace AnimalBattleRoyale
 
             desiredDirection = RecoverIfStuck(desiredDirection);
             desiredDirection = AvoidObstacles(desiredDirection);
-            controller.SetAIInput(desiredDirection, sprint, attack, rangedAttack, abilitySlot);
+            controller.SetAIInput(desiredDirection, attackDirection, sprint, attack, rangedAttack, abilitySlot);
+        }
+
+        private ThirdPersonAnimalController GetFleeThreat()
+        {
+            ThirdPersonAnimalController localPlayer = BattleRoyaleManager.Instance != null
+                ? BattleRoyaleManager.Instance.LocalPlayer
+                : null;
+            if (localPlayer != null && !localPlayer.IsDefeated && !localPlayer.Health.IsDead && !localPlayer.IsBurrowed
+                && (localPlayer.transform.position - transform.position).sqrMagnitude <= visionRange * visionRange)
+            {
+                return localPlayer;
+            }
+
+            return target;
+        }
+
+        private Vector3 GetAttackDirection(Vector3 directionToTarget)
+        {
+            if (directionToTarget.sqrMagnitude < 0.01f) directionToTarget = transform.forward;
+            directionToTarget.y = 0f;
+            directionToTarget.Normalize();
+
+            if (Random.value <= attackAccuracy) return directionToTarget;
+
+            // A failed accuracy roll still produces a visible attack, but aims far
+            // enough to one side that melee cones and ranged projectiles miss.
+            float missAngle = Random.Range(95f, 135f) * (Random.value < 0.5f ? -1f : 1f);
+            return Quaternion.Euler(0f, missAngle, 0f) * directionToTarget;
         }
 
         private ThirdPersonAnimalController FindClosestTarget()

@@ -5,8 +5,9 @@ namespace AnimalBattleRoyale
     public sealed class ThirdPersonCamera : MonoBehaviour
     {
         [SerializeField] private Transform target;
-        [SerializeField] private float distance = 6.2f;
+        [SerializeField] private float distance = 4.6f;
         [SerializeField] private float targetHeight = 1.25f;
+        [SerializeField] private float shoulderOffset = 1.05f;
         [SerializeField] private float sensitivity = 0.16f;
         [SerializeField] private float smoothTime = 0.06f;
         [SerializeField] private float collisionRadius = 0.25f;
@@ -19,20 +20,30 @@ namespace AnimalBattleRoyale
         private readonly RaycastHit[] collisionHits = new RaycastHit[32];
 
         public Transform Target => target;
+        // Aim follows the exact center ray of the rendered camera.
+        public Vector3 AimDirection => transform.forward;
 
         private void Start()
         {
             yaw = transform.eulerAngles.y;
-            LockCursor(true);
+            bool resultScreenOpen = BattleRoyaleManager.Instance != null
+                                    && BattleRoyaleManager.Instance.MatchFinished;
+            SetCursorLocked(!resultScreenOpen);
         }
 
         private void LateUpdate()
         {
             if (target == null) return;
 
-            if (GameInput.EscapePressed())
+            bool resultScreenOpen = BattleRoyaleManager.Instance != null
+                                    && BattleRoyaleManager.Instance.MatchFinished;
+            bool menuOpen = GameMenuController.Instance != null && GameMenuController.Instance.IsOpen;
+            if (resultScreenOpen || menuOpen)
             {
-                LockCursor(Cursor.lockState != CursorLockMode.Locked);
+                if (Cursor.lockState != CursorLockMode.None || !Cursor.visible)
+                {
+                    SetCursorLocked(false);
+                }
             }
 
             if (Cursor.lockState == CursorLockMode.Locked)
@@ -45,7 +56,12 @@ namespace AnimalBattleRoyale
 
             Quaternion rotation = Quaternion.Euler(pitch, yaw, 0f);
             Vector3 focusPoint = target.position + Vector3.up * targetHeight;
-            Vector3 desiredPosition = focusPoint - rotation * Vector3.forward * distance;
+            // Move the camera toward the animal's right shoulder. The animal is
+            // therefore framed on the left while the exact screen center remains
+            // unobstructed and continues to define the firing ray.
+            Vector3 desiredPosition = focusPoint
+                                      + rotation * Vector3.right * shoulderOffset
+                                      - rotation * Vector3.forward * distance;
             desiredPosition = ResolveCollision(focusPoint, desiredPosition);
 
             transform.position = Vector3.SmoothDamp(transform.position, desiredPosition, ref smoothVelocity, smoothTime);
@@ -77,7 +93,7 @@ namespace AnimalBattleRoyale
             return origin + direction.normalized * nearestDistance;
         }
 
-        private static void LockCursor(bool locked)
+        public static void SetCursorLocked(bool locked)
         {
             Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
             Cursor.visible = !locked;

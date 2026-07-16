@@ -10,9 +10,11 @@ namespace AnimalBattleRoyale
         private static readonly List<DiamondPickup> activePickups = new List<DiamondPickup>();
         private static Material diamondMaterial;
         private static Material baseMaterial;
+        private static int nextMotionGroup;
 
         private Vector3 basePosition;
         private bool available = true;
+        private int motionGroup;
 
         public static IReadOnlyList<DiamondPickup> ActivePickups => activePickups;
         public bool IsAvailable => available;
@@ -20,6 +22,11 @@ namespace AnimalBattleRoyale
         private void OnEnable()
         {
             if (!activePickups.Contains(this)) activePickups.Add(this);
+        }
+
+        private void Awake()
+        {
+            motionGroup = nextMotionGroup++ & 1;
         }
 
         private void OnDisable()
@@ -92,8 +99,9 @@ namespace AnimalBattleRoyale
 
         private void Update()
         {
+            if ((Time.frameCount & 1) != motionGroup) return;
             transform.position = basePosition + Vector3.up * (Mathf.Sin(Time.time * 2.8f + basePosition.x) * 0.22f);
-            transform.Rotate(0f, 82f * Time.deltaTime, 0f, Space.World);
+            transform.Rotate(0f, 164f * Time.deltaTime, 0f, Space.World);
         }
 
         private void BuildVisual()
@@ -134,8 +142,7 @@ namespace AnimalBattleRoyale
         private static void EnsureMaterials()
         {
             if (diamondMaterial != null && baseMaterial != null) return;
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
+            Shader shader = ShaderLibrary.Lit;
             diamondMaterial = new Material(shader) { color = new Color(0.08f, 0.72f, 1f), enableInstancing = true };
             if (diamondMaterial.HasProperty("_BaseColor")) diamondMaterial.SetColor("_BaseColor", new Color(0.08f, 0.72f, 1f));
             if (diamondMaterial.HasProperty("_EmissionColor"))

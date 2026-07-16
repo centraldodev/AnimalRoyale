@@ -9,7 +9,8 @@ namespace AnimalBattleRoyale
             AnimalType type,
             Vector3 position,
             bool isLocalPlayer,
-            Transform cameraTransform = null)
+            Transform cameraTransform = null,
+            bool addBotAI = true)
         {
             GameObject root = new GameObject(objectName);
             root.transform.position = position;
@@ -25,7 +26,7 @@ namespace AnimalBattleRoyale
             // has been configured so every animal begins on top of the generated terrain.
             controller.SnapToTerrain(Object.FindAnyObjectByType<JungleGenerator>());
 
-            if (!isLocalPlayer)
+            if (!isLocalPlayer && addBotAI)
             {
                 root.AddComponent<SimpleBotAI>();
             }
