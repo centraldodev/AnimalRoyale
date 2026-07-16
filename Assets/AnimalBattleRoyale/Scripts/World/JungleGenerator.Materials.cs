@@ -6,6 +6,92 @@ namespace AnimalBattleRoyale
 {
     public sealed partial class JungleGenerator
     {
+        private static Material cachedArtRefTreeMaterial;
+        private static Material cachedArtRefBushMaterial;
+        private static Material cachedArtRefBambooMaterial;
+        private static Material cachedArtRefStoneMaterial;
+
+        private static Material GetArtRefTreeMaterial()
+        {
+            if (cachedArtRefTreeMaterial != null) return cachedArtRefTreeMaterial;
+
+            Texture2D albedo = Resources.Load<Texture2D>("EnvironmentModels/ArtRefTrees/texture_diffuse");
+            if (albedo == null) return null;
+
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = "ArtRefTree_RuntimePBR",
+                color = Color.white,
+                enableInstancing = true
+            };
+            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", albedo);
+            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", albedo);
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", Color.white);
+
+            Texture2D normal = Resources.Load<Texture2D>("EnvironmentModels/ArtRefTrees/texture_normal");
+            if (normal != null && material.HasProperty("_BumpMap"))
+            {
+                material.SetTexture("_BumpMap", normal);
+                material.SetFloat("_BumpScale", 0.72f);
+                material.EnableKeyword("_NORMALMAP");
+            }
+
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.16f);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.16f);
+            cachedArtRefTreeMaterial = material;
+            return cachedArtRefTreeMaterial;
+        }
+
+        private static Material GetArtRefBushMaterial()
+        {
+            return GetArtRefEnvironmentMaterial(ref cachedArtRefBushMaterial, "bush", "ArtRefBush_RuntimePBR", 0.62f, 0.1f);
+        }
+
+        private static Material GetArtRefBambooMaterial()
+        {
+            return GetArtRefEnvironmentMaterial(ref cachedArtRefBambooMaterial, "bamboo", "ArtRefBamboo_RuntimePBR", 0.68f, 0.14f);
+        }
+
+        private static Material GetArtRefStoneMaterial()
+        {
+            return GetArtRefEnvironmentMaterial(ref cachedArtRefStoneMaterial, "stone", "ArtRefStone_RuntimePBR", 0.82f, 0.2f);
+        }
+
+        private static Material GetArtRefEnvironmentMaterial(ref Material cachedMaterial, string texturePrefix,
+            string materialName, float normalStrength, float smoothness)
+        {
+            if (cachedMaterial != null) return cachedMaterial;
+
+            string resourceRoot = "EnvironmentModels/ArtRefEnvironment/" + texturePrefix;
+            Texture2D albedo = Resources.Load<Texture2D>(resourceRoot + "_diffuse");
+            if (albedo == null) return null;
+
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = materialName,
+                color = Color.white,
+                enableInstancing = true
+            };
+            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", albedo);
+            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", albedo);
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", Color.white);
+
+            Texture2D normal = Resources.Load<Texture2D>(resourceRoot + "_normal");
+            if (normal != null && material.HasProperty("_BumpMap"))
+            {
+                material.SetTexture("_BumpMap", normal);
+                material.SetFloat("_BumpScale", normalStrength);
+                material.EnableKeyword("_NORMALMAP");
+            }
+
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", smoothness);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", smoothness);
+            cachedMaterial = material;
+            return cachedMaterial;
+        }
+
         private static Material CreateGroundMaterial(Texture2D naturalTexture)
         {
             if (naturalTexture != null)

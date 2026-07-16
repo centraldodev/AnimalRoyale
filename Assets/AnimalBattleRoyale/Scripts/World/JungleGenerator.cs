@@ -47,6 +47,12 @@ namespace AnimalBattleRoyale
 
         private MeshCollider groundCollider;
         private static GameObject cachedTreePrefab;
+        private static readonly GameObject[] cachedArtRefTreePrefabs = new GameObject[5];
+        private static bool artRefTreesLoaded;
+        private static readonly GameObject[] cachedArtRefBushPrefabs = new GameObject[8];
+        private static bool artRefBushesLoaded;
+        private static GameObject cachedArtRefBambooPrefab;
+        private static GameObject cachedArtRefStoneRuinPrefab;
         private static GameObject cachedBushPrefab;
         private static GameObject cachedMountainPrefab;
         private static GameObject cachedRockPrefab;
@@ -504,6 +510,13 @@ namespace AnimalBattleRoyale
         private static void CreateTree(Transform parent, Vector3 position, Material trunkMaterial, Material leafMaterial,
             Material vineMaterial, Material fruitRedMaterial, Material fruitGoldMaterial, GameObject natureTreePrefab)
         {
+            GameObject artRefTreePrefab = GetRandomArtRefTreePrefab();
+            if (artRefTreePrefab != null)
+            {
+                CreateArtRefTree(parent, position, artRefTreePrefab, vineMaterial);
+                return;
+            }
+
             if (natureTreePrefab != null)
             {
                 CreateNatureTree(parent, position, natureTreePrefab, vineMaterial, fruitRedMaterial, fruitGoldMaterial);
@@ -677,6 +690,107 @@ namespace AnimalBattleRoyale
             }
         }
 
+        private static GameObject GetRandomArtRefTreePrefab()
+        {
+            if (!artRefTreesLoaded)
+            {
+                artRefTreesLoaded = true;
+                for (int i = 0; i < cachedArtRefTreePrefabs.Length; i++)
+                {
+                    cachedArtRefTreePrefabs[i] = Resources.Load<GameObject>(
+                        $"EnvironmentModels/ArtRefTrees/ArtRefTree{i + 1:00}");
+                }
+            }
+
+            int availableCount = 0;
+            for (int i = 0; i < cachedArtRefTreePrefabs.Length; i++)
+            {
+                if (cachedArtRefTreePrefabs[i] != null) availableCount++;
+            }
+            if (availableCount == 0) return null;
+
+            int selection = Random.Range(0, availableCount);
+            for (int i = 0; i < cachedArtRefTreePrefabs.Length; i++)
+            {
+                if (cachedArtRefTreePrefabs[i] == null) continue;
+                if (selection-- == 0) return cachedArtRefTreePrefabs[i];
+            }
+            return null;
+        }
+
+        private static void CreateArtRefTree(Transform parent, Vector3 position, GameObject prefab, Material vineMaterial)
+        {
+            GameObject treeRoot = new GameObject(prefab.name + "_Tree");
+            treeRoot.transform.SetParent(parent, false);
+            treeRoot.transform.position = position;
+            treeRoot.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            treeRoot.transform.localScale = Vector3.one * Random.Range(0.88f, 1.28f);
+
+            GameObject treeVisual = Object.Instantiate(prefab, treeRoot.transform, false);
+            treeVisual.name = prefab.name + "_Visual";
+            Material artRefMaterial = GetArtRefTreeMaterial();
+            if (artRefMaterial != null)
+            {
+                foreach (Renderer renderer in treeVisual.GetComponentsInChildren<Renderer>(true))
+                {
+                    renderer.sharedMaterial = artRefMaterial;
+                }
+            }
+            EnableRendererInstancing(treeVisual);
+            ConfigureArtRefLods(treeRoot, treeVisual, 0.32f, 0.13f, 0.025f, true);
+            treeVisual.AddComponent<TreeWindSway>();
+            SetVisualOnGround(treeRoot, position.y, 0.08f);
+
+            CapsuleCollider trunkCollider = treeRoot.AddComponent<CapsuleCollider>();
+            trunkCollider.center = new Vector3(0f, 2.55f, 0f);
+            trunkCollider.height = 5.1f;
+            trunkCollider.radius = 0.48f;
+
+            if (VineAnchor.RegisterExistingVines(treeVisual.transform) == 0 && Random.value < 0.72f)
+            {
+                VineAnchor.Create(treeVisual.transform,
+                    new Vector3(Random.Range(-0.65f, 0.65f), Random.Range(5.2f, 6.4f), Random.Range(-0.45f, 0.45f)),
+                    new Vector3(Random.Range(-1.1f, 1.1f), Random.Range(2.2f, 3.1f), Random.Range(-0.75f, 0.75f)),
+                    vineMaterial);
+            }
+        }
+
+        private static void ConfigureArtRefLods(GameObject root, GameObject visual, float nearThreshold,
+            float middleThreshold, float farThreshold, bool castsShadows)
+        {
+            List<Renderer> nearRenderers = new List<Renderer>();
+            List<Renderer> middleRenderers = new List<Renderer>();
+            List<Renderer> farRenderers = new List<Renderer>();
+
+            foreach (Renderer renderer in visual.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null) continue;
+                string rendererName = renderer.name;
+                if (rendererName.Contains("_LOD2")) farRenderers.Add(renderer);
+                else if (rendererName.Contains("_LOD1")) middleRenderers.Add(renderer);
+                else nearRenderers.Add(renderer);
+
+                renderer.shadowCastingMode = castsShadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
+                renderer.receiveShadows = true;
+            }
+
+            if (nearRenderers.Count == 0) return;
+            if (middleRenderers.Count == 0) middleRenderers.AddRange(nearRenderers);
+            if (farRenderers.Count == 0) farRenderers.AddRange(middleRenderers);
+
+            LODGroup lodGroup = root.GetComponent<LODGroup>();
+            if (lodGroup == null) lodGroup = root.AddComponent<LODGroup>();
+            lodGroup.fadeMode = LODFadeMode.CrossFade;
+            lodGroup.animateCrossFading = true;
+            lodGroup.SetLODs(new[]
+            {
+                new LOD(nearThreshold, nearRenderers.ToArray()),
+                new LOD(middleThreshold, middleRenderers.ToArray()),
+                new LOD(farThreshold, farRenderers.ToArray())
+            });
+            lodGroup.RecalculateBounds();
+        }
+
         private static void SetVisualOnGround(GameObject root, float groundHeight, float embedDepth = 0.02f)
         {
             if (root == null) return;
@@ -756,6 +870,20 @@ namespace AnimalBattleRoyale
 
         private static void CreateBush(Transform parent, Vector3 position, Material material, GameObject natureBushPrefab)
         {
+            GameObject bambooPrefab = GetArtRefBambooPrefab();
+            if (bambooPrefab != null && Random.value < 0.045f)
+            {
+                CreateArtRefBamboo(parent, position, bambooPrefab);
+                return;
+            }
+
+            GameObject artRefBushPrefab = GetRandomArtRefBushPrefab();
+            if (artRefBushPrefab != null)
+            {
+                CreateArtRefBush(parent, position, artRefBushPrefab);
+                return;
+            }
+
             if (natureBushPrefab != null)
             {
                 GameObject natureBush = InstantiateLegacyPrefab(natureBushPrefab, parent);
@@ -801,6 +929,85 @@ namespace AnimalBattleRoyale
             Collider collider = bush.GetComponent<Collider>();
             if (collider != null) Destroy(collider);
             bush.isStatic = true;
+        }
+
+        private static GameObject GetRandomArtRefBushPrefab()
+        {
+            if (!artRefBushesLoaded)
+            {
+                artRefBushesLoaded = true;
+                for (int i = 0; i < cachedArtRefBushPrefabs.Length; i++)
+                {
+                    cachedArtRefBushPrefabs[i] = Resources.Load<GameObject>(
+                        $"EnvironmentModels/ArtRefEnvironment/ArtRefBush{i + 1:00}");
+                }
+            }
+
+            int availableCount = 0;
+            for (int i = 0; i < cachedArtRefBushPrefabs.Length; i++)
+            {
+                if (cachedArtRefBushPrefabs[i] != null) availableCount++;
+            }
+            if (availableCount == 0) return null;
+
+            int selection = Random.Range(0, availableCount);
+            for (int i = 0; i < cachedArtRefBushPrefabs.Length; i++)
+            {
+                if (cachedArtRefBushPrefabs[i] == null) continue;
+                if (selection-- == 0) return cachedArtRefBushPrefabs[i];
+            }
+            return null;
+        }
+
+        private static GameObject GetArtRefBambooPrefab()
+        {
+            if (cachedArtRefBambooPrefab == null)
+            {
+                cachedArtRefBambooPrefab = Resources.Load<GameObject>(
+                    "EnvironmentModels/ArtRefEnvironment/ArtRefBamboo");
+            }
+            return cachedArtRefBambooPrefab;
+        }
+
+        private static void CreateArtRefBush(Transform parent, Vector3 position, GameObject prefab)
+        {
+            GameObject bush = Object.Instantiate(prefab, parent, false);
+            bush.name = prefab.name + "_Bush";
+            bush.transform.position = position;
+            bush.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            bush.transform.localScale = Vector3.one * Random.Range(0.78f, 1.22f);
+            ApplyArtRefMaterial(bush, GetArtRefBushMaterial());
+            ConfigureArtRefLods(bush, bush, 0.26f, 0.095f, 0.014f, false);
+            SetVisualOnGround(bush, position.y, 0.055f);
+            bush.isStatic = true;
+        }
+
+        private static void CreateArtRefBamboo(Transform parent, Vector3 position, GameObject prefab)
+        {
+            GameObject bamboo = Object.Instantiate(prefab, parent, false);
+            bamboo.name = "ArtRefBambooCluster";
+            bamboo.transform.position = position;
+            bamboo.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            bamboo.transform.localScale = Vector3.one * Random.Range(0.86f, 1.18f);
+            ApplyArtRefMaterial(bamboo, GetArtRefBambooMaterial());
+            ConfigureArtRefLods(bamboo, bamboo, 0.3f, 0.12f, 0.018f, true);
+            SetVisualOnGround(bamboo, position.y, 0.07f);
+
+            CapsuleCollider collider = bamboo.AddComponent<CapsuleCollider>();
+            collider.center = new Vector3(0f, 2.35f, 0f);
+            collider.height = 4.7f;
+            collider.radius = 0.62f;
+            bamboo.isStatic = true;
+        }
+
+        private static void ApplyArtRefMaterial(GameObject root, Material material)
+        {
+            if (root == null || material == null) return;
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.sharedMaterial = material;
+            }
+            EnableRendererInstancing(root);
         }
 
         private static void ApplyNatureRendererSettings(GameObject root, bool castsShadows)
@@ -921,6 +1128,13 @@ namespace AnimalBattleRoyale
 
         private static void CreateRockFormation(Transform parent, Vector3 position, Material material)
         {
+            GameObject stoneRuinPrefab = GetArtRefStoneRuinPrefab();
+            if (stoneRuinPrefab != null)
+            {
+                CreateArtRefStoneRuin(parent, position, stoneRuinPrefab);
+                return;
+            }
+
             if (cachedRockPrefab == null) cachedRockPrefab = Resources.Load<GameObject>("EnvironmentModels/JungleRock/JungleRock");
 
             GameObject formation = new GameObject("ClimbableRockFormation");
@@ -971,6 +1185,37 @@ namespace AnimalBattleRoyale
                 boulder.GetComponent<Renderer>().sharedMaterial = material;
                 boulder.isStatic = true;
             }
+        }
+
+        private static GameObject GetArtRefStoneRuinPrefab()
+        {
+            if (cachedArtRefStoneRuinPrefab == null)
+            {
+                cachedArtRefStoneRuinPrefab = Resources.Load<GameObject>(
+                    "EnvironmentModels/ArtRefEnvironment/ArtRefStoneRuin");
+            }
+            return cachedArtRefStoneRuinPrefab;
+        }
+
+        private static void CreateArtRefStoneRuin(Transform parent, Vector3 position, GameObject prefab)
+        {
+            GameObject ruin = Object.Instantiate(prefab, parent, false);
+            ruin.name = "ClimbableStoneRuin";
+            ruin.transform.position = position;
+            ruin.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            ruin.transform.localScale = Vector3.one * Random.Range(0.88f, 1.18f);
+            ApplyArtRefMaterial(ruin, GetArtRefStoneMaterial());
+            ConfigureArtRefLods(ruin, ruin, 0.32f, 0.13f, 0.02f, true);
+            SetVisualOnGround(ruin, position.y, 0.12f);
+
+            for (int i = 0; i < 4; i++)
+            {
+                float height = 4.7f - i * 1.02f;
+                BoxCollider step = ruin.AddComponent<BoxCollider>();
+                step.center = new Vector3(-2.65f + i * 1.72f, height * 0.5f, 0f);
+                step.size = new Vector3(1.88f, height, 1.38f);
+            }
+            ruin.isStatic = true;
         }
 
         private static void CreateEagleMountain(Transform parent, Vector3 position, Material material)
