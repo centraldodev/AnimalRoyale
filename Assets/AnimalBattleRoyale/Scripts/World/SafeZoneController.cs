@@ -9,9 +9,6 @@ namespace AnimalBattleRoyale
 
         [SerializeField] private float initialRadius = 162f;
         [SerializeField] private float finalRadius = 14f;
-        [SerializeField] private float waitBeforeShrink = 35f;
-        [SerializeField] private float totalShrinkDuration = 240f;
-        [SerializeField, Min(1f)] private float wildfireLethalSeconds = 9f;
         [SerializeField] private int circleSegments = 96;
         [SerializeField, Min(0f)] private float respawnEdgeMargin = 6f;
         [SerializeField, Range(30f, 180f)] private float boundaryParticlesPerSecond = 110f;
@@ -22,28 +19,16 @@ namespace AnimalBattleRoyale
         private float matchStartTime;
         private bool matchActive;
         private float acceleratedUntil;
-        private float shrinkTimeBonus;
         private Vector3 startCenter;
         private Vector3 finalCenter;
         private float boundaryEmissionAccumulator;
         private readonly HashSet<ThirdPersonAnimalController> fightersOutsideWildfire = new HashSet<ThirdPersonAnimalController>();
-        private readonly Dictionary<ThirdPersonAnimalController, WildfireExposure> wildfireExposures = new Dictionary<ThirdPersonAnimalController, WildfireExposure>();
-
-        private readonly struct WildfireExposure
-        {
-            public readonly float StartedAt;
-            public readonly float StartingHealth;
-
-            public WildfireExposure(float startedAt, float startingHealth)
-            {
-                StartedAt = startedAt;
-                StartingHealth = startingHealth;
-            }
-        }
 
         public Vector3 Center => transform.position;
         public float CurrentRadius { get; private set; }
-        public float TimeUntilShrink => matchActive ? Mathf.Max(0f, waitBeforeShrink - (Time.time - matchStartTime)) : waitBeforeShrink;
+        public float TimeUntilShrink => matchActive
+            ? Mathf.Max(0f, ServerGameTuning.SafeZoneWaitBeforeShrink - (Time.time - matchStartTime))
+            : ServerGameTuning.SafeZoneWaitBeforeShrink;
 
         private void Awake()
         {
@@ -64,12 +49,14 @@ namespace AnimalBattleRoyale
                 DrawCircle();
                 return;
             }
-            if (Time.time < acceleratedUntil) shrinkTimeBonus += Time.deltaTime * 1.4f;
-            float elapsed = Time.time - matchStartTime + shrinkTimeBonus;
-            if (elapsed > waitBeforeShrink)
+            float elapsed = Time.time - matchStartTime;
+            if (elapsed > ServerGameTuning.SafeZoneWaitBeforeShrink)
             {
-                float progress = Mathf.Clamp01((elapsed - waitBeforeShrink) / totalShrinkDuration);
-                CurrentRadius = Mathf.Lerp(initialRadius, finalRadius, progress);
+                float speedMultiplier = Time.time < acceleratedUntil ? 2.4f : 1f;
+                CurrentRadius = Mathf.MoveTowards(CurrentRadius, finalRadius,
+                    ServerGameTuning.SafeZoneShrinkSpeed * speedMultiplier * Time.deltaTime);
+                float progress = Mathf.Clamp01((initialRadius - CurrentRadius) /
+                    Mathf.Max(0.01f, initialRadius - finalRadius));
                 float centerProgress = Mathf.SmoothStep(0f, 1f, progress);
                 transform.position = Vector3.Lerp(startCenter, finalCenter, centerProgress);
             }
@@ -87,7 +74,6 @@ namespace AnimalBattleRoyale
             CurrentRadius = initialRadius;
             matchActive = true;
             acceleratedUntil = 0f;
-            shrinkTimeBonus = 0f;
             boundaryEmissionAccumulator = 0f;
             ResetWildfireExposure();
         }
@@ -110,11 +96,8 @@ namespace AnimalBattleRoyale
 
         public float GetWildfireSecondsRemaining(ThirdPersonAnimalController fighter)
         {
-            if (fighter != null && wildfireExposures.TryGetValue(fighter, out WildfireExposure exposure))
-            {
-                return Mathf.Max(0f, wildfireLethalSeconds - (Time.time - exposure.StartedAt));
-            }
-            return wildfireLethalSeconds;
+            if (fighter == null || fighter.Health == null) return 0f;
+            return fighter.Health.CurrentHealth / Mathf.Max(0.01f, ServerGameTuning.SafeZoneDamagePerSecond);
         }
 
         public Vector3 GetRandomRespawnPoint()
@@ -159,19 +142,12 @@ namespace AnimalBattleRoyale
 
                 if (!outside || !manager.CombatEnabled)
                 {
-                    wildfireExposures.Remove(fighter);
                     continue;
                 }
 
-                if (!wildfireExposures.TryGetValue(fighter, out WildfireExposure exposure))
-                {
-                    exposure = new WildfireExposure(Time.time, fighter.Health.CurrentHealth);
-                    wildfireExposures.Add(fighter, exposure);
-                }
-
-                float exposureProgress = Mathf.Clamp01((Time.time - exposure.StartedAt) / wildfireLethalSeconds);
-                float healthCeiling = Mathf.Lerp(exposure.StartingHealth, 0f, exposureProgress);
-                fighter.Health.ApplyEnvironmentalHealthCeiling(healthCeiling);
+                float healthAfterDamage = fighter.Health.CurrentHealth
+                    - ServerGameTuning.SafeZoneDamagePerSecond * Time.deltaTime;
+                fighter.Health.ApplyEnvironmentalHealthCeiling(healthAfterDamage);
             }
         }
 
@@ -182,7 +158,6 @@ namespace AnimalBattleRoyale
                 if (fighter != null) WildfireEffect.SetActiveFor(fighter, false);
             }
             fightersOutsideWildfire.Clear();
-            wildfireExposures.Clear();
         }
 
         private void CreateLineRenderer()

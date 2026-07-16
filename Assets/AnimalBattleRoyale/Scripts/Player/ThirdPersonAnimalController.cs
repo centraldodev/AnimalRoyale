@@ -16,7 +16,6 @@ namespace AnimalBattleRoyale
 
         private const int MaxRangedAmmo = 120;
         private const int RangedMagazineCapacity = 30;
-        private const float RangedReloadSeconds = 2f;
         private const float DefeatedCleanupDelay = 1.5f;
 
         private readonly Collider[] combatHits = new Collider[64];
@@ -83,20 +82,9 @@ namespace AnimalBattleRoyale
         public const int MaxLives = 3;
         private const float SpawnProtectionSeconds = 2.5f;
 
-        private const float TigerLeapDuration = 0.72f;
-        private const float TigerLeapSpeed = 19.5f;
-        private const float TigerLeapUpSpeed = 7.6f;
-        private const float TigerLeapHitRadius = 1.25f;
-        private const float TigerLeapDamage = 28f;
-        private const float TigerLeapKnockback = 12f;
         private const float AntThrowRange = 4.8f;
         private const float AntThrowHorizontalSpeed = 30f;
         private const float AntThrowUpSpeed = 9.5f;
-        private const float EagleFlightDuration = 5f;
-        private const float EagleJumpSpeed = 8.2f;
-        private const float EagleFlySpeedBonus = 1.35f;
-        private const float EagleGlideGravityMultiplier = 0.18f;
-        private const float EagleMaximumFallSpeed = -2.4f;
         public const int MaxVinesPerChain = 5;
         private const float VineLeapSpeed = 22f;
         private const float VineLaunchForward = 15f;
@@ -402,13 +390,16 @@ namespace AnimalBattleRoyale
         private void HandleLocalInput()
         {
             Vector3 movement = GetCameraRelativeDirection(GameInput.ReadMovement());
-            SimulateMovement(movement, GameInput.SprintHeld(), GameInput.JumpPressed());
-            bool aerialAutoFire = animalType == AnimalType.Eagle && IsFlying && GameInput.RangedAttackHeld();
-            if (GameInput.RangedAttackPressed() || aerialAutoFire)
+            bool sprint = GameSettings.AutomaticSprint || GameInput.SprintHeld();
+            SimulateMovement(movement, sprint, GameInput.JumpPressed());
+            bool rangedAttackRequested = GameSettings.RangedFireMode == RangedFireMode.Automatic
+                ? GameInput.RangedAttackHeld()
+                : GameInput.RangedAttackPressed();
+            if (rangedAttackRequested)
             {
                 Vector3 direction = GetRangedAttackDirection(movement);
-                OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.RangedAttack, direction);
-                TryRangedAttack(direction);
+                if (TryRangedAttack(direction))
+                    OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.RangedAttack, direction);
             }
             if (GameInput.MeleeAttackPressed())
             {
@@ -493,13 +484,13 @@ namespace AnimalBattleRoyale
 
             float speed = sprint ? stats.SprintSpeed : stats.MoveSpeed;
             if (Time.time < slowUntil) speed *= slowMultiplier;
-            if (gliding) speed *= EagleFlySpeedBonus;
+            if (gliding) speed *= ServerGameTuning.EagleFlySpeedBonus;
             if (IsSwimming) speed *= 0.72f;
             else if (IsWading && !(ForestMissionDirector.Instance != null && ForestMissionDirector.Instance.LakePassageOpen))
                 speed *= CentralLake.Instance.MovementMultiplier;
 
             Vector3 horizontal = abilityDashing ? dashDirection * abilityDashSpeed
-                : tigerLeaping ? tigerLeapDirection * TigerLeapSpeed
+                : tigerLeaping ? tigerLeapDirection * ServerGameTuning.TigerLeapSpeed
                 : movementDirection * speed;
             if (abilityDashing && Time.time >= nextAbilityDamage)
             {
@@ -510,8 +501,8 @@ namespace AnimalBattleRoyale
             if (gliding)
             {
                 // Salto longo: sobe uma vez e plana suavemente, sem subida manual.
-                verticalVelocity.y = Mathf.Max(EagleMaximumFallSpeed,
-                    verticalVelocity.y + gravity * EagleGlideGravityMultiplier * Time.deltaTime);
+                verticalVelocity.y = Mathf.Max(ServerGameTuning.EagleMaximumFallSpeed,
+                    verticalVelocity.y + gravity * ServerGameTuning.EagleGlideGravityMultiplier * Time.deltaTime);
             }
             else if (IsSwimming)
             {
@@ -519,7 +510,7 @@ namespace AnimalBattleRoyale
                 float lift = Mathf.Clamp((surfaceTarget - transform.position.y) * 4.5f, -3f, 7f);
                 verticalVelocity.y = Mathf.MoveTowards(verticalVelocity.y, lift, 30f * Time.deltaTime);
             }
-            else verticalVelocity.y += gravity * Time.deltaTime;
+            else verticalVelocity.y += gravity * ServerGameTuning.JumpGravityMultiplier * Time.deltaTime;
 
             extraVelocity = Vector3.Lerp(extraVelocity, Vector3.zero, 4.5f * Time.deltaTime);
             characterController.Move((horizontal + verticalVelocity + extraVelocity) * Time.deltaTime);
@@ -592,17 +583,17 @@ namespace AnimalBattleRoyale
             return cameraTransform != null && cameraTransform.GetComponent<Camera>() != null;
         }
 
-        private void TryRangedAttack(Vector3 direction)
+        private bool TryRangedAttack(Vector3 direction)
         {
-            if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return;
+            if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return false;
             UpdateRangedReload();
-            if (rangedReloading || rangedAmmo <= 0) return;
+            if (rangedReloading || rangedAmmo <= 0) return false;
             if (rangedMagazineAmmo <= 0)
             {
                 BeginRangedReload();
-                return;
+                return false;
             }
-            if (Time.time < nextBasicAttackTime) return;
+            if (Time.time < nextBasicAttackTime) return false;
             direction = direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
             rangedAmmo--;
             rangedMagazineAmmo--;
@@ -612,13 +603,14 @@ namespace AnimalBattleRoyale
             visualMotion?.TriggerAttack(false);
             RangedProjectile.Fire(this, direction);
             if (rangedMagazineAmmo <= 0 && rangedAmmo > 0) BeginRangedReload();
+            return true;
         }
 
         private void BeginRangedReload()
         {
             if (rangedReloading || rangedMagazineAmmo > 0 || rangedAmmo <= 0) return;
             rangedReloading = true;
-            rangedReloadEndsAt = Time.time + RangedReloadSeconds;
+            rangedReloadEndsAt = Time.time + ServerGameTuning.RangedReloadSeconds;
         }
 
         private void UpdateRangedReload()
@@ -629,15 +621,11 @@ namespace AnimalBattleRoyale
             rangedMagazineAmmo = Mathf.Min(RangedMagazineCapacity, rangedAmmo);
         }
 
-        // Seed-launcher fire cadence: medium machine-gun (~7 shots/s). Lighter animals spray a touch faster.
-        private float RangedAttackCooldown() => animalType switch
+        // Seed-launcher cadence is controlled by the host in shots per second.
+        private float RangedAttackCooldown()
         {
-            AnimalType.Ant => 0.12f,
-            AnimalType.Monkey => 0.13f,
-            AnimalType.Eagle => 0.14f,
-            AnimalType.Tiger => 0.15f,
-            _ => 0.14f
-        };
+            return 1f / Mathf.Max(0.01f, ServerGameTuning.RangedShotsPerSecond);
+        }
 
         private void TryBasicAttack(Vector3 direction)
         {
@@ -694,8 +682,8 @@ namespace AnimalBattleRoyale
                     tigerLeapDirection = new Vector3(direction.x, 0f, direction.z).normalized;
                     if (tigerLeapDirection.sqrMagnitude < 0.01f) tigerLeapDirection = transform.forward;
                     transform.rotation = Quaternion.LookRotation(tigerLeapDirection, Vector3.up);
-                    tigerLeapUntil = Time.time + TigerLeapDuration;
-                    verticalVelocity.y = Mathf.Max(verticalVelocity.y, TigerLeapUpSpeed);
+                    tigerLeapUntil = Time.time + ServerGameTuning.TigerLeapDuration;
+                    verticalVelocity.y = Mathf.Max(verticalVelocity.y, ServerGameTuning.TigerLeapUpSpeed);
                     AttackVfx.CreateBurst(transform.position + Vector3.up * 0.2f, new Color(1f, 0.5f, 0.12f), 1.4f);
                     break;
                 case AnimalType.Ant:
@@ -705,10 +693,10 @@ namespace AnimalBattleRoyale
                     break;
                 case AnimalType.Eagle:
                     // Salto longo com planeio: impulso único e duração máxima de cinco segundos.
-                    flyingUntil = Time.time + EagleFlightDuration;
+                    flyingUntil = Time.time + ServerGameTuning.EagleFlightDuration;
                     eagleGlideDirection = new Vector3(direction.x, 0f, direction.z).normalized;
                     if (eagleGlideDirection.sqrMagnitude < 0.01f) eagleGlideDirection = transform.forward;
-                    verticalVelocity.y = Mathf.Max(verticalVelocity.y, EagleJumpSpeed);
+                    verticalVelocity.y = Mathf.Max(verticalVelocity.y, ServerGameTuning.EagleJumpSpeed);
                     AttackVfx.CreateBurst(transform.position + Vector3.up * 0.4f, new Color(0.85f, 0.8f, 0.66f), 1.8f);
                     break;
                 case AnimalType.Monkey:
@@ -781,7 +769,7 @@ namespace AnimalBattleRoyale
         private void DamageTigerLeapTargets()
         {
             Vector3 impactCenter = transform.position + Vector3.up * (stats.ControllerHeight * 0.5f);
-            int hitCount = Physics.OverlapSphereNonAlloc(impactCenter, TigerLeapHitRadius,
+            int hitCount = Physics.OverlapSphereNonAlloc(impactCenter, ServerGameTuning.TigerLeapHitRadius,
                 combatHits, ~0, QueryTriggerInteraction.Ignore);
             for (int i = 0; i < hitCount; i++)
             {
@@ -797,11 +785,11 @@ namespace AnimalBattleRoyale
                 else pushDirection.Normalize();
 
                 float healthBeforeHit = target.CurrentHealth;
-                target.TakeDamage(TigerLeapDamage, this);
-                CombatFeedback.NotifyHit(AnimalType.Tiger, impactPosition, TigerLeapDamage);
+                target.TakeDamage(ServerGameTuning.TigerLeapDamage, this);
+                CombatFeedback.NotifyHit(AnimalType.Tiger, impactPosition, ServerGameTuning.TigerLeapDamage);
                 if (!target.IsDead && target.CurrentHealth <= healthBeforeHit)
                 {
-                    target.Owner.ReceiveKnockback((pushDirection + Vector3.up * 0.18f).normalized * TigerLeapKnockback);
+                    target.Owner.ReceiveKnockback((pushDirection + Vector3.up * 0.18f).normalized * ServerGameTuning.TigerLeapKnockback);
                 }
             }
         }

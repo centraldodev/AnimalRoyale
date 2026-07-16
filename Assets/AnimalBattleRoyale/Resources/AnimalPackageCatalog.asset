@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 30e203a6ea624f7b8e24983caf30f147, type: 3}
   m_Name: AnimalPackageCatalog
   m_EditorClassIdentifier: 
-  tiger: {fileID: 5470850066624385859, guid: f2e4b62caa9bf4e2da05d3c13f85ab46, type: 3}
-  ant: {fileID: 5417238682863167047, guid: beb0e54e0dc464d058dd15c63ec51f76, type: 3}
-  eagle: {fileID: 2444277559448001609, guid: ef6fee0ecbab344e08ea9639cc2189c6, type: 3}
-  monkey: {fileID: 8181154241372027256, guid: 70cad72a57b2c4512ab841f7bf5691a3, type: 3}
+  tiger: {fileID: 5425817181723351197, guid: f2e4b62caa9bf4e2da05d3c13f85ab46, type: 3}
+  ant: {fileID: 5779083193301636701, guid: beb0e54e0dc464d058dd15c63ec51f76, type: 3}
+  eagle: {fileID: 6005788248434690991, guid: ef6fee0ecbab344e08ea9639cc2189c6, type: 3}
+  monkey: {fileID: 3294534954092695469, guid: 70cad72a57b2c4512ab841f7bf5691a3, type: 3}

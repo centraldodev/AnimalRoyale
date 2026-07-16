@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: db42629fcd744617960739f6da29999c, type: 3}
+  m_Name: ServerGameTuning
+  m_EditorClassIdentifier: 
+  tigerLeapDuration: 0.9
+  tigerLeapSpeed: 25
+  tigerLeapUpSpeed: 9.2
+  tigerLeapHitRadius: 1.25
+  tigerLeapDamage: 28
+  tigerLeapKnockback: 12
+  projectileSpeed: 33
+  projectileRangeSeconds: 4.5
+  projectileGravityMultiplier: 1
+  projectileLiftMultiplier: 1
+  projectileDamageMultiplier: 1
+  projectileRadiusMultiplier: 1
+  rangedShotsPerSecond: 7
+  rangedReloadSeconds: 2
+  safeZoneWaitBeforeShrink: 35
+  safeZoneShrinkSpeed: 0.62
+  safeZoneDamagePerSecond: 12
+  jumpGravityMultiplier: 1
+  eagleFlightDuration: 5
+  eagleJumpSpeed: 8.2
+  eagleFlySpeedBonus: 1.35
+  eagleGlideGravityMultiplier: 0.18
+  eagleMaximumFallSpeed: -2.4

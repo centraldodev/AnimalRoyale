@@ -33,6 +33,7 @@ namespace AnimalBattleRoyale
             // the game is a pure 3-lives last-man-standing battle royale. Their managers are no
             // longer created, so their Instance stays null and all null-conditional calls no-op.
             EnsureAmbientAudio();
+            AmbientAudioController.Instance?.BeginMatch();
             gameCamera = EnsureCamera();
             ConfigureMenuCamera(gameCamera);
             CreateCharacterMenu();

@@ -48,6 +48,7 @@ namespace AnimalBattleRoyale
         private const string TransformMessage = "ABR_TRANSFORM_V1";
         private const string StateMessage = "ABR_STATE_V1";
         private const string ActionMessage = "ABR_ACTION_V1";
+        private const string TuningMessage = "ABR_TUNING_V1";
         private const float SendInterval = 0.05f;
 
         public static OnlineMultiplayerManager Instance { get; private set; }
@@ -333,6 +334,7 @@ namespace AnimalBattleRoyale
             networkManager.CustomMessagingManager.RegisterNamedMessageHandler(TransformMessage, ReceiveClientTransform);
             networkManager.CustomMessagingManager.RegisterNamedMessageHandler(StateMessage, ReceiveAuthoritativeState);
             networkManager.CustomMessagingManager.RegisterNamedMessageHandler(ActionMessage, ReceiveAction);
+            networkManager.CustomMessagingManager.RegisterNamedMessageHandler(TuningMessage, ReceiveServerTuning);
             networkManager.OnClientConnectedCallback += OnClientConnected;
             networkManager.OnClientDisconnectCallback += OnClientDisconnected;
         }
@@ -344,6 +346,104 @@ namespace AnimalBattleRoyale
                 ? $"JOGADORES HUMANOS: {networkManager.ConnectedClientsIds.Count}/{TargetParticipants}"
                 : "CONECTADO AO HOST — ESCOLHA SEU ANIMAL";
             if (clientId == networkManager.LocalClientId && IsClientOnly) SendSelection(localSelection);
+            if (IsHost && clientId != networkManager.LocalClientId) SendServerTuning(clientId);
+        }
+
+        public void BroadcastServerTuning()
+        {
+            if (!IsHost || networkManager == null || networkManager.CustomMessagingManager == null) return;
+            foreach (ulong clientId in networkManager.ConnectedClientsIds)
+            {
+                if (clientId == networkManager.LocalClientId) continue;
+                SendServerTuning(clientId);
+            }
+        }
+
+        private void SendServerTuning(ulong clientId)
+        {
+            using FastBufferWriter writer = new FastBufferWriter(128, Allocator.Temp);
+            WriteServerTuning(writer);
+            networkManager.CustomMessagingManager.SendNamedMessage(TuningMessage, clientId, writer,
+                NetworkDelivery.ReliableSequenced);
+        }
+
+        private static void WriteServerTuning(FastBufferWriter writer)
+        {
+            writer.WriteValueSafe(ServerGameTuning.TigerLeapDuration);
+            writer.WriteValueSafe(ServerGameTuning.TigerLeapSpeed);
+            writer.WriteValueSafe(ServerGameTuning.TigerLeapUpSpeed);
+            writer.WriteValueSafe(ServerGameTuning.TigerLeapHitRadius);
+            writer.WriteValueSafe(ServerGameTuning.TigerLeapDamage);
+            writer.WriteValueSafe(ServerGameTuning.TigerLeapKnockback);
+            writer.WriteValueSafe(ServerGameTuning.ProjectileSpeed);
+            writer.WriteValueSafe(ServerGameTuning.ProjectileRangeSeconds);
+            writer.WriteValueSafe(ServerGameTuning.ProjectileGravityMultiplier);
+            writer.WriteValueSafe(ServerGameTuning.ProjectileLiftMultiplier);
+            writer.WriteValueSafe(ServerGameTuning.ProjectileDamageMultiplier);
+            writer.WriteValueSafe(ServerGameTuning.ProjectileRadiusMultiplier);
+            writer.WriteValueSafe(ServerGameTuning.RangedShotsPerSecond);
+            writer.WriteValueSafe(ServerGameTuning.RangedReloadSeconds);
+            writer.WriteValueSafe(ServerGameTuning.SafeZoneWaitBeforeShrink);
+            writer.WriteValueSafe(ServerGameTuning.SafeZoneShrinkSpeed);
+            writer.WriteValueSafe(ServerGameTuning.SafeZoneDamagePerSecond);
+            writer.WriteValueSafe(ServerGameTuning.JumpGravityMultiplier);
+            writer.WriteValueSafe(ServerGameTuning.EagleFlightDuration);
+            writer.WriteValueSafe(ServerGameTuning.EagleJumpSpeed);
+            writer.WriteValueSafe(ServerGameTuning.EagleFlySpeedBonus);
+            writer.WriteValueSafe(ServerGameTuning.EagleGlideGravityMultiplier);
+            writer.WriteValueSafe(ServerGameTuning.EagleMaximumFallSpeed);
+        }
+
+        private void ReceiveServerTuning(ulong sender, FastBufferReader reader)
+        {
+            if (IsHost || sender != NetworkManager.ServerClientId) return;
+            reader.ReadValueSafe(out float tigerLeapDuration);
+            reader.ReadValueSafe(out float tigerLeapSpeed);
+            reader.ReadValueSafe(out float tigerLeapUpSpeed);
+            reader.ReadValueSafe(out float tigerLeapHitRadius);
+            reader.ReadValueSafe(out float tigerLeapDamage);
+            reader.ReadValueSafe(out float tigerLeapKnockback);
+            reader.ReadValueSafe(out float projectileSpeed);
+            reader.ReadValueSafe(out float projectileRangeSeconds);
+            reader.ReadValueSafe(out float projectileGravityMultiplier);
+            reader.ReadValueSafe(out float projectileLiftMultiplier);
+            reader.ReadValueSafe(out float projectileDamageMultiplier);
+            reader.ReadValueSafe(out float projectileRadiusMultiplier);
+            reader.ReadValueSafe(out float rangedShotsPerSecond);
+            reader.ReadValueSafe(out float rangedReloadSeconds);
+            reader.ReadValueSafe(out float safeZoneWaitBeforeShrink);
+            reader.ReadValueSafe(out float safeZoneShrinkSpeed);
+            reader.ReadValueSafe(out float safeZoneDamagePerSecond);
+            reader.ReadValueSafe(out float jumpGravityMultiplier);
+            reader.ReadValueSafe(out float eagleFlightDuration);
+            reader.ReadValueSafe(out float eagleJumpSpeed);
+            reader.ReadValueSafe(out float eagleFlySpeedBonus);
+            reader.ReadValueSafe(out float eagleGlideGravityMultiplier);
+            reader.ReadValueSafe(out float eagleMaximumFallSpeed);
+
+            ServerGameTuning.TigerLeapDuration = tigerLeapDuration;
+            ServerGameTuning.TigerLeapSpeed = tigerLeapSpeed;
+            ServerGameTuning.TigerLeapUpSpeed = tigerLeapUpSpeed;
+            ServerGameTuning.TigerLeapHitRadius = tigerLeapHitRadius;
+            ServerGameTuning.TigerLeapDamage = tigerLeapDamage;
+            ServerGameTuning.TigerLeapKnockback = tigerLeapKnockback;
+            ServerGameTuning.ProjectileSpeed = projectileSpeed;
+            ServerGameTuning.ProjectileRangeSeconds = projectileRangeSeconds;
+            ServerGameTuning.ProjectileGravityMultiplier = projectileGravityMultiplier;
+            ServerGameTuning.ProjectileLiftMultiplier = projectileLiftMultiplier;
+            ServerGameTuning.ProjectileDamageMultiplier = projectileDamageMultiplier;
+            ServerGameTuning.ProjectileRadiusMultiplier = projectileRadiusMultiplier;
+            ServerGameTuning.RangedShotsPerSecond = rangedShotsPerSecond;
+            ServerGameTuning.RangedReloadSeconds = rangedReloadSeconds;
+            ServerGameTuning.SafeZoneWaitBeforeShrink = safeZoneWaitBeforeShrink;
+            ServerGameTuning.SafeZoneShrinkSpeed = safeZoneShrinkSpeed;
+            ServerGameTuning.SafeZoneDamagePerSecond = safeZoneDamagePerSecond;
+            ServerGameTuning.JumpGravityMultiplier = jumpGravityMultiplier;
+            ServerGameTuning.EagleFlightDuration = eagleFlightDuration;
+            ServerGameTuning.EagleJumpSpeed = eagleJumpSpeed;
+            ServerGameTuning.EagleFlySpeedBonus = eagleFlySpeedBonus;
+            ServerGameTuning.EagleGlideGravityMultiplier = eagleGlideGravityMultiplier;
+            ServerGameTuning.EagleMaximumFallSpeed = eagleMaximumFallSpeed;
         }
 
         private void OnClientDisconnected(ulong clientId)

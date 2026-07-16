@@ -31,6 +31,8 @@ namespace AnimalBattleRoyale
         private AudioClip[] loopClips;
         private AudioClip[] musicClips;
         private bool matchAmbiencePlaying;
+        private bool applicationFocused = true;
+        private bool applicationPaused;
 
         private void Awake()
         {
@@ -68,6 +70,7 @@ namespace AnimalBattleRoyale
                 musicSource.clip = PickClip(musicClips, null);
                 musicSource.volume = musicVolume;
                 musicSource.Play();
+                if (ShouldPauseForApplication) musicSource.Pause();
             }
 
             if (bedClips != null && bedClips.Length > 0)
@@ -110,6 +113,30 @@ namespace AnimalBattleRoyale
         private void OnDestroy()
         {
             if (Instance == this) Instance = null;
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            applicationFocused = hasFocus;
+            ApplyApplicationAudioState();
+        }
+
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            applicationPaused = pauseStatus;
+            ApplyApplicationAudioState();
+        }
+
+        private bool ShouldPauseForApplication => !applicationFocused || applicationPaused;
+
+        private void ApplyApplicationAudioState()
+        {
+            SetSourcesPaused(bedSources, ShouldPauseForApplication);
+            SetSourcePaused(musicSource, ShouldPauseForApplication);
+            for (int i = 0; i < shortLoopSources.Count; i++)
+            {
+                SetSourcesPaused(shortLoopSources[i], ShouldPauseForApplication);
+            }
         }
 
         private void LoadClips()
@@ -191,6 +218,7 @@ namespace AnimalBattleRoyale
             source.volume = volume;
             source.pitch = Random.Range(0.96f, 1.04f);
             source.Play();
+            if (ShouldPauseForApplication) source.Pause();
         }
 
         private AudioSource[] CreateSourcePair(string layerName)
@@ -234,6 +262,25 @@ namespace AnimalBattleRoyale
                 sources[i].Stop();
                 sources[i].clip = null;
                 sources[i].volume = 0f;
+            }
+        }
+
+        private static void SetSourcesPaused(AudioSource[] sources, bool paused)
+        {
+            if (sources == null) return;
+            for (int i = 0; i < sources.Length; i++) SetSourcePaused(sources[i], paused);
+        }
+
+        private static void SetSourcePaused(AudioSource source, bool paused)
+        {
+            if (source == null || source.clip == null) return;
+            if (paused)
+            {
+                if (source.isPlaying) source.Pause();
+            }
+            else
+            {
+                source.UnPause();
             }
         }
     }

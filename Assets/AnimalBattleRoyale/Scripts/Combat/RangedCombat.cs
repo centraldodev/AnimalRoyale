@@ -46,38 +46,43 @@ namespace AnimalBattleRoyale
         {
             owner = source;
             direction = direction.sqrMagnitude > 0.01f ? direction.normalized : source.transform.forward;
-            // Every animal fires seeds from the back-mounted launcher: small, fast,
-            // low-arc pellets. Per-animal tuning only nudges speed/damage slightly.
-            float speed;
+            // Every animal fires seeds from the back-mounted launcher. Projectile
+            // speed is controlled globally by the host; damage and size vary by animal.
+            float speed = ServerGameTuning.ProjectileSpeed;
             float lift;
             float visualScale;
             switch (source.AnimalType)
             {
                 case AnimalType.Tiger:
-                    speed = 32f; lift = 0.35f; gravity = 2.4f; damage = 11f; radius = 0.18f;
+                    lift = 0.35f; gravity = 2.4f; damage = 11f; radius = 0.18f;
                     visualScale = 0.34f; impactColor = new Color(0.85f, 0.72f, 0.42f);
                     break;
                 case AnimalType.Ant:
-                    speed = 34f; lift = 0.3f; gravity = 2.2f; damage = 8f; radius = 0.15f;
+                    lift = 0.3f; gravity = 2.2f; damage = 8f; radius = 0.15f;
                     visualScale = 0.28f; impactColor = new Color(0.82f, 0.68f, 0.36f);
                     break;
                 case AnimalType.Eagle:
-                    speed = 33f; lift = 0.4f; gravity = 2.3f; damage = 10f; radius = 0.17f;
+                    lift = 0.4f; gravity = 2.3f; damage = 10f; radius = 0.17f;
                     visualScale = 0.32f; impactColor = new Color(0.8f, 0.74f, 0.5f);
                     break;
                 case AnimalType.Monkey:
-                    speed = 33f; lift = 0.35f; gravity = 2.3f; damage = 9.5f; radius = 0.16f;
+                    lift = 0.35f; gravity = 2.3f; damage = 9.5f; radius = 0.16f;
                     visualScale = 0.3f; impactColor = new Color(0.78f, 0.7f, 0.4f);
                     break;
                 default:
-                    speed = 32f; lift = 0.35f; gravity = 2.3f; damage = 10f; radius = 0.17f;
+                    lift = 0.35f; gravity = 2.3f; damage = 10f; radius = 0.17f;
                     visualScale = 0.3f; impactColor = new Color(0.82f, 0.7f, 0.42f);
                     break;
             }
 
+            lift *= ServerGameTuning.ProjectileLiftMultiplier;
+            gravity *= ServerGameTuning.ProjectileGravityMultiplier;
+            damage *= ServerGameTuning.ProjectileDamageMultiplier;
+            radius *= ServerGameTuning.ProjectileRadiusMultiplier;
+
             transform.position = GetLaunchPosition(source, direction);
             velocity = direction * speed + Vector3.up * lift;
-            expiresAt = Time.time + 4.5f;
+            expiresAt = Time.time + ServerGameTuning.ProjectileRangeSeconds;
             BuildVisual(source.AnimalType, visualScale);
             BuildTrail();
             AttackVfx.CreateBurst(transform.position, impactColor, 0.5f);

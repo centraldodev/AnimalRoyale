@@ -49,18 +49,19 @@ namespace AnimalBattleRoyale
             if (Cursor.lockState == CursorLockMode.Locked)
             {
                 Vector2 look = GameInput.ReadLook();
-                yaw += look.x * sensitivity;
-                pitch -= look.y * sensitivity;
+                float sensitivityMultiplier = GameSettings.MouseSensitivity;
+                yaw += look.x * sensitivity * sensitivityMultiplier;
+                pitch -= look.y * sensitivity * sensitivityMultiplier;
                 pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
             }
 
             Quaternion rotation = Quaternion.Euler(pitch, yaw, 0f);
             Vector3 focusPoint = target.position + Vector3.up * targetHeight;
-            // Move the camera toward the animal's right shoulder. The animal is
-            // therefore framed on the left while the exact screen center remains
-            // unobstructed and continues to define the firing ray.
+            // Move the camera to the selected shoulder so the animal is framed on
+            // the chosen side while the screen center remains the firing ray.
+            float shoulderSide = GameSettings.CharacterSide == CharacterScreenSide.Left ? 1f : -1f;
             Vector3 desiredPosition = focusPoint
-                                      + rotation * Vector3.right * shoulderOffset
+                                      + rotation * Vector3.right * (shoulderOffset * shoulderSide)
                                       - rotation * Vector3.forward * distance;
             desiredPosition = ResolveCollision(focusPoint, desiredPosition);
 

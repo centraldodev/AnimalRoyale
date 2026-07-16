@@ -180,6 +180,11 @@ namespace AnimalBattleRoyale
             scaleMultiplier.x += stepSquash;
             scaleMultiplier.y += breath - stepSquash * 0.8f + verticalNormalized * airborneBlend * 0.025f;
             scaleMultiplier.z += stepSquash * 0.35f - shot * 0.025f;
+            if (animalType == AnimalType.Eagle && airborneBlend > 0.001f)
+            {
+                scaleMultiplier = Vector3.one;
+                scaleMultiplier.y += breath * 0.35f;
+            }
 
             modelRoot.localPosition = basePosition
                                       + Vector3.up * (bob + breath * 0.5f + jumpLift + flapLift + actionLift)
@@ -232,10 +237,11 @@ namespace AnimalBattleRoyale
             {
                 float airborneSpread = airborneBlend * (flying ? 1f : 0.55f);
                 float flap = Mathf.Sin(Time.time * (flying ? 9.2f : 7.4f));
-                float liftAngle = airborneSpread * (40f + flap * 24f);
+                float openAmount = Mathf.SmoothStep(0f, 1f, (flap + 1f) * 0.5f);
+                float liftAngle = airborneSpread * openAmount * (flying ? 28f : 18f);
                 float groundSway = armSwing * 0.32f;
-                SetBoneRotation(leftArmBone, new Vector3(-groundSway, 0f, -liftAngle));
-                SetBoneRotation(rightArmBone, new Vector3(groundSway, 0f, liftAngle));
+                SetBoneRotation(leftArmBone, new Vector3(-groundSway, 0f, liftAngle));
+                SetBoneRotation(rightArmBone, new Vector3(groundSway, 0f, -liftAngle));
             }
             else
             {
