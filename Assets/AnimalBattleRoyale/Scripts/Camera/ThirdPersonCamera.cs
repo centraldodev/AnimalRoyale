@@ -46,7 +46,7 @@ namespace AnimalBattleRoyale
                 }
             }
 
-            if (Cursor.lockState == CursorLockMode.Locked)
+            if (Cursor.lockState == CursorLockMode.Locked || MobileInputController.ControlsEnabled)
             {
                 Vector2 look = GameInput.ReadLook();
                 float sensitivityMultiplier = GameSettings.MouseSensitivity;

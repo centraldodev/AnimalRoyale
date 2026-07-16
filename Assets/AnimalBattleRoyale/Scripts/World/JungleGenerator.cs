@@ -527,6 +527,7 @@ namespace AnimalBattleRoyale
                 if (useHighDetail) EnhanceImportedMaterials(treeVisual);
                 EnableRendererInstancing(treeVisual);
                 treeVisual.AddComponent<TreeWindSway>();
+                SetVisualOnGround(treeRoot, position.y, 0.06f);
                 BoxCollider treeCollider = treeRoot.AddComponent<BoxCollider>();
                 treeCollider.center = useHighDetail ? new Vector3(0f, 3.6f, 0f) : new Vector3(0f, 2.4f, 0f);
                 treeCollider.size = useHighDetail ? new Vector3(1.75f, 7.2f, 1.75f) : new Vector3(1.2f, 4.8f, 1.2f);
@@ -540,7 +541,7 @@ namespace AnimalBattleRoyale
                 }
                 if (Random.value < 0.24f)
                 {
-                    CreateDecorativeTreeFruit(treeRoot.transform, fruitRedMaterial, fruitGoldMaterial, vineMaterial);
+                    CreateDecorativeTreeFruit(treeRoot.transform, treeVisual, fruitRedMaterial, fruitGoldMaterial, vineMaterial);
                 }
                 ConfigureVisualOptimization(treeRoot, 0.018f);
                 return;
@@ -632,6 +633,7 @@ namespace AnimalBattleRoyale
             }
             visual.name = prefab.name + "_Visual";
             ApplyNatureRendererSettings(visual, true);
+            SetVisualOnGround(treeRoot, position.y, 0.05f);
 
             // Tree Creator vegetation reacts to the shared Unity WindZone. The custom sway
             // component remains reserved for imported static meshes so trunks do not bend as one piece.
@@ -644,7 +646,7 @@ namespace AnimalBattleRoyale
             }
 
             if (Random.value < 0.16f)
-                CreateDecorativeTreeFruit(treeRoot.transform, fruitRedMaterial, fruitGoldMaterial, vineMaterial);
+                CreateDecorativeTreeFruit(treeRoot.transform, visual, fruitRedMaterial, fruitGoldMaterial, vineMaterial);
 
             ConfigureVisualOptimization(treeRoot, 0.014f);
         }
@@ -675,12 +677,61 @@ namespace AnimalBattleRoyale
             }
         }
 
-        private static void CreateDecorativeTreeFruit(Transform parent, Material redMaterial, Material goldMaterial, Material leafMaterial)
+        private static void SetVisualOnGround(GameObject root, float groundHeight, float embedDepth = 0.02f)
         {
+            if (root == null) return;
+
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            Bounds visualBounds = default;
+            bool hasVisualBounds = false;
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer == null || renderer is LineRenderer || renderer is ParticleSystemRenderer) continue;
+                if (!hasVisualBounds)
+                {
+                    visualBounds = renderer.bounds;
+                    hasVisualBounds = true;
+                }
+                else
+                {
+                    visualBounds.Encapsulate(renderer.bounds);
+                }
+            }
+
+            if (!hasVisualBounds) return;
+            float verticalCorrection = groundHeight - visualBounds.min.y - Mathf.Max(0f, embedDepth);
+            root.transform.position += Vector3.up * verticalCorrection;
+        }
+
+        private static void CreateDecorativeTreeFruit(Transform parent, GameObject treeVisual,
+            Material redMaterial, Material goldMaterial, Material leafMaterial)
+        {
+            if (parent == null || treeVisual == null) return;
+
+            List<Renderer> canopyRenderers = new List<Renderer>();
+            foreach (Renderer renderer in treeVisual.GetComponentsInChildren<Renderer>(true))
+            {
+                if (renderer == null) continue;
+                string rendererName = renderer.name;
+                if (rendererName.Contains("Leaf") || rendererName.Contains("Leaves") ||
+                    rendererName.Contains("Canopy") || rendererName.Contains("Crown"))
+                {
+                    canopyRenderers.Add(renderer);
+                }
+            }
+
+            // Without a known canopy surface, fixed coordinates can leave fruit hanging in the sky.
+            if (canopyRenderers.Count == 0) return;
+
             int count = Random.Range(2, 4);
             for (int i = 0; i < count; i++)
             {
-                Vector3 position = new Vector3(Random.Range(-1.65f, 1.65f), Random.Range(4.9f, 6.8f), Random.Range(-1.65f, 1.65f));
+                Bounds canopy = canopyRenderers[Random.Range(0, canopyRenderers.Count)].bounds;
+                Vector3 worldPosition = canopy.center + new Vector3(
+                    Random.Range(-canopy.extents.x * 0.32f, canopy.extents.x * 0.32f),
+                    -canopy.extents.y * Random.Range(0.08f, 0.32f),
+                    Random.Range(-canopy.extents.z * 0.32f, canopy.extents.z * 0.32f));
+                Vector3 position = parent.InverseTransformPoint(worldPosition);
                 GameObject fruit = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 fruit.name = "TreeMango";
                 fruit.transform.SetParent(parent, false);
@@ -712,8 +763,9 @@ namespace AnimalBattleRoyale
                 natureBush.name = "NatureStarterBush";
                 natureBush.transform.position = position;
                 natureBush.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                natureBush.transform.localScale = Vector3.one * Random.Range(0.72f, 1.28f);
+                natureBush.transform.localScale = Vector3.one * Random.Range(0.62f, 1.05f);
                 ApplyNatureRendererSettings(natureBush, false);
+                SetVisualOnGround(natureBush, position.y, 0.025f);
                 foreach (Collider natureCollider in natureBush.GetComponentsInChildren<Collider>(true))
                     Object.Destroy(natureCollider);
                 ConfigureVisualOptimization(natureBush, 0.01f);
@@ -730,8 +782,9 @@ namespace AnimalBattleRoyale
                 bushModel.name = useHighDetail ? "HighDetailBroadleafPlant" : "BlenderJungleBush";
                 bushModel.transform.position = position;
                 bushModel.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                bushModel.transform.localScale = Vector3.one * (useHighDetail ? Random.Range(0.72f, 1.3f) : Random.Range(0.8f, 1.35f));
+                bushModel.transform.localScale = Vector3.one * (useHighDetail ? Random.Range(0.34f, 0.62f) : Random.Range(0.72f, 1.12f));
                 if (useHighDetail) EnhanceImportedMaterials(bushModel);
+                SetVisualOnGround(bushModel, position.y, useHighDetail ? 0.12f : 0.04f);
                 ConfigureVisualOptimization(bushModel, 0.012f);
                 return;
             }
@@ -807,6 +860,7 @@ namespace AnimalBattleRoyale
                 boulder.transform.localScale = new Vector3(
                     size * Random.Range(0.85f, 1.2f), size * Random.Range(0.7f, 1.1f), size * Random.Range(0.85f, 1.2f));
                 if (useHighDetail) EnhanceImportedMaterials(boulder);
+                SetVisualOnGround(boulder, position.y, 0.1f);
                 BoxCollider rockCollider = boulder.AddComponent<BoxCollider>();
                 rockCollider.center = new Vector3(0f, 0.7f, 0f);
                 rockCollider.size = new Vector3(2.2f, 1.4f, 1.8f);
@@ -842,6 +896,7 @@ namespace AnimalBattleRoyale
             {
                 GameObject hole = Object.Instantiate(cachedTunnelHolePrefab, anthill.transform, false);
                 hole.name = "TunnelHoleVisual";
+                hole.transform.localPosition = Vector3.down * AntTunnelEntrance.VisualEmbedDepth;
                 foreach (Collider c in hole.GetComponentsInChildren<Collider>(true)) if (c != null) c.enabled = false;
             }
             else
@@ -852,7 +907,7 @@ namespace AnimalBattleRoyale
                 GameObject entrance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 entrance.name = "AnthillEntrance";
                 entrance.transform.SetParent(anthill.transform, false);
-                entrance.transform.localPosition = new Vector3(0f, 0.5f, 2.05f);
+                entrance.transform.localPosition = new Vector3(0f, 0.34f, 2.05f);
                 entrance.transform.localScale = new Vector3(1.35f, 0.85f, 0.25f);
                 entrance.GetComponent<Renderer>().sharedMaterial = entranceMaterial;
                 Collider entranceCollider = entrance.GetComponent<Collider>();
@@ -932,6 +987,7 @@ namespace AnimalBattleRoyale
                 mountainModel.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
                 mountainModel.transform.localScale = Vector3.one * (useHighDetail ? Random.Range(0.92f, 1.38f) : Random.Range(2.2f, 3.4f));
                 if (useHighDetail) EnhanceImportedMaterials(mountainModel);
+                SetVisualOnGround(mountainModel, position.y, 0.3f);
                 // The FBX root has no mesh of its own; the peaks are children. Box
                 // colliders keep them solid and NavMesh-compatible even when the
                 // imported mountain meshes do not have CPU read access in builds.
@@ -1065,7 +1121,7 @@ namespace AnimalBattleRoyale
             part.isStatic = true;
         }
 
-        private static void CreateFlowerPatch(Transform parent, Vector3 position, Material stemMaterial, Material petalMaterial)
+        private void CreateFlowerPatch(Transform parent, Vector3 position, Material stemMaterial, Material petalMaterial)
         {
             if (cachedFlowerPrefab == null) cachedFlowerPrefab = Resources.Load<GameObject>("EnvironmentModels/JungleFlower/JungleFlower");
             if (cachedFlowerClusterPrefab == null) cachedFlowerClusterPrefab = Resources.Load<GameObject>("EnvironmentModels/FlowerClusterHD/FlowerClusterHD");
@@ -1075,8 +1131,9 @@ namespace AnimalBattleRoyale
                 cluster.name = "HighDetailFlowerCluster";
                 cluster.transform.position = position;
                 cluster.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                cluster.transform.localScale = Vector3.one * Random.Range(0.7f, 1.22f);
+                cluster.transform.localScale = Vector3.one * Random.Range(0.5f, 0.82f);
                 EnhanceImportedMaterials(cluster);
+                SetVisualOnGround(cluster, position.y, 0.055f);
                 ConfigureVisualOptimization(cluster, 0.008f);
                 return;
             }
@@ -1091,9 +1148,12 @@ namespace AnimalBattleRoyale
                 {
                     GameObject flower = Object.Instantiate(cachedFlowerPrefab, flowerPatch.transform, false);
                     flower.name = "JungleFlower";
-                    flower.transform.localPosition = new Vector3(Random.Range(-1.6f, 1.6f), 0f, Random.Range(-1.6f, 1.6f));
-                    flower.transform.localRotation = Quaternion.Euler(Random.Range(-7f, 7f), Random.Range(0f, 360f), Random.Range(-7f, 7f));
+                    Vector3 flowerPosition = position + new Vector3(Random.Range(-1.6f, 1.6f), 0f, Random.Range(-1.6f, 1.6f));
+                    flowerPosition.y = CalculateGroundHeight(flowerPosition.x, flowerPosition.z);
+                    flower.transform.position = flowerPosition;
+                    flower.transform.rotation = Quaternion.Euler(Random.Range(-4f, 4f), Random.Range(0f, 360f), Random.Range(-4f, 4f));
                     flower.transform.localScale = Vector3.one * Random.Range(0.8f, 1.5f);
+                    SetVisualOnGround(flower, flowerPosition.y, 0.015f);
                     // Most of the patch shares one color; the strays keep the
                     // model's own petal color so fields never look uniform.
                     if (Random.value < 0.8f) TintPetals(flower, petalMaterial);
@@ -1109,11 +1169,12 @@ namespace AnimalBattleRoyale
             for (int i = 0; i < count; i++)
             {
                 Vector3 offset = new Vector3(Random.Range(-1.2f, 1.2f), 0f, Random.Range(-1.2f, 1.2f));
+                float localGroundHeight = CalculateGroundHeight(position.x + offset.x, position.z + offset.z) - position.y;
                 float height = Random.Range(0.24f, 0.52f);
                 GameObject stem = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
                 stem.name = "FlowerStem";
                 stem.transform.SetParent(patch.transform, false);
-                stem.transform.localPosition = offset + Vector3.up * (height * 0.5f);
+                stem.transform.localPosition = offset + Vector3.up * (localGroundHeight + height * 0.5f);
                 stem.transform.localScale = new Vector3(0.035f, height * 0.5f, 0.035f);
                 stem.GetComponent<Renderer>().sharedMaterial = stemMaterial;
                 Collider stemCollider = stem.GetComponent<Collider>();
@@ -1122,7 +1183,7 @@ namespace AnimalBattleRoyale
                 GameObject flower = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 flower.name = "Flower";
                 flower.transform.SetParent(patch.transform, false);
-                flower.transform.localPosition = offset + Vector3.up * height;
+                flower.transform.localPosition = offset + Vector3.up * (localGroundHeight + height);
                 flower.transform.localScale = new Vector3(0.25f, 0.1f, 0.25f);
                 flower.GetComponent<Renderer>().sharedMaterial = petalMaterial;
                 Collider flowerCollider = flower.GetComponent<Collider>();

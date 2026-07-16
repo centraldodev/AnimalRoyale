@@ -25,6 +25,7 @@ namespace AnimalBattleRoyale
             ConfigureRendering();
             EnsureManager();
             EnsureGameMenu();
+            MobileInputController.EnsureExists();
             EnsureOnlineMultiplayer();
             jungle = EnsureJungle();
             if (generateJungleOnStart) jungle.Generate();
@@ -44,6 +45,7 @@ namespace AnimalBattleRoyale
             if (matchStarted) return;
             matchStarted = true;
             GameMenuController.Instance?.SetInGame(true);
+            MobileInputController.SetGameplayActive(true);
             BattleRoyaleManager.Instance?.BeginOpeningPhase(openingProtectionDuration);
             ThirdPersonAnimalController player = SpawnPlayer(selectedAnimal, gameCamera.transform);
             ConfigureCamera(gameCamera, player.transform);
@@ -56,8 +58,22 @@ namespace AnimalBattleRoyale
 
         private static void ConfigureRendering()
         {
+            bool mobile = Application.isMobilePlatform;
+            if (mobile)
+            {
+                int mobileQuality = Mathf.Min(2, QualitySettings.names.Length - 1);
+                if (mobileQuality >= 0) QualitySettings.SetQualityLevel(mobileQuality, true);
+                Input.multiTouchEnabled = true;
+                Screen.sleepTimeout = SleepTimeout.NeverSleep;
+                Screen.autorotateToPortrait = false;
+                Screen.autorotateToPortraitUpsideDown = false;
+                Screen.autorotateToLandscapeLeft = true;
+                Screen.autorotateToLandscapeRight = true;
+                Screen.orientation = ScreenOrientation.AutoRotation;
+            }
+
             Application.targetFrameRate = 60;
-            QualitySettings.vSyncCount = 1;
+            QualitySettings.vSyncCount = mobile ? 0 : 1;
             Time.maximumDeltaTime = 0.05f;
             RenderSettings.fog = true;
             RenderSettings.fogColor = new Color(0.28f, 0.59f, 0.76f);
@@ -90,7 +106,7 @@ namespace AnimalBattleRoyale
             light.type = LightType.Directional;
             light.intensity = 1.78f;
             light.color = new Color(1f, 0.9f, 0.72f);
-            light.shadows = LightShadows.Soft;
+            light.shadows = mobile ? LightShadows.Hard : LightShadows.Soft;
             light.shadowStrength = 0.72f;
             light.shadowBias = 0.055f;
             light.shadowNormalBias = 0.32f;
@@ -106,10 +122,14 @@ namespace AnimalBattleRoyale
             fillLight.shadows = LightShadows.None;
             fillObject.transform.rotation = Quaternion.Euler(32f, 142f, 0f);
 
-            QualitySettings.shadowDistance = Mathf.Max(QualitySettings.shadowDistance, 110f);
-            QualitySettings.shadowResolution = ShadowResolution.High;
-            QualitySettings.antiAliasing = Mathf.Max(QualitySettings.antiAliasing, 4);
-            QualitySettings.anisotropicFiltering = AnisotropicFiltering.ForceEnable;
+            QualitySettings.shadowDistance = mobile
+                ? Mathf.Min(QualitySettings.shadowDistance, 48f)
+                : Mathf.Max(QualitySettings.shadowDistance, 110f);
+            QualitySettings.shadowResolution = mobile ? ShadowResolution.Medium : ShadowResolution.High;
+            QualitySettings.antiAliasing = mobile ? 2 : Mathf.Max(QualitySettings.antiAliasing, 4);
+            QualitySettings.anisotropicFiltering = mobile
+                ? AnisotropicFiltering.Enable
+                : AnisotropicFiltering.ForceEnable;
         }
 
         private static void EnsureManager()
@@ -231,6 +251,7 @@ namespace AnimalBattleRoyale
             if (!worldAlreadyPrepared) jungle.Generate(synchronizedSeed);
 
             GameMenuController.Instance?.SetInGame(true);
+            MobileInputController.SetGameplayActive(true);
             BattleRoyaleManager.Instance?.BeginOpeningPhase(openingProtectionDuration);
             ThirdPersonAnimalController localPlayer = null;
 

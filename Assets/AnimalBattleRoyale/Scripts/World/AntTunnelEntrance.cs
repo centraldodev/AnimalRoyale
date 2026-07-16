@@ -13,6 +13,7 @@ namespace AnimalBattleRoyale
         private const float TunnelDuration = 7f;
         private const float SelectionTravelDelay = 0.45f;
         private const int RingSegments = 26;
+        public const float VisualEmbedDepth = 0.14f;
 
         private sealed class TunnelSession
         {
@@ -66,12 +67,13 @@ namespace AnimalBattleRoyale
         public static AntTunnelEntrance Create(Vector3 position, Material rimMaterial, Material holeMaterial)
         {
             GameObject root = new GameObject("AntTunnelEntrance");
-            root.transform.position = position + Vector3.up * 0.04f;
+            root.transform.position = position;
             AntTunnelEntrance entrance = root.AddComponent<AntTunnelEntrance>();
 
             GameObject rim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             rim.name = "TunnelRim";
             rim.transform.SetParent(root.transform, false);
+            rim.transform.localPosition = Vector3.down * 0.06f;
             rim.transform.localScale = new Vector3(1.3f, 0.11f, 1.3f);
             rim.GetComponent<Renderer>().sharedMaterial = rimMaterial;
             Collider rimCollider = rim.GetComponent<Collider>();
@@ -80,7 +82,7 @@ namespace AnimalBattleRoyale
             GameObject hole = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             hole.name = "TunnelHole";
             hole.transform.SetParent(root.transform, false);
-            hole.transform.localPosition = Vector3.up * 0.08f;
+            hole.transform.localPosition = Vector3.down * VisualEmbedDepth;
             hole.transform.localScale = new Vector3(1.45f, 0.08f, 1.45f);
             hole.GetComponent<Renderer>().sharedMaterial = holeMaterial;
             Collider holeCollider = hole.GetComponent<Collider>();

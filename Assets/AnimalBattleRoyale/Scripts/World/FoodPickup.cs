@@ -17,13 +17,14 @@ namespace AnimalBattleRoyale
     {
         private static readonly List<FoodPickup> activePickups = new List<FoodPickup>();
         private static readonly Dictionary<int, Material> sharedMaterials = new Dictionary<int, Material>();
+        private static JungleGenerator cachedJungle;
         private static int nextMotionGroup;
         private FoodKind foodKind;
         private float amount;
-        private Vector3 basePosition;
         private Color effectColor;
         private bool collected;
         private int motionGroup;
+        private Transform display;
 
         private void Awake()
         {
@@ -42,14 +43,17 @@ namespace AnimalBattleRoyale
 
         public static FoodPickup Create(Vector3 position, FoodKind kind)
         {
+            if (cachedJungle == null) cachedJungle = FindAnyObjectByType<JungleGenerator>();
+            if (cachedJungle != null) position.y = cachedJungle.GroundHeightAt(position);
+
             GameObject root = new GameObject("Food_" + kind);
-            root.transform.position = position + Vector3.up * 0.55f;
+            root.transform.position = position;
             FoodPickup pickup = root.AddComponent<FoodPickup>();
             pickup.foodKind = kind;
             pickup.amount = HealingFor(kind);
-            pickup.basePosition = root.transform.position;
             pickup.effectColor = FoodColor(kind);
             pickup.BuildVisual();
+            pickup.SnapVisualToGround(position.y);
             return pickup;
         }
 
@@ -69,7 +73,6 @@ namespace AnimalBattleRoyale
         private void Update()
         {
             if ((Time.frameCount & 1) != motionGroup) return;
-            transform.position = basePosition + Vector3.up * (Mathf.Sin(Time.time * 2.5f + transform.position.x) * 0.18f);
             transform.Rotate(0f, 24f * Time.deltaTime, 0f, Space.World);
         }
 
@@ -111,18 +114,44 @@ namespace AnimalBattleRoyale
 
         private void BuildVisual()
         {
-            GameObject display = new GameObject("CartoonPickupDisplay");
-            display.transform.SetParent(transform, false);
+            GameObject displayObject = new GameObject("CartoonPickupDisplay");
+            displayObject.transform.SetParent(transform, false);
+            display = displayObject.transform;
             switch (foodKind)
             {
-                case FoodKind.Fruit: BuildFruitBundle(display.transform); break;
-                case FoodKind.Nectar: BuildNectarFlower(display.transform); break;
-                case FoodKind.Fish: BuildFish(display.transform); break;
-                case FoodKind.Meat: BuildMeat(display.transform); break;
-                case FoodKind.GoldenFruit: BuildFruitBundle(display.transform); break;
+                case FoodKind.Fruit: BuildFruitBundle(display); break;
+                case FoodKind.Nectar: BuildNectarFlower(display); break;
+                case FoodKind.Fish: BuildFish(display); break;
+                case FoodKind.Meat: BuildMeat(display); break;
+                case FoodKind.GoldenFruit: BuildFruitBundle(display); break;
             }
             CollectibleHighlight.Attach(transform, effectColor, foodKind == FoodKind.GoldenFruit ? 1.15f : 0.92f, -0.28f);
             CreateLabel();
+        }
+
+        private void SnapVisualToGround(float groundHeight)
+        {
+            if (display == null) return;
+
+            Renderer[] renderers = display.GetComponentsInChildren<Renderer>(true);
+            Bounds visualBounds = default;
+            bool hasVisualBounds = false;
+            foreach (Renderer renderer in renderers)
+            {
+                if (renderer == null) continue;
+                if (!hasVisualBounds)
+                {
+                    visualBounds = renderer.bounds;
+                    hasVisualBounds = true;
+                }
+                else
+                {
+                    visualBounds.Encapsulate(renderer.bounds);
+                }
+            }
+
+            if (!hasVisualBounds) return;
+            transform.position += Vector3.up * (groundHeight - visualBounds.min.y - 0.015f);
         }
 
         private static void BuildNectarFlower(Transform parent)

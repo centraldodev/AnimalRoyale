@@ -361,7 +361,8 @@ namespace AnimalBattleRoyale
 
         private void DrawSettings(float viewWidth, float viewHeight)
         {
-            CaptureBindingEvent(Event.current);
+            bool mobile = Application.isMobilePlatform;
+            if (!mobile) CaptureBindingEvent(Event.current);
 
             float panelWidth = Mathf.Min(850f, viewWidth - 36f);
             float panelHeight = Mathf.Min(650f, viewHeight - 30f);
@@ -370,7 +371,9 @@ namespace AnimalBattleRoyale
                 new Color(0.32f, 0.82f, 0.6f, 1f), 2f);
             GUI.Label(new Rect(panel.x + 28f, panel.y + 18f, panel.width - 56f, 38f), "CONFIGURAÇÕES", titleStyle);
             GUI.Label(new Rect(panel.x + 30f, panel.y + 55f, panel.width - 60f, 28f),
-                waitingForBinding.HasValue
+                mobile
+                    ? "Arraste o lado direito para mirar e use os botões na tela"
+                    : waitingForBinding.HasValue
                     ? "Pressione uma tecla ou botão do mouse • ESC cancela"
                     : "Clique em um atalho para trocar sua tecla", subtitleStyle);
 
@@ -380,18 +383,34 @@ namespace AnimalBattleRoyale
             float contentY = panel.y + 98f;
             float columnWidth = (panel.width - 60f - gap) / columns;
             float rowHeight = 58f;
-            IReadOnlyList<GameInputBindingDefinition> definitions = GameInputBindings.Definitions;
-            for (int index = 0; index < definitions.Count; index++)
+            float settingsY;
+            if (mobile)
             {
-                GameInputBindingDefinition definition = definitions[index];
-                int column = index % columns;
-                int row = index / columns;
-                Rect rowRect = new Rect(contentX + column * (columnWidth + gap), contentY + row * rowHeight,
-                    columnWidth, 54f);
-                DrawBindingRow(rowRect, definition);
+                Rect touchGuide = new Rect(contentX, contentY, panel.width - 60f, 88f);
+                RuntimeGuiTheme.DrawPanel(touchGuide, new Color(0.035f, 0.07f, 0.07f, 0.96f),
+                    new Color(0.18f, 0.62f, 0.46f, 1f), 1f, false);
+                GUI.Label(new Rect(touchGuide.x + 16f, touchGuide.y + 8f, touchGuide.width - 32f, 24f),
+                    "CONTROLES TOUCHSCREEN", buttonStyle);
+                GUI.Label(new Rect(touchGuide.x + 16f, touchGuide.y + 37f, touchGuide.width - 32f, 42f),
+                    "Joystick: mover  •  Arrastar lado direito: mirar  •  Botões: tiro, golpe, poder, pulo, correr e usar",
+                    centeredStyle);
+                settingsY = touchGuide.yMax + 12f;
             }
+            else
+            {
+                IReadOnlyList<GameInputBindingDefinition> definitions = GameInputBindings.Definitions;
+                for (int index = 0; index < definitions.Count; index++)
+                {
+                    GameInputBindingDefinition definition = definitions[index];
+                    int column = index % columns;
+                    int row = index / columns;
+                    Rect rowRect = new Rect(contentX + column * (columnWidth + gap), contentY + row * rowHeight,
+                        columnWidth, 54f);
+                    DrawBindingRow(rowRect, definition);
+                }
 
-            float settingsY = contentY + Mathf.CeilToInt(definitions.Count / (float)columns) * rowHeight + 4f;
+                settingsY = contentY + Mathf.CeilToInt(definitions.Count / (float)columns) * rowHeight + 4f;
+            }
             DrawGameplaySettings(new Rect(contentX, settingsY, panel.width - 60f, 156f));
 
             if (Time.unscaledTime < bindingMessageUntil)
@@ -428,7 +447,7 @@ namespace AnimalBattleRoyale
             RuntimeGuiTheme.DrawPanel(rect, new Color(0.035f, 0.07f, 0.07f, 0.96f),
                 new Color(0.14f, 0.27f, 0.25f, 1f), 1f, false);
             GUI.Label(new Rect(rect.x + 12f, rect.y + 4f, rect.width - 24f, 24f),
-                $"SENSIBILIDADE DO MOUSE  {GameSettings.MouseSensitivity:0.00}x", labelStyle);
+                $"SENSIBILIDADE DA CÂMERA  {GameSettings.MouseSensitivity:0.00}x", labelStyle);
 
             Rect sliderRect = new Rect(rect.x + 14f, rect.y + 36f, rect.width - 28f, 24f);
             float previousValue = GameSettings.MouseSensitivity;

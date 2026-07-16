@@ -299,13 +299,16 @@ namespace AnimalBattleRoyale
         private void DrawHUD()
         {
             ResolveLocalPlayer();
-            string abilityKey = GameInputBindings.GetDisplayName(GameInputAction.Ability);
-            string jumpKey = GameInputBindings.GetDisplayName(GameInputAction.Jump);
-            string rangedKey = GameInputBindings.GetDisplayName(GameInputAction.RangedAttack);
-            string movementKeys = $"{GameInputBindings.GetDisplayName(GameInputAction.MoveForward)}/"
-                                  + $"{GameInputBindings.GetDisplayName(GameInputAction.MoveLeft)}/"
-                                  + $"{GameInputBindings.GetDisplayName(GameInputAction.MoveBackward)}/"
-                                  + GameInputBindings.GetDisplayName(GameInputAction.MoveRight);
+            bool mobileControls = MobileInputController.ControlsEnabled;
+            string abilityKey = mobileControls ? "PODER" : GameInputBindings.GetDisplayName(GameInputAction.Ability);
+            string jumpKey = mobileControls ? "PULO" : GameInputBindings.GetDisplayName(GameInputAction.Jump);
+            string rangedKey = mobileControls ? "TIRO" : GameInputBindings.GetDisplayName(GameInputAction.RangedAttack);
+            string movementKeys = mobileControls
+                ? "JOYSTICK"
+                : $"{GameInputBindings.GetDisplayName(GameInputAction.MoveForward)}/"
+                  + $"{GameInputBindings.GetDisplayName(GameInputAction.MoveLeft)}/"
+                  + $"{GameInputBindings.GetDisplayName(GameInputAction.MoveBackward)}/"
+                  + GameInputBindings.GetDisplayName(GameInputAction.MoveRight);
             if (LocalPlayer != null && LocalPlayer.Health != null)
             {
                 DrawPlayerHud();
@@ -615,7 +618,9 @@ namespace AnimalBattleRoyale
             };
             GUI.Label(new Rect(icon.x, icon.y + 5f, icon.width, icon.height - 14f), abilityGlyph, resultStyle);
 
-            string abilityKey = GameInputBindings.GetDisplayName(GameInputAction.Ability);
+            string abilityKey = MobileInputController.ControlsEnabled
+                ? "P"
+                : GameInputBindings.GetDisplayName(GameInputAction.Ability);
             Rect key = new Rect(centerX - 19f, icon.yMax - 10f, 38f, 27f);
             DrawKeycapIcon(key, abilityKey, accent, ready);
             GUI.Label(new Rect(centerX - 112f, icon.yMax + 18f, 224f, 20f),
@@ -721,9 +726,12 @@ namespace AnimalBattleRoyale
             {
                 Rect prompt = new Rect(centerX - 150f, centerY + 24f, 300f, 34f);
                 DrawCartoonPanel(prompt, new Color(0.025f, 0.075f, 0.055f, 0.92f), new Color(0.3f, 0.9f, 0.58f, 1f), 1f);
+                string abilityInput = MobileInputController.ControlsEnabled
+                    ? "PODER"
+                    : GameInputBindings.GetDisplayName(GameInputAction.Ability);
                 string vineAction = LocalPlayer != null && LocalPlayer.IsHangingVine
-                    ? $"{GameInputBindings.GetDisplayName(GameInputAction.Ability)}  PRÓXIMO CIPÓ  {LocalPlayer.VinesVisitedInChain + 1}/{ThirdPersonAnimalController.MaxVinesPerChain}"
-                    : $"{GameInputBindings.GetDisplayName(GameInputAction.Ability)}  AGARRAR CIPÓ  1/{ThirdPersonAnimalController.MaxVinesPerChain}";
+                    ? $"{abilityInput}  PRÓXIMO CIPÓ  {LocalPlayer.VinesVisitedInChain + 1}/{ThirdPersonAnimalController.MaxVinesPerChain}"
+                    : $"{abilityInput}  AGARRAR CIPÓ  1/{ThirdPersonAnimalController.MaxVinesPerChain}";
                 GUI.Label(prompt, vineAction, centeredStyle);
             }
             else if (LocalPlayer != null)

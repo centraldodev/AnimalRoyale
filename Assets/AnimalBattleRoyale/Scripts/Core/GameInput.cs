@@ -39,8 +39,10 @@ namespace AnimalBattleRoyale
             if (GameInputBindings.IsHeld(GameInputAction.MoveBackward)) value.y -= 1f;
             if (GameInputBindings.IsHeld(GameInputAction.MoveRight)) value.x += 1f;
             if (GameInputBindings.IsHeld(GameInputAction.MoveLeft)) value.x -= 1f;
-            return Vector2.ClampMagnitude(value, 1f);
 #endif
+            Vector2 mobileMovement = MobileInputController.Movement;
+            if (mobileMovement.sqrMagnitude > value.sqrMagnitude) value = mobileMovement;
+            return Vector2.ClampMagnitude(value, 1f);
         }
 
         public static Vector2 ReadLook()
@@ -52,10 +54,10 @@ namespace AnimalBattleRoyale
             {
                 value += Gamepad.current.rightStick.ReadValue() * 18f;
             }
-            return value;
 #else
-            return new Vector2(Input.GetAxis("Mouse X"), Input.GetAxis("Mouse Y")) * 10f;
+            Vector2 value = new Vector2(Input.GetAxis("Mouse X"), Input.GetAxis("Mouse Y")) * 10f;
 #endif
+            return value + MobileInputController.LookDelta;
         }
 
         public static bool JumpPressed()
@@ -63,9 +65,11 @@ namespace AnimalBattleRoyale
             if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
-                   || (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame);
+                   || (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame)
+                   || MobileInputController.JumpPressed;
 #else
-            return GameInputBindings.WasPressedThisFrame(GameInputAction.Jump);
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.Jump)
+                   || MobileInputController.JumpPressed;
 #endif
         }
 
@@ -74,9 +78,10 @@ namespace AnimalBattleRoyale
             if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && Keyboard.current.spaceKey.isPressed)
-                   || (Gamepad.current != null && Gamepad.current.buttonSouth.isPressed);
+                   || (Gamepad.current != null && Gamepad.current.buttonSouth.isPressed)
+                   || MobileInputController.JumpHeld;
 #else
-            return GameInputBindings.IsHeld(GameInputAction.Jump);
+            return GameInputBindings.IsHeld(GameInputAction.Jump) || MobileInputController.JumpHeld;
 #endif
         }
 
@@ -103,9 +108,10 @@ namespace AnimalBattleRoyale
             if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && Keyboard.current.leftShiftKey.isPressed)
-                   || (Gamepad.current != null && Gamepad.current.leftStickButton.isPressed);
+                   || (Gamepad.current != null && Gamepad.current.leftStickButton.isPressed)
+                   || MobileInputController.SprintHeld;
 #else
-            return GameInputBindings.IsHeld(GameInputAction.Sprint);
+            return GameInputBindings.IsHeld(GameInputAction.Sprint) || MobileInputController.SprintHeld;
 #endif
         }
 
@@ -114,9 +120,11 @@ namespace AnimalBattleRoyale
             if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-                   || (Gamepad.current != null && Gamepad.current.rightShoulder.wasPressedThisFrame);
+                   || (Gamepad.current != null && Gamepad.current.rightShoulder.wasPressedThisFrame)
+                   || MobileInputController.FirePressed;
 #else
-            return GameInputBindings.WasPressedThisFrame(GameInputAction.RangedAttack);
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.RangedAttack)
+                   || MobileInputController.FirePressed;
 #endif
         }
 
@@ -125,9 +133,10 @@ namespace AnimalBattleRoyale
             if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.leftButton.isPressed)
-                   || (Gamepad.current != null && Gamepad.current.rightShoulder.isPressed);
+                   || (Gamepad.current != null && Gamepad.current.rightShoulder.isPressed)
+                   || MobileInputController.FireHeld;
 #else
-            return GameInputBindings.IsHeld(GameInputAction.RangedAttack);
+            return GameInputBindings.IsHeld(GameInputAction.RangedAttack) || MobileInputController.FireHeld;
 #endif
         }
 
@@ -137,9 +146,11 @@ namespace AnimalBattleRoyale
         {
             if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
-            return Keyboard.current != null && Keyboard.current.fKey.wasPressedThisFrame;
+            return (Keyboard.current != null && Keyboard.current.fKey.wasPressedThisFrame)
+                   || MobileInputController.ConsumePressed;
 #else
-            return GameInputBindings.WasPressedThisFrame(GameInputAction.Consume);
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.Consume)
+                   || MobileInputController.ConsumePressed;
 #endif
         }
 
@@ -148,9 +159,11 @@ namespace AnimalBattleRoyale
             if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return Keyboard.current != null && keyboardQPressed()
-                   || (Gamepad.current != null && Gamepad.current.leftShoulder.wasPressedThisFrame);
+                   || (Gamepad.current != null && Gamepad.current.leftShoulder.wasPressedThisFrame)
+                   || MobileInputController.AbilityPressed;
 #else
-            return GameInputBindings.WasPressedThisFrame(GameInputAction.Ability);
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.Ability)
+                   || MobileInputController.AbilityPressed;
 #endif
         }
 
@@ -177,9 +190,11 @@ namespace AnimalBattleRoyale
             if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
-                   || (Gamepad.current != null && Gamepad.current.leftTrigger.wasPressedThisFrame);
+                   || (Gamepad.current != null && Gamepad.current.leftTrigger.wasPressedThisFrame)
+                   || MobileInputController.MeleePressed;
 #else
-            return GameInputBindings.WasPressedThisFrame(GameInputAction.MeleeAttack);
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.MeleeAttack)
+                   || MobileInputController.MeleePressed;
 #endif
         }
 
