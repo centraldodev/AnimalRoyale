@@ -25,8 +25,9 @@ namespace AnimalBattleRoyale
             jungle = EnsureJungle();
             if (generateJungleOnStart) jungle.Generate();
             EnsureSafeZone();
-            EnsureDiamondObjective(jungle);
-            EnsureMissionDirector(jungle);
+            // Crystals (DiamondObjective) and Missions (ForestMissionDirector) were removed:
+            // the game is a pure 3-lives last-man-standing battle royale. Their managers are no
+            // longer created, so their Instance stays null and all null-conditional calls no-op.
             EnsureAmbientAudio();
             gameCamera = EnsureCamera();
             ConfigureMenuCamera(gameCamera);

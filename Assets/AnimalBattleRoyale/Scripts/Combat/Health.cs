@@ -36,14 +36,17 @@ namespace AnimalBattleRoyale
             if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return;
 
             if (Owner != null) amount = Owner.ModifyIncomingDamage(amount);
+            if (amount <= 0f) return;
 
             CurrentHealth = Mathf.Max(0f, CurrentHealth - amount);
             HealthChanged?.Invoke(CurrentHealth, MaxHealth);
 
             if (CurrentHealth <= 0f)
             {
+                CombatFeedback.PlayPlayerDeath(transform.position);
                 Die(attacker);
             }
+            else CombatFeedback.PlayPlayerHit(transform.position);
         }
 
         public void Heal(float amount)
@@ -59,7 +62,10 @@ namespace AnimalBattleRoyale
             IsDead = true;
             Died?.Invoke(this, attacker);
 
-            if (Owner != null)
+            // The BattleRoyaleManager decides whether this death spends a life (respawn)
+            // or eliminates the fighter. Only fall back to immediate removal when no
+            // manager is present (e.g. isolated test scenes).
+            if (Owner != null && BattleRoyaleManager.Instance == null)
             {
                 Owner.SetDefeated();
             }

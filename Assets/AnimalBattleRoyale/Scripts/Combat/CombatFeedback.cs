@@ -3,38 +3,25 @@ using UnityEngine;
 
 namespace AnimalBattleRoyale
 {
-    /// <summary>Runtime feedback: authored animal sounds and floating damage confirmation.</summary>
+    /// <summary>Runtime feedback using only the current generic SFX bank.</summary>
     public static class CombatFeedback
     {
-        private const string AnimalAudioRoot = "Audio/Animals";
-        private const float CombatSoundInterval = 0.08f;
-        private const int MaxConcurrentSoundsPerAnimal = 3;
+        private const string SfxRoot = "Audio/SFX/";
+        private const int MaxVoices = 18;
 
         private static readonly Dictionary<string, AudioClip> clips = new Dictionary<string, AudioClip>();
-        private static readonly Dictionary<string, AudioClip[]> sfxGroups = new Dictionary<string, AudioClip[]>();
-        private static readonly Dictionary<string, AudioClip> lastPlayedClip = new Dictionary<string, AudioClip>();
         private static readonly Dictionary<string, float> nextMixGroupTimes = new Dictionary<string, float>();
         private static readonly Dictionary<AudioSource, string> voiceMixGroups = new Dictionary<AudioSource, string>();
         private static readonly List<AudioSource> voices = new List<AudioSource>();
+        private static int nextVoiceToReuse;
 
-        public static void PlayBasic(AnimalType type, Vector3 position)
-        {
-            float volume = type switch
-            {
-                AnimalType.Tiger => 0.3f,
-                AnimalType.Horse => 0.38f,
-                AnimalType.Chicken => 0.3f,
-                _ => 0.34f
-            };
-            if (PlayAuthored(position, "basic_" + type, type, "basic", volume, 0.94f, 1.06f,
-                    28f, 0.85f, CombatMixGroup(type), CombatSoundInterval, MaxConcurrentSoundsPerAnimal)) return;
-        }
+        // Melee has no dedicated sound in the new bank; its hit is heard on contact.
+        public static void PlayBasic(AnimalType type, Vector3 position) { }
 
         public static void PlayPower(AnimalType type, int slot, Vector3 position)
         {
-            // Ability/power vocalisations (e.g. the tiger roar, Tiger_power_01.wav) are
-            // intentionally disabled: only footstep, _basic (attack) and _hit sounds play.
-            // Call sites are kept so abilities can re-enable a sound later if desired.
+            if (type == AnimalType.Tiger) PlayJump(position);
+            else if (type == AnimalType.Eagle) PlayEagleFlight(position);
         }
 
         public static void NotifyHit(AnimalType attacker, Vector3 position, float damage)
@@ -42,55 +29,64 @@ namespace AnimalBattleRoyale
             Color color = attacker switch
             {
                 AnimalType.Tiger => new Color(1f, 0.22f, 0.04f),
-                AnimalType.Deer => new Color(0.9f, 0.66f, 0.28f),
-                AnimalType.Horse => new Color(0.72f, 0.45f, 0.2f),
-                AnimalType.Chicken => new Color(1f, 0.84f, 0.2f),
-                AnimalType.Dog => new Color(0.36f, 0.8f, 1f),
-                AnimalType.Cat => new Color(0.78f, 0.46f, 1f),
-                AnimalType.Penguin => new Color(0.42f, 0.9f, 1f),
+                AnimalType.Ant => new Color(0.86f, 0.36f, 0.14f),
+                AnimalType.Eagle => new Color(0.9f, 0.82f, 0.6f),
+                AnimalType.Monkey => new Color(0.6f, 0.4f, 0.22f),
                 _ => Color.white
             };
             AttackVfx.CreateHitSpark(position + Vector3.up * 0.8f, color);
             DamageNumber.Create(position + Vector3.up * 1.4f, Mathf.RoundToInt(damage), color);
-            const float hitVolume = 0.24f;
-            PlayAuthored(position, "hit_" + attacker, attacker, "hit", hitVolume, 0.92f, 1.08f,
-                24f, 0.9f, CombatMixGroup(attacker), CombatSoundInterval, MaxConcurrentSoundsPerAnimal);
         }
 
-        public static void PlayFoodPickup(Vector3 position)
-        {
-            PlayProcedural(position, "pickup_health", 520f, 0.24f, 0.5f, 0.05f);
-        }
+        public static void PlayFootstep(Vector3 position) =>
+            PlaySfx(position, "Footstep", 0.22f, 0.94f, 1.06f, 24f, 0.9f, 0.07f, 6);
 
-        public static void PlayDiamond(Vector3 position)
-        {
-            PlayProcedural(position, "objective_diamond", 760f, 0.32f, 0.62f, 0.025f);
-        }
+        public static void PlayJump(Vector3 position) =>
+            PlaySfx(position, "LongJump", 0.42f, 0.96f, 1.04f, 32f, 0.85f, 0.14f, 3);
 
-        public static void PlayPortal(Vector3 position)
-        {
-            PlayProcedural(position, "objective_portal", 420f, 0.72f, 0.82f, 0.04f);
-        }
+        public static void PlayEagleFlight(Vector3 position) =>
+            PlaySfx(position, "EagleFlight", 0.48f, 0.97f, 1.03f, 40f, 0.9f, 0.4f, 2);
 
-        private static bool PlayAuthored(Vector3 position, string key, AnimalType type, string category,
-            float volume, float minPitch, float maxPitch,
-            float maxDistance, float spatialBlend, string mixGroup, float minInterval, int maxConcurrent)
-        {
-            AudioClip[] group = GetSfxGroup(key, type, category);
-            if (group.Length == 0) return false;
+        public static void PlaySeedShot(Vector3 position) =>
+            PlaySfx(position, "SeedShot", 0.28f, 0.96f, 1.05f, 34f, 0.9f, 0.065f, 5);
 
-            if (!string.IsNullOrEmpty(mixGroup))
+        public static void PlayProjectileFly(Vector3 position) =>
+            PlaySfx(position, "ProjectileFly", 0.2f, 0.98f, 1.04f, 30f, 1f, 0.18f, 3);
+
+        public static void PlayProjectileImpact(Vector3 position) =>
+            PlaySfx(position, "ProjectileImpact", 0.4f, 0.94f, 1.06f, 36f, 1f, 0.055f, 6);
+
+        public static void PlayPlayerHit(Vector3 position) =>
+            PlaySfx(position, "PlayerHit", 0.38f, 0.95f, 1.05f, 32f, 0.9f, 0.075f, 5);
+
+        public static void PlayPlayerDeath(Vector3 position) =>
+            PlaySfx(position, "PlayerDeath", 0.52f, 0.98f, 1.02f, 44f, 0.85f, 0.12f, 3);
+
+        public static void PlayAmmoPickup(Vector3 position) =>
+            PlaySfx(position, "AmmoPickup", 0.5f, 0.98f, 1.03f, 30f, 0.72f, 0.12f, 2);
+
+        // There are no replacement sounds for these events in the new bank.
+        public static void PlayFoodPickup(Vector3 position) { }
+        public static void PlayDiamond(Vector3 position) { }
+        public static void PlayPortal(Vector3 position) { }
+
+        private static void PlaySfx(Vector3 position, string key, float volume, float minPitch, float maxPitch,
+            float maxDistance, float spatialBlend, float minInterval, int maxConcurrent)
+        {
+            if (nextMixGroupTimes.TryGetValue(key, out float nextAllowedAt) && Time.time < nextAllowedAt) return;
+            if (maxConcurrent > 0 && CountPlayingInMixGroup(key) >= maxConcurrent) return;
+
+            if (!clips.TryGetValue(key, out AudioClip clip))
             {
-                if (nextMixGroupTimes.TryGetValue(mixGroup, out float nextAllowedAt) && Time.time < nextAllowedAt) return true;
-                if (maxConcurrent > 0 && CountPlayingInMixGroup(mixGroup) >= maxConcurrent) return true;
-                nextMixGroupTimes[mixGroup] = Time.time + minInterval;
+                clip = Resources.Load<AudioClip>(SfxRoot + key);
+                clips[key] = clip;
             }
+            if (clip == null) return;
 
-            AudioClip clip = PickClip(key, group);
+            nextMixGroupTimes[key] = Time.time + minInterval;
             AudioSource source = GetAvailableVoice();
-            if (string.IsNullOrEmpty(mixGroup)) voiceMixGroups.Remove(source);
-            else voiceMixGroups[source] = mixGroup;
-            source.gameObject.name = "CombatSound_" + key;
+            voiceMixGroups[source] = key;
+            source.gameObject.name = "GameSfx_" + key;
             source.transform.position = position;
             source.clip = clip;
             source.volume = volume;
@@ -102,7 +98,6 @@ namespace AnimalBattleRoyale
             source.minDistance = 2f;
             source.maxDistance = maxDistance;
             source.Play();
-            return true;
         }
 
         private static int CountPlayingInMixGroup(string mixGroup)
@@ -121,90 +116,6 @@ namespace AnimalBattleRoyale
             return count;
         }
 
-        private static string CombatMixGroup(AnimalType type)
-        {
-            return "combat_" + type.ToString().ToLowerInvariant();
-        }
-
-        private static AudioClip[] GetSfxGroup(string key, AnimalType type, string category)
-        {
-            if (sfxGroups.TryGetValue(key, out AudioClip[] group)) return group;
-            AudioClip[] animalClips = Resources.LoadAll<AudioClip>($"{AnimalAudioRoot}/{type}");
-
-            List<AudioClip> matches = new List<AudioClip>();
-            for (int i = 0; i < animalClips.Length; i++)
-            {
-                AudioClip clip = animalClips[i];
-                if (clip == null) continue;
-                string clipName = clip.name.ToLowerInvariant();
-                if (MatchesCategory(clipName, category))
-                    matches.Add(clip);
-            }
-
-            // A clip without an event suffix is treated as the basic animal sound.
-            if (matches.Count == 0 && category == "basic")
-                matches.AddRange(animalClips);
-
-            group = matches.ToArray();
-            sfxGroups[key] = group;
-            return group;
-        }
-
-        private static bool MatchesCategory(string clipName, string category)
-        {
-            return category switch
-            {
-                "basic" => clipName.Contains("basic") || clipName.Contains("attack") || clipName.Contains("ataque"),
-                "power" => clipName.Contains("power") || clipName.Contains("skill") || clipName.Contains("ability") ||
-                           clipName.Contains("special") || clipName.Contains("habilidade"),
-                "hit" => clipName.Contains("hit") || clipName.Contains("hurt") || clipName.Contains("damage") ||
-                         clipName.Contains("impact") || clipName.Contains("dano"),
-                _ => false
-            };
-        }
-
-        private static AudioClip PickClip(string key, AudioClip[] group)
-        {
-            if (group.Length == 1) return group[0];
-            lastPlayedClip.TryGetValue(key, out AudioClip previous);
-            AudioClip selected = previous;
-            for (int attempt = 0; attempt < 8 && selected == previous; attempt++)
-            {
-                selected = group[Random.Range(0, group.Length)];
-            }
-            if (selected == previous)
-            {
-                int previousIndex = System.Array.IndexOf(group, previous);
-                selected = group[(previousIndex + 1) % group.Length];
-            }
-            lastPlayedClip[key] = selected;
-            return selected;
-        }
-
-        private static void PlayProcedural(Vector3 position, string key, float tone, float duration, float volume, float noise)
-        {
-            if (!clips.TryGetValue(key, out AudioClip clip))
-            {
-                clip = CreateClip(key, tone, duration, noise);
-                clips[key] = clip;
-            }
-
-            AudioSource source = GetAvailableVoice();
-            source.gameObject.name = "CombatSound_" + key;
-            source.transform.position = position;
-            source.clip = clip;
-            source.volume = volume;
-            source.pitch = 1f;
-            source.loop = false;
-            voiceMixGroups.Remove(source);
-            source.spatialBlend = 0.55f;
-            source.dopplerLevel = 0f;
-            source.rolloffMode = AudioRolloffMode.Linear;
-            source.minDistance = 2f;
-            source.maxDistance = 38f;
-            source.Play();
-        }
-
         private static AudioSource GetAvailableVoice()
         {
             for (int i = voices.Count - 1; i >= 0; i--)
@@ -218,32 +129,19 @@ namespace AnimalBattleRoyale
                 if (!voice.isPlaying) return voice;
             }
 
+            if (voices.Count >= MaxVoices)
+            {
+                AudioSource reused = voices[nextVoiceToReuse++ % voices.Count];
+                reused.Stop();
+                return reused;
+            }
+
             GameObject sound = new GameObject("CombatSoundVoice");
             AudioSource source = sound.AddComponent<AudioSource>();
             source.playOnAwake = false;
+            source.priority = 128;
             voices.Add(source);
             return source;
-        }
-
-        private static AudioClip CreateClip(string key, float tone, float duration, float noise)
-        {
-            const int sampleRate = 22050;
-            int sampleCount = Mathf.CeilToInt(sampleRate * duration);
-            float[] data = new float[sampleCount];
-            int seed = key.GetHashCode();
-            for (int i = 0; i < sampleCount; i++)
-            {
-                float time = i / (float)sampleRate;
-                float envelope = Mathf.Clamp01(1f - time / duration);
-                envelope *= envelope;
-                float sine = Mathf.Sin(time * tone * Mathf.PI * 2f);
-                seed = unchecked(seed * 1103515245 + 12345);
-                float crackle = ((seed >> 16) & 0x7fff) / 16384f - 1f;
-                data[i] = (sine * (1f - noise) + crackle * noise) * envelope * 0.7f;
-            }
-            AudioClip clip = AudioClip.Create(key, sampleCount, 1, sampleRate, false);
-            clip.SetData(data, 0);
-            return clip;
         }
     }
 

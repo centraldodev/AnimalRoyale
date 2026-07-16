@@ -59,39 +59,24 @@ namespace AnimalBattleRoyale
             return type switch
             {
                 AnimalType.Tiger => new AnimalStats(
-                    "Tigre", new[] { "Salto Predador", "DESATIVADO", "DESATIVADO" },
+                    "Tigre", new[] { "Pulo Longo", "DESATIVADO", "DESATIVADO" },
                     190f, 6.1f, 9.0f, 6.2f, 22.5f, 2.0f, 0.9f, new[] { 7f, 0f, 0f }, 0.62f, 1.45f,
                     Vector3.one * 0.78f, new Color(0.95f, 0.42f, 0.08f)),
 
-                AnimalType.Deer => new AnimalStats(
-                    "Cervo", new[] { "Investida de Chifres", "DESATIVADO", "DESATIVADO" },
-                    175f, 6.35f, 9.2f, 7.0f, 19f, 1.9f, 0.78f, new[] { 8f, 0f, 0f }, 0.55f, 1.8f,
-                    Vector3.one * 0.78f, new Color(0.62f, 0.36f, 0.16f)),
+                AnimalType.Ant => new AnimalStats(
+                    "Formiga", new[] { "Túnel ou Arremesso", "DESATIVADO", "DESATIVADO" },
+                    150f, 6.7f, 9.4f, 7.4f, 16f, 1.6f, 0.7f, new[] { 8f, 0f, 0f }, 0.42f, 1.0f,
+                    Vector3.one * 0.72f, new Color(0.86f, 0.36f, 0.14f)),
 
-                AnimalType.Horse => new AnimalStats(
-                    "Cavalo", new[] { "Galope Imparável", "DESATIVADO", "DESATIVADO" },
-                    205f, 6.0f, 9.6f, 6.4f, 21f, 2.05f, 0.88f, new[] { 9f, 0f, 0f }, 0.64f, 1.65f,
-                    Vector3.one * 0.95f, new Color(0.46f, 0.27f, 0.13f)),
+                AnimalType.Eagle => new AnimalStats(
+                    "Águia", new[] { "Salto Planado", "DESATIVADO", "DESATIVADO" },
+                    165f, 6.2f, 9.5f, 8.6f, 18f, 1.85f, 0.82f, new[] { 8f, 0f, 0f }, 0.46f, 1.3f,
+                    Vector3.one * 0.8f, new Color(0.74f, 0.68f, 0.58f)),
 
-                AnimalType.Chicken => new AnimalStats(
-                    "Galinha", new[] { "Rajada de Penas", "DESATIVADO", "DESATIVADO" },
-                    150f, 6.55f, 8.65f, 8.2f, 15.5f, 1.45f, 0.62f, new[] { 7f, 0f, 0f }, 0.38f, 1.05f,
-                    Vector3.one * 2.05f, new Color(0.92f, 0.54f, 0.16f)),
-
-                AnimalType.Dog => new AnimalStats(
-                    "Cachorro", new[] { "Latido Protetor", "DESATIVADO", "DESATIVADO" },
-                    180f, 6.45f, 8.9f, 7.2f, 18.5f, 1.75f, 0.72f, new[] { 8f, 0f, 0f }, 0.48f, 1.15f,
-                    Vector3.one * 1.38f, new Color(0.66f, 0.45f, 0.24f)),
-
-                AnimalType.Cat => new AnimalStats(
-                    "Gato", new[] { "Sete Vidas", "DESATIVADO", "DESATIVADO" },
-                    155f, 6.8f, 9.25f, 8.8f, 17f, 1.6f, 0.64f, new[] { 11f, 0f, 0f }, 0.4f, 1.05f,
-                    Vector3.one * 2.45f, new Color(0.34f, 0.36f, 0.42f)),
-
-                AnimalType.Penguin => new AnimalStats(
-                    "Pinguim", new[] { "Deslize Glacial", "DESATIVADO", "DESATIVADO" },
-                    185f, 5.85f, 8.25f, 6.3f, 20f, 1.7f, 0.8f, new[] { 8.5f, 0f, 0f }, 0.52f, 1.35f,
-                    Vector3.one * 0.72f, new Color(0.14f, 0.24f, 0.32f)),
+                AnimalType.Monkey => new AnimalStats(
+                    "Macaco", new[] { "Sequência de Cipós", "DESATIVADO", "DESATIVADO" },
+                    170f, 6.5f, 9.2f, 8.0f, 19f, 1.75f, 0.76f, new[] { 8f, 0f, 0f }, 0.46f, 1.2f,
+                    Vector3.one * 0.76f, new Color(0.55f, 0.36f, 0.2f)),
 
                 _ => throw new System.ArgumentOutOfRangeException(nameof(type), type, null)
             };

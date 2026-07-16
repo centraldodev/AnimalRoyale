@@ -12,6 +12,8 @@ namespace AnimalBattleRoyale
         [SerializeField] private float totalShrinkDuration = 240f;
         [SerializeField] private float outsideDamagePerSecond = 10f;
         [SerializeField] private int circleSegments = 96;
+        [SerializeField, Min(0f)] private float respawnEdgeMargin = 6f;
+        [SerializeField, Range(30f, 180f)] private float boundaryParticlesPerSecond = 110f;
 
         private LineRenderer lineRenderer;
         private ParticleSystem boundaryFire;
@@ -23,6 +25,7 @@ namespace AnimalBattleRoyale
         private float shrinkTimeBonus;
         private Vector3 startCenter;
         private Vector3 finalCenter;
+        private float boundaryEmissionAccumulator;
 
         public Vector3 Center => transform.position;
         public float CurrentRadius { get; private set; }
@@ -76,6 +79,7 @@ namespace AnimalBattleRoyale
             matchActive = true;
             acceleratedUntil = 0f;
             shrinkTimeBonus = 0f;
+            boundaryEmissionAccumulator = 0f;
         }
 
         public void SetFinalCenter(Vector3 worldPosition)
@@ -92,6 +96,28 @@ namespace AnimalBattleRoyale
         {
             Vector2 flatOffset = new Vector2(worldPosition.x - Center.x, worldPosition.z - Center.z);
             return flatOffset.magnitude > CurrentRadius - margin;
+        }
+
+        public Vector3 GetRandomRespawnPoint()
+        {
+            float radius = Mathf.Max(0f, CurrentRadius - respawnEdgeMargin);
+            Vector2 offset = Random.insideUnitCircle * radius;
+            return Center + new Vector3(offset.x, 0f, offset.y);
+        }
+
+        public Vector3 ClampRespawnPoint(Vector3 worldPosition)
+        {
+            float radius = Mathf.Max(0f, CurrentRadius - respawnEdgeMargin);
+            Vector2 offset = new Vector2(worldPosition.x - Center.x, worldPosition.z - Center.z);
+            if (offset.sqrMagnitude <= radius * radius) return worldPosition;
+
+            Vector2 clampedOffset = offset.sqrMagnitude > 0.0001f
+                ? offset.normalized * radius
+                : Vector2.zero;
+            return new Vector3(
+                Center.x + clampedOffset.x,
+                worldPosition.y,
+                Center.z + clampedOffset.y);
         }
 
         private void DamageOutsidePlayers()
@@ -149,7 +175,7 @@ namespace AnimalBattleRoyale
             main.startColor = new ParticleSystem.MinMaxGradient(
                 new Color(1f, 0.12f, 0.015f, 0.9f),
                 new Color(1f, 0.82f, 0.08f, 0.98f));
-            main.maxParticles = 620;
+            main.maxParticles = 240;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
 
             ParticleSystem.EmissionModule emission = boundaryFire.emission;
@@ -172,12 +198,18 @@ namespace AnimalBattleRoyale
             ParticleSystemRenderer renderer = fireObject.GetComponent<ParticleSystemRenderer>();
             renderer.renderMode = ParticleSystemRenderMode.Billboard;
             renderer.sortingOrder = 4;
+            renderer.sharedMaterial = WildfireEffect.SharedParticleMaterial;
         }
 
         private void EmitBoundaryFire()
         {
             if (!matchActive || boundaryFire == null) return;
-            int emitCount = Mathf.Clamp(Mathf.RoundToInt(CurrentRadius / 34f), 2, 5);
+            boundaryEmissionAccumulator = Mathf.Min(
+                6f,
+                boundaryEmissionAccumulator + Time.deltaTime * boundaryParticlesPerSecond);
+            int emitCount = Mathf.Min(6, Mathf.FloorToInt(boundaryEmissionAccumulator));
+            if (emitCount <= 0) return;
+            boundaryEmissionAccumulator -= emitCount;
             for (int i = 0; i < emitCount; i++)
             {
                 float angle = Random.value * Mathf.PI * 2f;

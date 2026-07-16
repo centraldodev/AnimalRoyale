@@ -6,8 +6,8 @@ namespace AnimalBattleRoyale
     /// <summary>Hang point on jungle trees used by the monkey's Q leap.</summary>
     public sealed class VineAnchor : MonoBehaviour
     {
-        public const float GroundUseRange = 11f;
-        public const float ChainUseRange = 14f;
+        public const float GroundUseRange = 10f;
+        public const float ChainUseRange = 12f;
         private const int IndicatorSegments = 24;
         private static readonly List<VineAnchor> anchors = new List<VineAnchor>();
         private static Material sharedIndicatorMaterial;
@@ -26,7 +26,9 @@ namespace AnimalBattleRoyale
 
         internal static void TickIndicators(ThirdPersonAnimalController player, Camera camera, float time)
         {
-            bool monkeyActive = false;
+            bool monkeyActive = player != null && camera != null && player.AnimalType == AnimalType.Monkey
+                && !player.IsDefeated && !player.IsVineLeaping
+                && (!player.IsHangingVine || player.CanChainToAnotherVine);
             Vector3 playerPosition = monkeyActive ? player.transform.position : Vector3.zero;
             Vector3 cameraPosition = monkeyActive ? camera.transform.position : Vector3.zero;
             Vector3 aimDirection = monkeyActive ? player.ViewAimDirection : Vector3.forward;
@@ -165,6 +167,8 @@ namespace AnimalBattleRoyale
 
         public static bool TryUseNearest(ThirdPersonAnimalController monkey, Vector3 requestedDirection)
         {
+            if (monkey == null || monkey.AnimalType != AnimalType.Monkey || monkey.IsVineLeaping) return false;
+            if (monkey.IsHangingVine && !monkey.CanChainToAnotherVine) return false;
             VineAnchor nearest = null;
             VineAnchor lookedAt = null;
             float bestScore = float.MaxValue;
@@ -219,6 +223,20 @@ namespace AnimalBattleRoyale
 
         public static bool IsLookedAtBy(ThirdPersonAnimalController player)
         {
+            if (player == null || player.AnimalType != AnimalType.Monkey || player.IsDefeated || player.IsVineLeaping) return false;
+            if (player.IsHangingVine && !player.CanChainToAnotherVine) return false;
+            Transform camera = CameraCache.MainTransform;
+            Vector3 aim = player.ViewAimDirection;
+            float useRange = GetUseRange(player);
+            foreach (VineAnchor anchor in anchors)
+            {
+                if (anchor == null || player.IsHoldingVine(anchor.transform)) continue;
+                Vector3 offset = anchor.transform.position - player.transform.position;
+                if (offset.sqrMagnitude > useRange * useRange) continue;
+                if (camera == null) continue;
+                Vector3 fromCamera = anchor.transform.position - camera.position;
+                if (fromCamera.sqrMagnitude > 0.01f && Vector3.Dot(aim, fromCamera.normalized) >= 0.84f) return true;
+            }
             return false;
         }
     }

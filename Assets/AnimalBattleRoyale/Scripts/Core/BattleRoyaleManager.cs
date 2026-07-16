@@ -6,6 +6,8 @@ namespace AnimalBattleRoyale
 {
     public sealed class BattleRoyaleManager : MonoBehaviour
     {
+        private const int MinimapArrowDirectionCount = 36;
+
         public static BattleRoyaleManager Instance { get; private set; }
 
         private readonly List<ThirdPersonAnimalController> fighters = new List<ThirdPersonAnimalController>();
@@ -19,6 +21,7 @@ namespace AnimalBattleRoyale
         private GUIStyle centeredStyle;
         private Texture2D minimapCircleTexture;
         private Texture2D minimapRingTexture;
+        private Texture2D[] minimapArrowTextures;
         private readonly RenderTexture[] animalPortraits = new RenderTexture[AnimalRoster.Count];
         private JungleGenerator jungle;
         private string resultMessage = string.Empty;
@@ -33,6 +36,8 @@ namespace AnimalBattleRoyale
         private float combatUnlockTime;
         private bool matchFinished;
         private bool shuttingDown;
+        private float respawnBannerUntil;
+        private int respawnBannerLives;
 
         public IReadOnlyList<ThirdPersonAnimalController> Fighters => fighters;
         public ThirdPersonAnimalController LocalPlayer { get; private set; }
@@ -108,23 +113,111 @@ namespace AnimalBattleRoyale
 
         private void OnFighterDied(Health defeated, ThirdPersonAnimalController attacker)
         {
-            if (defeated.Owner != null)
-            {
-                Vector3 deathPosition = GetGroundedDeathPosition(defeated.Owner.transform.position);
-                DiamondObjectiveManager.Instance?.DropAll(defeated.Owner, deathPosition);
-                FoodPickup.Create(deathPosition, FoodKind.Meat);
-            }
-            ForestMissionDirector.Instance?.RecordElimination(attacker);
-            RecalculateAlive();
+            ThirdPersonAnimalController owner = defeated.Owner;
+            if (owner == null) { RecalculateAlive(); return; }
 
-            if (defeated.Owner != null && defeated.Owner.IsLocalPlayer)
+            Vector3 deathPosition = GetGroundedDeathPosition(owner.transform.position);
+            AttackVfx.CreateBurst(deathPosition + Vector3.up, new Color(0.92f, 0.08f, 0.045f), 1.6f);
+            ForestMissionDirector.Instance?.RecordElimination(attacker);
+
+            // 3-lives battle royale: a death spends a life and respawns, unless it was the last one.
+            if (owner.ConsumeLife())
+            {
+                owner.Respawn(FindRespawnPosition(owner));
+                if (owner.IsLocalPlayer)
+                {
+                    respawnBannerUntil = Time.time + 2.6f;
+                    respawnBannerLives = owner.LivesRemaining;
+                }
+                RecalculateAlive();
+                return;
+            }
+
+            if (owner.IsLocalPlayer && !MatchFinished)
             {
                 MatchFinished = true;
                 resultMessage = "VOCÊ FOI ELIMINADO";
                 ForestMissionDirector.Instance?.FinishMatch(false);
-                return;
+            }
+            owner.SetDefeated();
+            RecalculateAlive();
+            CheckWinCondition();
+        }
+
+        private Vector3 FindRespawnPosition(ThirdPersonAnimalController respawning)
+        {
+            if (jungle == null) jungle = FindAnyObjectByType<JungleGenerator>();
+            SafeZoneController safeZone = SafeZoneController.Instance;
+            if (jungle == null)
+            {
+                Vector3 fallback = safeZone != null
+                    ? safeZone.GetRandomRespawnPoint()
+                    : respawning.transform.position;
+                return fallback + Vector3.up * 2f;
             }
 
+            Vector3 best = GetRespawnCandidate(safeZone);
+            float bestClearance = -1f;
+            for (int attempt = 0; attempt < 16; attempt++)
+            {
+                Vector3 candidate = GetRespawnCandidate(safeZone);
+                float minDistance = float.MaxValue;
+                foreach (ThirdPersonAnimalController fighter in fighters)
+                {
+                    if (fighter == null || fighter == respawning || fighter.IsEliminated
+                        || fighter.Health == null || fighter.Health.IsDead) continue;
+                    Vector3 flat = candidate - fighter.transform.position;
+                    flat.y = 0f;
+                    minDistance = Mathf.Min(minDistance, flat.magnitude);
+                }
+                if (minDistance > bestClearance)
+                {
+                    bestClearance = minDistance;
+                    best = candidate;
+                }
+            }
+            best = jungle.GetGroundPosition(best);
+            return safeZone != null ? safeZone.ClampRespawnPoint(best) : best;
+        }
+
+        private Vector3 GetRespawnCandidate(SafeZoneController safeZone)
+        {
+            Vector3 candidate = safeZone != null
+                ? safeZone.GetRandomRespawnPoint()
+                : jungle.GetMissionSpawnPosition();
+            candidate = jungle.GetGroundPosition(candidate);
+            return safeZone != null ? safeZone.ClampRespawnPoint(candidate) : candidate;
+        }
+
+        private void CheckWinCondition()
+        {
+            if (MatchFinished || !openingPhaseStarted) return;
+            ThirdPersonAnimalController lastStanding = null;
+            int remaining = 0;
+            foreach (ThirdPersonAnimalController fighter in fighters)
+            {
+                if (fighter == null || fighter.IsEliminated) continue;
+                remaining++;
+                lastStanding = fighter;
+            }
+            if (remaining > 1 || lastStanding == null) return;
+
+            MatchFinished = true;
+            bool localWon = lastStanding.IsLocalPlayer;
+            ForestMissionDirector.Instance?.FinishMatch(localWon);
+            resultMessage = localWon
+                ? "VITÓRIA! ÚLTIMO SOBREVIVENTE"
+                : $"{lastStanding.Stats.DisplayName.ToUpperInvariant()} VENCEU A PARTIDA";
+        }
+
+        private void DrawRespawnBanner()
+        {
+            GUIStyle style = centeredStyle ?? resultStyle ?? GUI.skin.label;
+            Color previous = GUI.color;
+            GUI.color = new Color(0.45f, 0.88f, 1f, 0.95f);
+            GUI.Label(new Rect(0f, viewHeight * 0.34f, viewWidth, 44f),
+                $"RESPAWN!   {respawnBannerLives} VIDA(S) RESTANTE(S)", style);
+            GUI.color = previous;
         }
 
         public void HandleFighterDisconnected(ThirdPersonAnimalController fighter)
@@ -136,14 +229,14 @@ namespace AnimalBattleRoyale
             if (fighterHealth != null && fighterHealth.IsDead)
             {
                 RecalculateAlive();
+                CheckWinCondition();
                 return;
             }
 
             Vector3 deathPosition = GetGroundedDeathPosition(fighter.transform.position);
-            DiamondObjectiveManager.Instance?.DropAll(fighter, deathPosition);
-            FoodPickup.Create(deathPosition, FoodKind.Meat);
             AttackVfx.CreateBurst(deathPosition + Vector3.up, new Color(0.92f, 0.08f, 0.045f), 1.9f);
             RecalculateAlive();
+            CheckWinCondition();
 
             if (!fighter.IsLocalPlayer || MatchFinished) return;
             MatchFinished = true;
@@ -199,16 +292,22 @@ namespace AnimalBattleRoyale
 
             if (OpeningSecondsRemaining > 0f) DrawOpeningCountdown();
 
-            string contextHint = LocalPlayer != null && LocalPlayer.IsInAntTunnel
+            string contextHint = LocalPlayer != null && LocalPlayer.IsVineLeaping
+                ? $"SALTANDO PARA O CIPÓ {LocalPlayer.VinesVisitedInChain}/{ThirdPersonAnimalController.MaxVinesPerChain}"
+                : LocalPlayer != null && LocalPlayer.IsHangingVine
+                    ? LocalPlayer.CanChainToAnotherVine
+                        ? $"CIPÓ {LocalPlayer.VinesVisitedInChain}/{ThirdPersonAnimalController.MaxVinesPerChain} — mire no próximo e pressione Q • Espaço para soltar"
+                        : $"LIMITE {ThirdPersonAnimalController.MaxVinesPerChain}/{ThirdPersonAnimalController.MaxVinesPerChain} — Espaço para saltar do cipó"
+                : LocalPlayer != null && LocalPlayer.IsFlying
+                    ? $"SALTO PLANADO {LocalPlayer.GlideSecondsRemaining:0.0}s — segure o MOUSE ESQUERDO para atirar"
+                : LocalPlayer != null && LocalPlayer.IsInAntTunnel
                 ? $"NO TÚNEL: WASD escolhe saída • saída forçada: {LocalPlayer.TunnelSecondsRemaining:0.0}s"
                 : LocalPlayer != null && LocalPlayer.IsSwimming
-                    ? "NADANDO — Espaço dá impulso • suba pela rampa de pedra do portal ou pela margem"
+                    ? "NADANDO — Espaço dá impulso • suba pela margem"
                 : LocalPlayer != null && LocalPlayer.IsWading
                     ? "NO LAGO — VELOCIDADE REDUZIDA • alcance a margem para correr normalmente"
                 : string.Empty;
             if (!string.IsNullOrEmpty(contextHint)) DrawContextHint(contextHint);
-
-            DrawMissionHud();
 
             DrawPowerBar();
 
@@ -219,6 +318,8 @@ namespace AnimalBattleRoyale
             DrawMinimap();
 
             DrawObjectiveStatus();
+
+            if (Time.time < respawnBannerUntil) DrawRespawnBanner();
 
             if (MatchFinished)
             {
@@ -428,7 +529,10 @@ namespace AnimalBattleRoyale
             }
 
             bool hasAmmo = LocalPlayer.RangedAmmo > 0;
-            Color accent = hasAmmo ? new Color(0.28f, 0.82f, 1f) : new Color(1f, 0.3f, 0.24f);
+            bool reloading = LocalPlayer.IsRangedReloading;
+            Color accent = reloading
+                ? new Color(0.96f, 0.68f, 0.2f)
+                : hasAmmo ? new Color(0.28f, 0.82f, 1f) : new Color(1f, 0.3f, 0.24f);
             Rect panel = new Rect(x, y, width, 96f);
             DrawCartoonPanel(panel, new Color(0.025f, 0.045f, 0.048f, 0.94f), accent, 1f);
             GUI.Label(new Rect(panel.x + 12f, panel.y + 8f, panel.width - 24f, 16f),
@@ -437,8 +541,10 @@ namespace AnimalBattleRoyale
                 true, "Mouse esquerdo - Ataque longo", accent);
             DrawShortcutRow(new Rect(panel.x + 12f, panel.y + 57f, panel.width - 24f, 26f),
                 false, "Mouse direito - Ataque corpo a corpo", new Color(0.96f, 0.68f, 0.2f));
-            GUI.Label(new Rect(panel.x + panel.width - 78f, panel.y + 8f, 66f, 20f),
-                $"{LocalPlayer.RangedAmmo}/{LocalPlayer.MaxRangedAmmoValue}", rightStyle);
+            string ammoStatus = reloading
+                ? $"RECARGA {LocalPlayer.RangedReloadSecondsRemaining:0.0}s"
+                : $"PENTE {LocalPlayer.RangedMagazineAmmo}/{LocalPlayer.RangedMagazineCapacityValue}  RES. {LocalPlayer.RangedReserveAmmo}";
+            GUI.Label(new Rect(panel.x + panel.width - 190f, panel.y + 8f, 178f, 20f), ammoStatus, rightStyle);
             Rect modeBar = new Rect(panel.x + 12f, panel.y + 86f, panel.width - 24f, 4f);
             DrawRoundedRect(modeBar, new Color(accent.r, accent.g, accent.b, 0.75f));
         }
@@ -480,18 +586,15 @@ namespace AnimalBattleRoyale
         {
             bool vineTarget = LocalPlayer != null && VineAnchor.IsLookedAtBy(LocalPlayer);
             bool hasAmmo = LocalPlayer != null && LocalPlayer.RangedAmmo > 0;
+            bool reloading = LocalPlayer != null && LocalPlayer.IsRangedReloading;
             Color previousColor = GUI.color;
             GUI.color = vineTarget
                 ? new Color(0.3f, 1f, 0.58f, 1f)
+                : reloading ? new Color(0.96f, 0.68f, 0.2f, 1f)
                 : hasAmmo ? new Color(0.28f, 0.82f, 1f, 1f) : new Color(1f, 0.3f, 0.24f, 1f);
 
             float centerX = viewWidth * 0.5f;
             float centerY = viewHeight * 0.5f;
-            if (LocalPlayer != null && LocalPlayer.TryGetRangedAimViewportPosition(out Vector2 aimViewport))
-            {
-                centerX = aimViewport.x * viewWidth;
-                centerY = (1f - aimViewport.y) * viewHeight;
-            }
             GUI.DrawTexture(new Rect(centerX - 14f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(centerX + 6f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(centerX - 1f, centerY - 14f, 2f, 8f), Texture2D.whiteTexture);
@@ -501,16 +604,21 @@ namespace AnimalBattleRoyale
 
             if (vineTarget)
             {
-                Rect prompt = new Rect(centerX - 122f, centerY + 24f, 244f, 34f);
+                Rect prompt = new Rect(centerX - 150f, centerY + 24f, 300f, 34f);
                 DrawCartoonPanel(prompt, new Color(0.025f, 0.075f, 0.055f, 0.92f), new Color(0.3f, 0.9f, 0.58f, 1f), 1f);
-                GUI.Label(prompt, "Q  AGARRAR CIPÓ", centeredStyle);
+                string vineAction = LocalPlayer != null && LocalPlayer.IsHangingVine
+                    ? $"Q  PRÓXIMO CIPÓ  {LocalPlayer.VinesVisitedInChain + 1}/{ThirdPersonAnimalController.MaxVinesPerChain}"
+                    : $"Q  AGARRAR CIPÓ  1/{ThirdPersonAnimalController.MaxVinesPerChain}";
+                GUI.Label(prompt, vineAction, centeredStyle);
             }
             else if (LocalPlayer != null)
             {
                 Rect rangedStatus = new Rect(centerX - 250f, centerY + 24f, 500f, 26f);
-                GUI.Label(rangedStatus,
-                    $"MOUSE ESQUERDO - {LocalPlayer.RangedAttackName}  {LocalPlayer.RangedAmmo}/{LocalPlayer.MaxRangedAmmoValue}",
-                    centeredStyle);
+                string status = reloading
+                    ? $"RECARREGANDO... {LocalPlayer.RangedReloadSecondsRemaining:0.0}s"
+                    : $"MOUSE ESQUERDO - {LocalPlayer.RangedAttackName}  "
+                      + $"{LocalPlayer.RangedMagazineAmmo}/{LocalPlayer.RangedMagazineCapacityValue}  •  RESERVA {LocalPlayer.RangedReserveAmmo}";
+                GUI.Label(rangedStatus, status, centeredStyle);
             }
         }
 
@@ -523,12 +631,9 @@ namespace AnimalBattleRoyale
             float size = Mathf.Clamp(viewHeight * 0.22f, 176f, 218f);
             Rect panel = new Rect(viewWidth - size - 20f, 20f, size, size + 36f);
             DrawCartoonPanel(panel, new Color(0.022f, 0.042f, 0.044f, 0.94f), new Color(0.18f, 0.32f, 0.29f, 0.98f), 1f);
-            int carriedDiamonds = DiamondObjectiveManager.Instance != null
-                ? DiamondObjectiveManager.Instance.GetCount(LocalPlayer)
-                : 0;
             GUI.Label(new Rect(panel.x + 12f, panel.y + 8f, panel.width - 80f, 20f), "MAPA", eyebrowStyle);
             GUI.Label(new Rect(panel.x + panel.width - 82f, panel.y + 8f, 70f, 20f),
-                $"◆ {carriedDiamonds}/{DiamondObjectiveManager.RequiredDiamonds}", rightStyle);
+                "▲  VOCÊ", rightStyle);
 
             Rect map = new Rect(panel.x + 8f, panel.y + 34f, panel.width - 16f, panel.width - 16f);
             Color previous = GUI.color;
@@ -537,6 +642,20 @@ namespace AnimalBattleRoyale
             GUI.color = new Color(0.28f, 0.54f, 0.24f, 0.24f);
             GUI.DrawTexture(new Rect(map.center.x - 1f, map.y, 2f, map.height), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(map.x, map.center.y - 1f, map.width, 2f), Texture2D.whiteTexture);
+
+            foreach (LifePickup pickup in LifePickup.ActivePickups)
+            {
+                if (pickup == null || !pickup.IsAvailable) continue;
+                Vector2 point = WorldToMinimap(pickup.transform.position, map, jungle.MapSize);
+                DrawMinimapLifeMarker(point, 9f);
+            }
+
+            foreach (RangedAmmoPickup pickup in RangedAmmoPickup.ActivePickups)
+            {
+                if (pickup == null || !pickup.IsAvailable) continue;
+                Vector2 point = WorldToMinimap(pickup.transform.position, map, jungle.MapSize);
+                DrawMinimapAmmoMarker(point, 8f);
+            }
 
             foreach (DiamondPickup diamond in DiamondPickup.ActivePickups)
             {
@@ -579,12 +698,7 @@ namespace AnimalBattleRoyale
                 if (!map.Contains(point)) continue;
                 if (fighter == LocalPlayer)
                 {
-                    Matrix4x4 oldMatrix = GUI.matrix;
-                    GUIUtility.RotateAroundPivot(fighter.transform.eulerAngles.y, point);
-                    GUI.color = new Color(1f, 0.9f, 0.18f, 1f);
-                    GUI.DrawTexture(new Rect(point.x - 3.5f, point.y - 9f, 7f, 18f), Texture2D.whiteTexture);
-                    GUI.DrawTexture(new Rect(point.x - 6f, point.y - 9f, 12f, 5f), Texture2D.whiteTexture);
-                    GUI.matrix = oldMatrix;
+                    DrawMinimapPlayerArrow(point, fighter.transform.eulerAngles.y);
                 }
                 else
                 {
@@ -605,7 +719,51 @@ namespace AnimalBattleRoyale
 
             GUI.color = Color.white;
             GUI.Label(new Rect(map.center.x - 12f, map.y + 2f, 24f, 18f), "N", minimapStyle);
+
+            float legendY = map.yMax + 1f;
+            DrawMinimapLifeMarker(new Vector2(panel.x + 16f, legendY + 8f), 8f);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(panel.x + 23f, legendY, 48f, 16f), "VIDA", eyebrowStyle);
+            DrawMinimapAmmoMarker(new Vector2(panel.center.x + 5f, legendY + 8f), 7f);
+            GUI.color = Color.white;
+            GUI.Label(new Rect(panel.center.x + 12f, legendY, panel.width * 0.5f - 18f, 16f), "MUNIÇÃO", eyebrowStyle);
             GUI.color = previous;
+        }
+
+        private void DrawMinimapPlayerArrow(Vector2 point, float headingDegrees)
+        {
+            Color previous = GUI.color;
+            int directionIndex = Mathf.RoundToInt(Mathf.Repeat(headingDegrees, 360f)
+                                                  / 360f * MinimapArrowDirectionCount)
+                                 % MinimapArrowDirectionCount;
+            Texture2D arrow = minimapArrowTextures[directionIndex];
+            GUI.color = new Color(0.015f, 0.025f, 0.02f, 0.98f);
+            GUI.DrawTexture(new Rect(point.x - 10f, point.y - 12f, 20f, 24f), arrow);
+            GUI.color = new Color(1f, 0.88f, 0.12f, 1f);
+            GUI.DrawTexture(new Rect(point.x - 7.5f, point.y - 9.5f, 15f, 19f), arrow);
+            GUI.color = previous;
+        }
+
+        private void DrawMinimapLifeMarker(Vector2 point, float size)
+        {
+            GUI.color = new Color(0.01f, 0.05f, 0.025f, 0.98f);
+            GUI.DrawTexture(new Rect(point.x - size * 0.62f, point.y - size * 0.62f, size * 1.24f, size * 1.24f), minimapCircleTexture);
+            GUI.color = new Color(0.2f, 1f, 0.42f, 1f);
+            GUI.DrawTexture(new Rect(point.x - size * 0.5f, point.y - size * 0.5f, size, size), minimapCircleTexture);
+            GUI.color = Color.white;
+            GUI.DrawTexture(new Rect(point.x - size * 0.09f, point.y - size * 0.31f, size * 0.18f, size * 0.62f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(point.x - size * 0.31f, point.y - size * 0.09f, size * 0.62f, size * 0.18f), Texture2D.whiteTexture);
+        }
+
+        private void DrawMinimapAmmoMarker(Vector2 point, float size)
+        {
+            GUI.color = new Color(0.06f, 0.025f, 0.005f, 0.98f);
+            GUI.DrawTexture(new Rect(point.x - size * 0.64f, point.y - size * 0.64f, size * 1.28f, size * 1.28f), Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 0.58f, 0.08f, 1f);
+            GUI.DrawTexture(new Rect(point.x - size * 0.5f, point.y - size * 0.5f, size, size), Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 0.94f, 0.66f, 1f);
+            GUI.DrawTexture(new Rect(point.x - size * 0.3f, point.y - size * 0.18f, size * 0.6f, size * 0.13f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(point.x - size * 0.3f, point.y + size * 0.08f, size * 0.6f, size * 0.13f), Texture2D.whiteTexture);
         }
 
         private void DrawObjectiveStatus()
@@ -619,12 +777,10 @@ namespace AnimalBattleRoyale
                 outside ? new Color(0.24f, 0.035f, 0.03f, 0.96f) : new Color(0.022f, 0.042f, 0.044f, 0.94f),
                 outside ? new Color(1f, 0.24f, 0.18f, 1f) : new Color(0.18f, 0.32f, 0.29f, 1f), 1f);
 
-            int diamonds = DiamondObjectiveManager.Instance != null
-                ? DiamondObjectiveManager.Instance.GetCount(LocalPlayer)
-                : 0;
-            GUI.Label(new Rect(panel.x + 12f, panel.y + 8f, panel.width * 0.55f, 20f), $"ANIMAIS  {AliveCount}", smallStyle);
+            int lives = LocalPlayer.LivesRemaining;
+            GUI.Label(new Rect(panel.x + 12f, panel.y + 8f, panel.width * 0.55f, 20f), $"VIVOS  {AliveCount}", smallStyle);
             GUI.Label(new Rect(panel.x + panel.width * 0.5f, panel.y + 8f, panel.width * 0.5f - 12f, 20f),
-                $"◆  {diamonds}/{DiamondObjectiveManager.RequiredDiamonds}", rightStyle);
+                $"VIDAS  {lives}/{ThirdPersonAnimalController.MaxLives}", rightStyle);
 
             string zoneText = "ÁREA SEGURA INDISPONÍVEL";
             if (zone != null)
@@ -706,6 +862,44 @@ namespace AnimalBattleRoyale
             return texture;
         }
 
+        private static Texture2D[] CreateMinimapArrowTextures()
+        {
+            const int size = 64;
+            Texture2D[] textures = new Texture2D[MinimapArrowDirectionCount];
+            float half = (size - 1) * 0.5f;
+            for (int direction = 0; direction < MinimapArrowDirectionCount; direction++)
+            {
+                float radians = direction * Mathf.PI * 2f / MinimapArrowDirectionCount;
+                float cosine = Mathf.Cos(radians);
+                float sine = Mathf.Sin(radians);
+                Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+                {
+                    name = $"MinimapPlayerArrow_{direction}",
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp
+                };
+                Color[] pixels = new Color[size * size];
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        float outputX = (x - half) / half;
+                        float outputY = (y - half) / half;
+                        float arrowX = cosine * outputX - sine * outputY;
+                        float arrowY = sine * outputX + cosine * outputY;
+                        bool tail = arrowY >= -0.82f && arrowY <= 0.18f && Mathf.Abs(arrowX) <= 0.22f;
+                        float headHalfWidth = Mathf.Lerp(0.78f, 0f, Mathf.InverseLerp(-0.05f, 0.92f, arrowY));
+                        bool head = arrowY >= -0.05f && arrowY <= 0.92f && Mathf.Abs(arrowX) <= headHalfWidth;
+                        pixels[y * size + x] = new Color(1f, 1f, 1f, tail || head ? 1f : 0f);
+                    }
+                }
+                texture.SetPixels(pixels);
+                texture.Apply(false, true);
+                textures[direction] = texture;
+            }
+            return textures;
+        }
+
         private void DrawRoundedRect(Rect rect, Color color)
         {
             RuntimeGuiTheme.DrawRoundedRect(rect, color);
@@ -720,7 +914,8 @@ namespace AnimalBattleRoyale
         {
             if (titleStyle != null && normalStyle != null && resultStyle != null && minimapStyle != null
                 && eyebrowStyle != null && smallStyle != null && rightStyle != null && centeredStyle != null
-                && minimapCircleTexture != null && minimapRingTexture != null) return;
+                && minimapCircleTexture != null && minimapRingTexture != null
+                && minimapArrowTextures is { Length: MinimapArrowDirectionCount }) return;
 
             titleStyle = new GUIStyle(GUI.skin.label)
             {
@@ -778,6 +973,7 @@ namespace AnimalBattleRoyale
             };
             minimapCircleTexture = CreateMinimapCircleTexture(false);
             minimapRingTexture = CreateMinimapCircleTexture(true);
+            minimapArrowTextures = CreateMinimapArrowTextures();
             RuntimeGuiTheme.Ensure();
         }
     }

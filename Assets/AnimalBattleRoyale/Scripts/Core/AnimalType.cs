@@ -3,16 +3,13 @@ namespace AnimalBattleRoyale
     public enum AnimalType
     {
         Tiger = 0,
-        Deer = 1,
-        Horse = 2,
-        Chicken = 3,
-        Dog = 4,
-        Cat = 5,
-        Penguin = 6
+        Ant = 1,
+        Eagle = 2,
+        Monkey = 3
     }
 
     public static class AnimalRoster
     {
-        public const int Count = 7;
+        public const int Count = 4;
     }
 }

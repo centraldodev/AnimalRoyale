@@ -106,6 +106,16 @@ namespace AnimalBattleRoyale
 #endif
         }
 
+        public static bool RangedAttackHeld()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return (Mouse.current != null && Mouse.current.leftButton.isPressed)
+                   || (Gamepad.current != null && Gamepad.current.rightShoulder.isPressed);
+#else
+            return Input.GetMouseButton(0);
+#endif
+        }
+
         public static bool AttackPressed() => RangedAttackPressed();
 
         public static bool ConsumePressed()

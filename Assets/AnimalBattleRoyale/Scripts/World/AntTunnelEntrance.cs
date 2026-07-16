@@ -119,7 +119,18 @@ namespace AnimalBattleRoyale
 
         public static bool TryEnter(ThirdPersonAnimalController ant)
         {
-            return false;
+            if (ant == null || sessions.ContainsKey(ant)) return false;
+            AntTunnelEntrance nearest = FindNearest(ant.transform.position, EnterRange, null);
+            if (nearest == null) return false;
+            sessions[ant] = new TunnelSession
+            {
+                Source = nearest,
+                SelectedExit = null,
+                ExpiresAt = Time.time + TunnelDuration,
+                SelectionStartedAt = -1f
+            };
+            AttackVfx.CreateBurst(nearest.transform.position, new Color(0.65f, 0.28f, 0.06f), 2.1f);
+            return true;
         }
 
         /// <summary>WASD chooses an exit by direction. Holding it briefly travels to that exit.</summary>

@@ -27,7 +27,7 @@ namespace AnimalBattleRoyale
         [SerializeField, Range(0, 220)] private int rockCount = 96;
         [SerializeField, Range(0, 100)] private int anthillCount = 40;
         [SerializeField, Range(0, 48)] private int mountainCount = 26;
-        [SerializeField, Range(0, 200)] private int healthFoodCount = 90;
+        [SerializeField, Range(0, 100)] private int lifePickupCount = 24;
         [SerializeField, Range(0, 90)] private int rangedSupplyCount = 45;
         [SerializeField, Range(0, 40)] private int houseCount = 16;
         [SerializeField, Range(0, 16)] private int eagleMountainCount = 8;
@@ -253,12 +253,21 @@ namespace AnimalBattleRoyale
                 CreateHouse(housesRoot, position, houseWallMaterial, houseRoofMaterial);
             }
 
-            Transform foodRoot = new GameObject("HealthFoodPickups").transform;
-            foodRoot.SetParent(generated.transform, false);
-            for (int i = 0; i < healthFoodCount; i++)
+            // Scattered life orbs: each fully restores (100%) the animal's health.
+            Transform lifeRoot = new GameObject("LifePickups").transform;
+            lifeRoot.SetParent(generated.transform, false);
+            Vector3 playerShoreSpawn = GetShoreSpawnPosition();
+            Vector3 pickupInward = new Vector3(-playerShoreSpawn.x, 0f, -playerShoreSpawn.z).normalized;
+            Vector3 pickupRight = Vector3.Cross(Vector3.up, pickupInward).normalized;
+            for (int i = 0; i < lifePickupCount; i++)
             {
-                FoodKind kind = (FoodKind)(i % 4);
-                FoodPickup.Create(RandomMapPosition(9f), kind).transform.SetParent(foodRoot, true);
+                Vector3 position = i switch
+                {
+                    0 => GetGroundPosition(playerShoreSpawn + pickupInward * 9f - pickupRight * 4f),
+                    1 => GetGroundPosition(playerShoreSpawn + pickupInward * 17f + pickupRight * 5f),
+                    _ => RandomMapPosition(9f)
+                };
+                LifePickup.Create(position).transform.SetParent(lifeRoot, true);
             }
 
             Transform rangedSuppliesRoot = new GameObject("RangedAmmoSupplies").transform;
@@ -266,7 +275,14 @@ namespace AnimalBattleRoyale
             for (int i = 0; i < rangedSupplyCount; i++)
             {
                 RangedSupplyKind kind = RangedSupplyKind.NaturalAmmo;
-                RangedAmmoPickup.Create(RandomMapPosition(12f), kind).transform.SetParent(rangedSuppliesRoot, true);
+                Vector3 position = i switch
+                {
+                    0 => GetGroundPosition(playerShoreSpawn + pickupInward * 7f + pickupRight * 4f),
+                    1 => GetGroundPosition(playerShoreSpawn + pickupInward * 14f - pickupRight * 5f),
+                    2 => GetGroundPosition(playerShoreSpawn + pickupInward * 22f + pickupRight * 2f),
+                    _ => RandomMapPosition(12f)
+                };
+                RangedAmmoPickup.Create(position, kind).transform.SetParent(rangedSuppliesRoot, true);
             }
 
             Transform flowersRoot = new GameObject("FlowerPatches").transform;
@@ -799,27 +815,44 @@ namespace AnimalBattleRoyale
             rock.isStatic = true;
         }
 
+        private static GameObject cachedTunnelHolePrefab;
+
         private static void CreateAnthill(Transform parent, Vector3 position, Material moundMaterial, Material entranceMaterial)
         {
             GameObject anthill = new GameObject("GiantAnthill");
             anthill.transform.SetParent(parent, false);
             anthill.transform.position = position;
             anthill.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-            anthill.transform.localScale = Vector3.one * Random.Range(1.0f, 1.45f);
+            anthill.transform.localScale = Vector3.one * Random.Range(0.9f, 1.2f);
             anthill.isStatic = true;
 
-            CreateMoundPart(anthill.transform, "MoundBase", new Vector3(0f, 0.72f, 0f), new Vector3(4.4f, 1.45f, 4.1f), moundMaterial);
-            CreateMoundPart(anthill.transform, "MoundTop", new Vector3(0.15f, 1.5f, 0.05f), new Vector3(2.9f, 1.7f, 2.7f), moundMaterial);
+            if (cachedTunnelHolePrefab == null)
+                cachedTunnelHolePrefab = Resources.Load<GameObject>("Environment/TunnelHole");
 
-            GameObject entrance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            entrance.name = "AnthillEntrance";
-            entrance.transform.SetParent(anthill.transform, false);
-            entrance.transform.localPosition = new Vector3(0f, 0.5f, 2.05f);
-            entrance.transform.localScale = new Vector3(1.35f, 0.85f, 0.25f);
-            entrance.GetComponent<Renderer>().sharedMaterial = entranceMaterial;
-            Collider entranceCollider = entrance.GetComponent<Collider>();
-            if (entranceCollider != null) Destroy(entranceCollider);
-            entrance.isStatic = true;
+            if (cachedTunnelHolePrefab != null)
+            {
+                GameObject hole = Object.Instantiate(cachedTunnelHolePrefab, anthill.transform, false);
+                hole.name = "TunnelHoleVisual";
+                foreach (Collider c in hole.GetComponentsInChildren<Collider>(true)) if (c != null) c.enabled = false;
+            }
+            else
+            {
+                // Fallback: the old procedural dirt mound.
+                CreateMoundPart(anthill.transform, "MoundBase", new Vector3(0f, 0.72f, 0f), new Vector3(4.4f, 1.45f, 4.1f), moundMaterial);
+                CreateMoundPart(anthill.transform, "MoundTop", new Vector3(0.15f, 1.5f, 0.05f), new Vector3(2.9f, 1.7f, 2.7f), moundMaterial);
+                GameObject entrance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                entrance.name = "AnthillEntrance";
+                entrance.transform.SetParent(anthill.transform, false);
+                entrance.transform.localPosition = new Vector3(0f, 0.5f, 2.05f);
+                entrance.transform.localScale = new Vector3(1.35f, 0.85f, 0.25f);
+                entrance.GetComponent<Renderer>().sharedMaterial = entranceMaterial;
+                Collider entranceCollider = entrance.GetComponent<Collider>();
+                if (entranceCollider != null) Destroy(entranceCollider);
+                entrance.isStatic = true;
+            }
+
+            // Make the hole a working entrance for the Ant's underground tunnel network.
+            anthill.AddComponent<AntTunnelEntrance>();
         }
 
         private static void CreateRockFormation(Transform parent, Vector3 position, Material material)
@@ -1461,9 +1494,15 @@ namespace AnimalBattleRoyale
 
         private float CalculateGroundHeight(float x, float z)
         {
-            float broadNoise = Mathf.PerlinNoise((x + seed * 1.37f) * 0.012f, (z - seed * 0.73f) * 0.012f) - 0.5f;
-            float detailNoise = Mathf.PerlinNoise((x - seed * 0.21f) * 0.042f, (z + seed * 0.58f) * 0.042f) - 0.5f;
-            float ridgeSample = Mathf.PerlinNoise((x + seed * 0.43f) * 0.0075f, (z - seed * 0.31f) * 0.0075f);
+            // PerlinNoise loses precision and can return NaN when a randomized
+            // 32-bit seed is multiplied directly into billion-scale coordinates.
+            // Fold the seed into stable offsets while preserving all seed bits.
+            uint seedBits = unchecked((uint)seed);
+            float seedX = (seedBits & 0xffffu) * (2048f / 65535f);
+            float seedZ = (seedBits >> 16) * (2048f / 65535f);
+            float broadNoise = Mathf.PerlinNoise((x + seedX * 1.37f) * 0.012f, (z - seedZ * 0.73f) * 0.012f) - 0.5f;
+            float detailNoise = Mathf.PerlinNoise((x - seedZ * 0.91f) * 0.042f, (z + seedX * 0.58f) * 0.042f) - 0.5f;
+            float ridgeSample = Mathf.PerlinNoise((x + seedX * 0.43f) * 0.0075f, (z - seedZ * 0.31f) * 0.0075f);
             float ridgeNoise = Mathf.Pow(1f - Mathf.Abs(ridgeSample * 2f - 1f), 2.8f);
             float rolling = broadNoise * terrainHeight * 1.45f + detailNoise * terrainHeight * 0.32f;
             float shallowValley = Mathf.Sin((x + z) * 0.018f) * terrainHeight * 0.18f;

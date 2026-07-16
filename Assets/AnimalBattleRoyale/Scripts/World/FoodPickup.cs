@@ -70,7 +70,7 @@ namespace AnimalBattleRoyale
         {
             if ((Time.frameCount & 1) != motionGroup) return;
             transform.position = basePosition + Vector3.up * (Mathf.Sin(Time.time * 2.5f + transform.position.x) * 0.18f);
-            transform.Rotate(0f, 140f * Time.deltaTime, 0f, Space.World);
+            transform.Rotate(0f, 24f * Time.deltaTime, 0f, Space.World);
         }
 
         public static bool TryConsumeNearest(ThirdPersonAnimalController animal)

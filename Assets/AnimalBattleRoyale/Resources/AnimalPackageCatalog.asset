@@ -12,10 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 30e203a6ea624f7b8e24983caf30f147, type: 3}
   m_Name: AnimalPackageCatalog
   m_EditorClassIdentifier: 
-  tiger: {fileID: 5883155896844355918, guid: 8741cd6c8b9fc3947999191d0c381f50, type: 3}
-  deer: {fileID: 7402009758359158996, guid: 4ecab060b0afb5d4db61f7f1311b9e24, type: 3}
-  horse: {fileID: 3851015956068934394, guid: dfb23d60f30c46847ba7815aa09e2567, type: 3}
-  chicken: {fileID: 8073443194988779917, guid: 6b0b0b098177a3b439c80991ec9deacc, type: 3}
-  dog: {fileID: 2629182449500102118, guid: 15ca4494f24bf9741a48b37ec2c4c632, type: 3}
-  cat: {fileID: 6397291155531275063, guid: 44a0de0f766c9634eb66f1d56b7edc9d, type: 3}
-  penguin: {fileID: 1527881004230699645, guid: 66f01a8db88f9644baed659d1f91cdca, type: 3}
+  tiger: {fileID: 5470850066624385859, guid: f2e4b62caa9bf4e2da05d3c13f85ab46, type: 3}
+  ant: {fileID: 5417238682863167047, guid: beb0e54e0dc464d058dd15c63ec51f76, type: 3}
+  eagle: {fileID: 2444277559448001609, guid: ef6fee0ecbab344e08ea9639cc2189c6, type: 3}
+  monkey: {fileID: 8181154241372027256, guid: 70cad72a57b2c4512ab841f7bf5691a3, type: 3}

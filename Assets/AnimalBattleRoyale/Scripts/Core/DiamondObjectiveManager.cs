@@ -36,9 +36,8 @@ namespace AnimalBattleRoyale
             initialized = true;
             jungle = generatedJungle;
             Physics.SyncTransforms();
-            Vector3 portalPosition = FindPortalPosition(out bool usesLakeAccess);
-            portal = EscapePortal.Create(portalPosition, usesLakeAccess);
-            SafeZoneController.Instance?.SetFinalCenter(portalPosition);
+            // Escape portal removed: the match is now won by being the last fighter standing
+            // (3-lives battle royale), so no portal or crystal-escape objective is created.
 
             BattleRoyaleManager manager = BattleRoyaleManager.Instance;
             if (manager == null) return;
