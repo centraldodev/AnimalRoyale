@@ -8,8 +8,12 @@ namespace AnimalBattleRoyale
 {
     public static class GameInput
     {
+        private static bool GameplayInputBlocked => GameMenuController.Instance != null
+                                                    && GameMenuController.Instance.IsBlockingGameplayInput;
+
         public static Vector2 ReadMovement()
         {
+            if (GameplayInputBlocked) return Vector2.zero;
 #if ENABLE_INPUT_SYSTEM
             Vector2 value = Vector2.zero;
             Keyboard keyboard = Keyboard.current;
@@ -30,13 +34,18 @@ namespace AnimalBattleRoyale
 
             return Vector2.ClampMagnitude(value, 1f);
 #else
-            return Vector2.ClampMagnitude(
-                new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical")), 1f);
+            Vector2 value = Vector2.zero;
+            if (GameInputBindings.IsHeld(GameInputAction.MoveForward)) value.y += 1f;
+            if (GameInputBindings.IsHeld(GameInputAction.MoveBackward)) value.y -= 1f;
+            if (GameInputBindings.IsHeld(GameInputAction.MoveRight)) value.x += 1f;
+            if (GameInputBindings.IsHeld(GameInputAction.MoveLeft)) value.x -= 1f;
+            return Vector2.ClampMagnitude(value, 1f);
 #endif
         }
 
         public static Vector2 ReadLook()
         {
+            if (GameplayInputBlocked) return Vector2.zero;
 #if ENABLE_INPUT_SYSTEM
             Vector2 value = Mouse.current != null ? Mouse.current.delta.ReadValue() : Vector2.zero;
             if (Gamepad.current != null)
@@ -51,31 +60,34 @@ namespace AnimalBattleRoyale
 
         public static bool JumpPressed()
         {
+            if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
                    || (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame);
 #else
-            return Input.GetButtonDown("Jump");
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.Jump);
 #endif
         }
 
         public static bool JumpHeld()
         {
+            if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && Keyboard.current.spaceKey.isPressed)
                    || (Gamepad.current != null && Gamepad.current.buttonSouth.isPressed);
 #else
-            return Input.GetButton("Jump");
+            return GameInputBindings.IsHeld(GameInputAction.Jump);
 #endif
         }
 
         public static bool DescendHeld()
         {
+            if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && (Keyboard.current.leftCtrlKey.isPressed || Keyboard.current.cKey.isPressed))
                    || (Gamepad.current != null && gamepadLeftTriggerHeld());
 #else
-            return Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.C);
+            return GameInputBindings.IsHeld(GameInputAction.Descend);
 #endif
         }
 
@@ -88,31 +100,34 @@ namespace AnimalBattleRoyale
 
         public static bool SprintHeld()
         {
+            if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && Keyboard.current.leftShiftKey.isPressed)
                    || (Gamepad.current != null && Gamepad.current.leftStickButton.isPressed);
 #else
-            return Input.GetKey(KeyCode.LeftShift);
+            return GameInputBindings.IsHeld(GameInputAction.Sprint);
 #endif
         }
 
         public static bool RangedAttackPressed()
         {
+            if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
                    || (Gamepad.current != null && Gamepad.current.rightShoulder.wasPressedThisFrame);
 #else
-            return Input.GetMouseButtonDown(0);
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.RangedAttack);
 #endif
         }
 
         public static bool RangedAttackHeld()
         {
+            if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.leftButton.isPressed)
                    || (Gamepad.current != null && Gamepad.current.rightShoulder.isPressed);
 #else
-            return Input.GetMouseButton(0);
+            return GameInputBindings.IsHeld(GameInputAction.RangedAttack);
 #endif
         }
 
@@ -120,20 +135,22 @@ namespace AnimalBattleRoyale
 
         public static bool ConsumePressed()
         {
+            if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return Keyboard.current != null && Keyboard.current.fKey.wasPressedThisFrame;
 #else
-            return Input.GetKeyDown(KeyCode.F);
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.Consume);
 #endif
         }
 
         public static bool AbilityOnePressed()
         {
+            if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return Keyboard.current != null && keyboardQPressed()
                    || (Gamepad.current != null && Gamepad.current.leftShoulder.wasPressedThisFrame);
 #else
-            return Input.GetKeyDown(KeyCode.Q);
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.Ability);
 #endif
         }
 
@@ -157,11 +174,12 @@ namespace AnimalBattleRoyale
 
         public static bool MeleeAttackPressed()
         {
+            if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
                    || (Gamepad.current != null && Gamepad.current.leftTrigger.wasPressedThisFrame);
 #else
-            return Input.GetMouseButtonDown(1);
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.MeleeAttack);
 #endif
         }
 
@@ -176,6 +194,7 @@ namespace AnimalBattleRoyale
 
         public static int ReadAnimalSelection()
         {
+            if (GameplayInputBlocked) return -1;
 #if ENABLE_INPUT_SYSTEM
             Keyboard keyboard = Keyboard.current;
             if (keyboard == null) return -1;
@@ -200,6 +219,7 @@ namespace AnimalBattleRoyale
 
         public static bool ConfirmPressed()
         {
+            if (GameplayInputBlocked) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && (Keyboard.current.enterKey.wasPressedThisFrame
                                                   || Keyboard.current.numpadEnterKey.wasPressedThisFrame))

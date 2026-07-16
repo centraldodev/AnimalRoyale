@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AnimalBattleRoyale
@@ -10,7 +11,7 @@ namespace AnimalBattleRoyale
         [SerializeField] private float finalRadius = 14f;
         [SerializeField] private float waitBeforeShrink = 35f;
         [SerializeField] private float totalShrinkDuration = 240f;
-        [SerializeField] private float outsideDamagePerSecond = 10f;
+        [SerializeField, Min(1f)] private float wildfireLethalSeconds = 9f;
         [SerializeField] private int circleSegments = 96;
         [SerializeField, Min(0f)] private float respawnEdgeMargin = 6f;
         [SerializeField, Range(30f, 180f)] private float boundaryParticlesPerSecond = 110f;
@@ -19,13 +20,26 @@ namespace AnimalBattleRoyale
         private ParticleSystem boundaryFire;
         private JungleGenerator jungle;
         private float matchStartTime;
-        private float nextDamageTick;
         private bool matchActive;
         private float acceleratedUntil;
         private float shrinkTimeBonus;
         private Vector3 startCenter;
         private Vector3 finalCenter;
         private float boundaryEmissionAccumulator;
+        private readonly HashSet<ThirdPersonAnimalController> fightersOutsideWildfire = new HashSet<ThirdPersonAnimalController>();
+        private readonly Dictionary<ThirdPersonAnimalController, WildfireExposure> wildfireExposures = new Dictionary<ThirdPersonAnimalController, WildfireExposure>();
+
+        private readonly struct WildfireExposure
+        {
+            public readonly float StartedAt;
+            public readonly float StartingHealth;
+
+            public WildfireExposure(float startedAt, float startingHealth)
+            {
+                StartedAt = startedAt;
+                StartingHealth = startingHealth;
+            }
+        }
 
         public Vector3 Center => transform.position;
         public float CurrentRadius { get; private set; }
@@ -62,12 +76,8 @@ namespace AnimalBattleRoyale
 
             DrawCircle();
             EmitBoundaryFire();
-
-            if (Time.time >= nextDamageTick)
-            {
-                nextDamageTick = Time.time + 1f;
-                DamageOutsidePlayers();
-            }
+            if (OnlineMultiplayerManager.Instance != null && OnlineMultiplayerManager.Instance.IsClientOnly) return;
+            UpdateWildfireExposure();
         }
 
         public void BeginMatch()
@@ -75,11 +85,11 @@ namespace AnimalBattleRoyale
             startCenter = transform.position;
             matchStartTime = Time.time;
             CurrentRadius = initialRadius;
-            nextDamageTick = Time.time + 1f;
             matchActive = true;
             acceleratedUntil = 0f;
             shrinkTimeBonus = 0f;
             boundaryEmissionAccumulator = 0f;
+            ResetWildfireExposure();
         }
 
         public void SetFinalCenter(Vector3 worldPosition)
@@ -96,6 +106,15 @@ namespace AnimalBattleRoyale
         {
             Vector2 flatOffset = new Vector2(worldPosition.x - Center.x, worldPosition.z - Center.z);
             return flatOffset.magnitude > CurrentRadius - margin;
+        }
+
+        public float GetWildfireSecondsRemaining(ThirdPersonAnimalController fighter)
+        {
+            if (fighter != null && wildfireExposures.TryGetValue(fighter, out WildfireExposure exposure))
+            {
+                return Mathf.Max(0f, wildfireLethalSeconds - (Time.time - exposure.StartedAt));
+            }
+            return wildfireLethalSeconds;
         }
 
         public Vector3 GetRandomRespawnPoint()
@@ -120,27 +139,50 @@ namespace AnimalBattleRoyale
                 Center.z + clampedOffset.y);
         }
 
-        private void DamageOutsidePlayers()
+        private void UpdateWildfireExposure()
         {
             BattleRoyaleManager manager = BattleRoyaleManager.Instance;
             if (manager == null) return;
 
             foreach (ThirdPersonAnimalController fighter in manager.Fighters)
             {
-                if (fighter == null) continue;
-                if (fighter.Health.IsDead)
+                if (fighter == null || fighter.Health == null) continue;
+
+                bool outside = !fighter.Health.IsDead && IsOutside(fighter.transform.position);
+                bool wasOutside = fightersOutsideWildfire.Contains(fighter);
+                if (outside != wasOutside)
                 {
-                    WildfireEffect.SetActiveFor(fighter, false);
+                    if (outside) fightersOutsideWildfire.Add(fighter);
+                    else fightersOutsideWildfire.Remove(fighter);
+                    WildfireEffect.SetActiveFor(fighter, outside);
+                }
+
+                if (!outside || !manager.CombatEnabled)
+                {
+                    wildfireExposures.Remove(fighter);
                     continue;
                 }
 
-                bool outside = IsOutside(fighter.transform.position);
-                WildfireEffect.SetActiveFor(fighter, outside);
-                if (outside)
+                if (!wildfireExposures.TryGetValue(fighter, out WildfireExposure exposure))
                 {
-                    fighter.Health.TakeDamage(outsideDamagePerSecond);
+                    exposure = new WildfireExposure(Time.time, fighter.Health.CurrentHealth);
+                    wildfireExposures.Add(fighter, exposure);
                 }
+
+                float exposureProgress = Mathf.Clamp01((Time.time - exposure.StartedAt) / wildfireLethalSeconds);
+                float healthCeiling = Mathf.Lerp(exposure.StartingHealth, 0f, exposureProgress);
+                fighter.Health.ApplyEnvironmentalHealthCeiling(healthCeiling);
             }
+        }
+
+        private void ResetWildfireExposure()
+        {
+            foreach (ThirdPersonAnimalController fighter in fightersOutsideWildfire)
+            {
+                if (fighter != null) WildfireEffect.SetActiveFor(fighter, false);
+            }
+            fightersOutsideWildfire.Clear();
+            wildfireExposures.Clear();
         }
 
         private void CreateLineRenderer()

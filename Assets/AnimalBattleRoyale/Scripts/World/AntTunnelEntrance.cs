@@ -133,7 +133,7 @@ namespace AnimalBattleRoyale
             return true;
         }
 
-        /// <summary>WASD chooses an exit by direction. Holding it briefly travels to that exit.</summary>
+        /// <summary>The configured movement keys choose an exit by direction. Holding them briefly travels to that exit.</summary>
         public static void Navigate(ThirdPersonAnimalController ant, Vector3 movementDirection)
         {
             if (ant == null || !sessions.TryGetValue(ant, out TunnelSession session)) return;
@@ -274,7 +274,7 @@ namespace AnimalBattleRoyale
             exitRing.endColor = color;
             exitBeam.startColor = color;
             exitBeam.endColor = color;
-            exitText.text = selected ? "SAIR\nWASD" : "SAÍDA";
+            exitText.text = selected ? "SAIR\nMOVIMENTO" : "SAÍDA";
             exitText.color = color;
 
             Transform viewer = CameraCache.MainTransform;

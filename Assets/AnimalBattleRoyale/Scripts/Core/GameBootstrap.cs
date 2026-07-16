@@ -18,10 +18,14 @@ namespace AnimalBattleRoyale
         private bool matchStarted;
         private static Material cartoonSkyMaterial;
 
+        public bool MatchStarted => matchStarted;
+
         private void Awake()
         {
             ConfigureRendering();
             EnsureManager();
+            EnsureGameMenu();
+            EnsureOnlineMultiplayer();
             jungle = EnsureJungle();
             if (generateJungleOnStart) jungle.Generate();
             EnsureSafeZone();
@@ -38,6 +42,7 @@ namespace AnimalBattleRoyale
         {
             if (matchStarted) return;
             matchStarted = true;
+            GameMenuController.Instance?.SetInGame(true);
             BattleRoyaleManager.Instance?.BeginOpeningPhase(openingProtectionDuration);
             ThirdPersonAnimalController player = SpawnPlayer(selectedAnimal, gameCamera.transform);
             ConfigureCamera(gameCamera, player.transform);
@@ -113,6 +118,24 @@ namespace AnimalBattleRoyale
             managerObject.AddComponent<BattleRoyaleManager>();
         }
 
+        private static void EnsureGameMenu()
+        {
+            if (GameMenuController.Instance != null) return;
+            GameObject menuObject = new GameObject("GameMenuController");
+            menuObject.AddComponent<GameMenuController>();
+        }
+
+        private void EnsureOnlineMultiplayer()
+        {
+            OnlineMultiplayerManager online = OnlineMultiplayerManager.Instance;
+            if (online == null)
+            {
+                GameObject onlineObject = new GameObject("OnlineMultiplayerManager");
+                online = onlineObject.AddComponent<OnlineMultiplayerManager>();
+            }
+            online.Initialize(this);
+        }
+
         private JungleGenerator EnsureJungle()
         {
             JungleGenerator jungle = FindAnyObjectByType<JungleGenerator>();
@@ -179,6 +202,62 @@ namespace AnimalBattleRoyale
             AttackVfx.CreateBurst(spawnPosition + Vector3.up * 0.8f,
                 Color.Lerp(AnimalDefinition.Get(selectedAnimal).MainColor, Color.white, 0.22f), 2.1f);
             return player;
+        }
+
+        public void PrepareNetworkWorld(int synchronizedSeed)
+        {
+            jungle.Generate(synchronizedSeed);
+            ConfigureMenuCamera(gameCamera);
+        }
+
+        public Vector3[] CreateNetworkSpawnPositions(int participantCount)
+        {
+            int count = Mathf.Max(1, participantCount);
+            Vector3[] positions = new Vector3[count];
+            for (int i = 0; i < count; i++)
+            {
+                float angle = 220f + i * (360f / count);
+                positions[i] = jungle.GetShoreSpawnPosition(angle);
+            }
+            return positions;
+        }
+
+        public void StartNetworkMatch(int synchronizedSeed, IReadOnlyList<NetworkSpawnDefinition> roster,
+            ulong localClientId, bool isHost, bool worldAlreadyPrepared, OnlineMultiplayerManager online)
+        {
+            if (matchStarted || roster == null || roster.Count == 0) return;
+            matchStarted = true;
+            if (!worldAlreadyPrepared) jungle.Generate(synchronizedSeed);
+
+            GameMenuController.Instance?.SetInGame(true);
+            BattleRoyaleManager.Instance?.BeginOpeningPhase(openingProtectionDuration);
+            ThirdPersonAnimalController localPlayer = null;
+
+            foreach (NetworkSpawnDefinition definition in roster)
+            {
+                bool isLocalPlayer = !definition.IsBot && definition.OwnerClientId == localClientId;
+                bool runBotAI = isHost && definition.IsBot;
+                string fighterName = definition.IsBot
+                    ? $"Bot_{definition.EntityId}_{definition.AnimalType}"
+                    : isLocalPlayer ? "Player" : $"OnlinePlayer_{definition.OwnerClientId}_{definition.AnimalType}";
+                ThirdPersonAnimalController fighter = AnimalFactory.Create(fighterName, definition.AnimalType,
+                    definition.Position, isLocalPlayer, isLocalPlayer ? gameCamera.transform : null, runBotAI);
+                if (!isLocalPlayer && !runBotAI) fighter.SetNetworkProxy(true);
+                online?.RegisterSpawnedFighter(definition, fighter);
+                if (isLocalPlayer) localPlayer = fighter;
+            }
+
+            if (localPlayer != null)
+            {
+                ConfigureCamera(gameCamera, localPlayer.transform);
+                ThirdPersonCamera.SetCursorLocked(true);
+            }
+
+            CharacterSelectionMenu selectionMenu = FindAnyObjectByType<CharacterSelectionMenu>();
+            if (selectionMenu != null) Destroy(selectionMenu.gameObject);
+            AmbientAudioController.Instance?.BeginMatch();
+            SafeZoneController.Instance?.BeginMatch();
+            ForestMissionDirector.Instance?.BeginMatch(localPlayer);
         }
 
         private void CreateCharacterMenu()

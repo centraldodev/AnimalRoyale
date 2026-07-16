@@ -37,16 +37,13 @@ namespace AnimalBattleRoyale
 
             bool resultScreenOpen = BattleRoyaleManager.Instance != null
                                     && BattleRoyaleManager.Instance.MatchFinished;
-            if (resultScreenOpen)
+            bool menuOpen = GameMenuController.Instance != null && GameMenuController.Instance.IsOpen;
+            if (resultScreenOpen || menuOpen)
             {
                 if (Cursor.lockState != CursorLockMode.None || !Cursor.visible)
                 {
                     SetCursorLocked(false);
                 }
-            }
-            else if (GameInput.EscapePressed())
-            {
-                SetCursorLocked(Cursor.lockState != CursorLockMode.Locked);
             }
 
             if (Cursor.lockState == CursorLockMode.Locked)

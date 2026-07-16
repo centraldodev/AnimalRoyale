@@ -34,6 +34,8 @@ namespace AnimalBattleRoyale
         {
             if (IsDead || amount <= 0f) return;
             if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return;
+            OnlineMultiplayerManager online = OnlineMultiplayerManager.Instance;
+            if (online != null && online.IsClientOnly && Owner != null && !Owner.IsLocalPlayer) return;
 
             if (Owner != null) amount = Owner.ModifyIncomingDamage(amount);
             if (amount <= 0f) return;
@@ -54,6 +56,34 @@ namespace AnimalBattleRoyale
             if (IsDead || amount <= 0f) return;
             CurrentHealth = Mathf.Min(MaxHealth, CurrentHealth + amount);
             HealthChanged?.Invoke(CurrentHealth, MaxHealth);
+        }
+
+        public void ApplyReplicatedState(float currentHealth)
+        {
+            CurrentHealth = Mathf.Clamp(currentHealth, 0f, MaxHealth);
+            IsDead = CurrentHealth <= 0f;
+            HealthChanged?.Invoke(CurrentHealth, MaxHealth);
+        }
+
+        /// <summary>
+        /// Lowers health to an environmental ceiling without combat resistance or hit feedback.
+        /// This lets continuous hazards animate the health bar smoothly without creating one
+        /// impact effect per frame. It never restores health.
+        /// </summary>
+        public void ApplyEnvironmentalHealthCeiling(float healthCeiling)
+        {
+            if (IsDead) return;
+            if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return;
+
+            float targetHealth = Mathf.Clamp(healthCeiling, 0f, MaxHealth);
+            if (targetHealth >= CurrentHealth) return;
+
+            CurrentHealth = targetHealth;
+            HealthChanged?.Invoke(CurrentHealth, MaxHealth);
+            if (CurrentHealth > 0f) return;
+
+            CombatFeedback.PlayPlayerDeath(transform.position);
+            Die(null);
         }
 
         private void Die(ThirdPersonAnimalController attacker)

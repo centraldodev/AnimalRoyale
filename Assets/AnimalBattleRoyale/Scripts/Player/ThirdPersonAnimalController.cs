@@ -75,6 +75,10 @@ namespace AnimalBattleRoyale
         private Vector3 vineLeapStart;
         private Vector3 vineLeapEnd;
         private bool burrowed;
+        private bool networkProxy;
+        private Vector3 networkTargetPosition;
+        private Quaternion networkTargetRotation;
+        private Vector3 lastNetworkVisualPosition;
 
         public const int MaxLives = 3;
         private const float SpawnProtectionSeconds = 2.5f;
@@ -109,6 +113,7 @@ namespace AnimalBattleRoyale
         public bool IsFlying => Time.time < flyingUntil;
         public float GlideSecondsRemaining => Mathf.Max(0f, flyingUntil - Time.time);
         public bool IsBurrowed => burrowed;
+        public bool IsNetworkProxy => networkProxy;
         public bool IsInAntTunnel => burrowed;
         public bool IsHangingVine => hangingVine;
         public bool IsVineLeaping => vineLeaping;
@@ -198,6 +203,11 @@ namespace AnimalBattleRoyale
 
         private void Update()
         {
+            if (networkProxy)
+            {
+                UpdateNetworkProxyMotion();
+                return;
+            }
             if (defeated || health.IsDead) return;
             UpdateRangedReload();
             if (vineLeaping)
@@ -252,6 +262,87 @@ namespace AnimalBattleRoyale
         }
 
         public void SetCamera(Transform cameraReference) => cameraTransform = cameraReference;
+
+        public void SetNetworkProxy(bool value)
+        {
+            networkProxy = value;
+            networkTargetPosition = transform.position;
+            networkTargetRotation = transform.rotation;
+            lastNetworkVisualPosition = transform.position;
+            SimpleBotAI bot = GetComponent<SimpleBotAI>();
+            if (bot != null) bot.enabled = !value;
+        }
+
+        public void ApplyNetworkTransform(Vector3 position, Quaternion rotation, bool immediate)
+        {
+            networkTargetPosition = position;
+            networkTargetRotation = rotation;
+            if (!immediate && Vector3.SqrMagnitude(transform.position - position) < 64f) return;
+
+            bool wasEnabled = characterController != null && characterController.enabled;
+            if (wasEnabled) characterController.enabled = false;
+            transform.SetPositionAndRotation(position, rotation);
+            if (wasEnabled) characterController.enabled = true;
+            lastNetworkVisualPosition = position;
+        }
+
+        public void ApplyNetworkSnapshot(Vector3 position, Quaternion rotation, float replicatedHealth, int replicatedLives,
+            int replicatedAmmo, int replicatedMagazineAmmo, bool replicatedEliminated, bool applyTransform)
+        {
+            livesRemaining = Mathf.Clamp(replicatedLives, 0, MaxLives);
+            rangedAmmo = Mathf.Clamp(replicatedAmmo, 0, MaxRangedAmmo);
+            rangedMagazineAmmo = Mathf.Clamp(replicatedMagazineAmmo, 0, Mathf.Min(RangedMagazineCapacity, rangedAmmo));
+            health?.ApplyReplicatedState(replicatedHealth);
+            eliminated = replicatedEliminated;
+            defeated = replicatedEliminated;
+            Transform visual = transform.Find("VisualRoot");
+            if (visual != null) visual.gameObject.SetActive(!replicatedEliminated);
+            if (characterController != null) characterController.enabled = !replicatedEliminated;
+            if (applyTransform) ApplyNetworkTransform(position, rotation, false);
+        }
+
+        public void ExecuteNetworkAction(OnlineActionType action, Vector3 direction)
+        {
+            if (eliminated || health == null || health.IsDead) return;
+            Vector3 actionDirection = direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
+            switch (action)
+            {
+                case OnlineActionType.RangedAttack:
+                    TryRangedAttack(actionDirection);
+                    break;
+                case OnlineActionType.MeleeAttack:
+                    TryBasicAttack(actionDirection);
+                    break;
+                case OnlineActionType.Ability:
+                    TryUsePower(0, actionDirection);
+                    break;
+                case OnlineActionType.Consume:
+                    if (!RangedAmmoPickup.TryCollectNearest(this)) LifePickup.TryConsumeNearest(this);
+                    break;
+            }
+        }
+
+        private void UpdateNetworkProxyMotion()
+        {
+            if (eliminated) return;
+            float distance = Vector3.Distance(transform.position, networkTargetPosition);
+            if (distance > 8f)
+            {
+                bool wasEnabled = characterController != null && characterController.enabled;
+                if (wasEnabled) characterController.enabled = false;
+                transform.position = networkTargetPosition;
+                if (wasEnabled) characterController.enabled = true;
+            }
+            else
+            {
+                transform.position = Vector3.Lerp(transform.position, networkTargetPosition, 1f - Mathf.Exp(-14f * Time.deltaTime));
+            }
+            transform.rotation = Quaternion.Slerp(transform.rotation, networkTargetRotation, 1f - Mathf.Exp(-16f * Time.deltaTime));
+            float speed = Vector3.Distance(lastNetworkVisualPosition, transform.position) / Mathf.Max(0.001f, Time.deltaTime);
+            bool moving = speed > 0.12f;
+            visualMotion?.SetLocomotion(moving, speed > stats.MoveSpeed * 1.15f, false);
+            lastNetworkVisualPosition = transform.position;
+        }
 
         public void SetAIInput(Vector3 moveDirection, Vector3 attackDirection, bool sprint, bool attack, bool rangedAttack, int abilitySlot)
         {
@@ -313,10 +404,33 @@ namespace AnimalBattleRoyale
             Vector3 movement = GetCameraRelativeDirection(GameInput.ReadMovement());
             SimulateMovement(movement, GameInput.SprintHeld(), GameInput.JumpPressed());
             bool aerialAutoFire = animalType == AnimalType.Eagle && IsFlying && GameInput.RangedAttackHeld();
-            if (GameInput.RangedAttackPressed() || aerialAutoFire) TryRangedAttack(GetRangedAttackDirection(movement));
-            if (GameInput.MeleeAttackPressed()) TryBasicAttack(GetAttackDirection(movement));
-            if (GameInput.AbilityOnePressed()) TryUsePower(0, GetAttackDirection(movement));
-            if (GameInput.ConsumePressed() && !RangedAmmoPickup.TryCollectNearest(this)) LifePickup.TryConsumeNearest(this);
+            if (GameInput.RangedAttackPressed() || aerialAutoFire)
+            {
+                Vector3 direction = GetRangedAttackDirection(movement);
+                OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.RangedAttack, direction);
+                TryRangedAttack(direction);
+            }
+            if (GameInput.MeleeAttackPressed())
+            {
+                Vector3 direction = GetAttackDirection(movement);
+                OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.MeleeAttack, direction);
+                TryBasicAttack(direction);
+            }
+            if (GameInput.AbilityOnePressed())
+            {
+                Vector3 direction = GetAttackDirection(movement);
+                OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.Ability, direction);
+                TryUsePower(0, direction);
+            }
+            if (GameInput.ConsumePressed())
+            {
+                OnlineMultiplayerManager online = OnlineMultiplayerManager.Instance;
+                online?.ReportAction(OnlineActionType.Consume, transform.forward);
+                if (online == null || !online.UsesRemoteAuthority)
+                {
+                    if (!RangedAmmoPickup.TryCollectNearest(this)) LifePickup.TryConsumeNearest(this);
+                }
+            }
         }
 
         private void HandleAIInput()

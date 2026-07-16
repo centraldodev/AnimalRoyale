@@ -119,6 +119,15 @@ namespace AnimalBattleRoyale
             return RandomMapPosition(centerClearance);
         }
 
+        public void Generate(int synchronizedSeed)
+        {
+            bool previousRandomize = randomizeSeedEveryMatch;
+            seed = synchronizedSeed;
+            randomizeSeedEveryMatch = false;
+            Generate();
+            randomizeSeedEveryMatch = previousRandomize;
+        }
+
         public void Generate()
         {
             ClearGeneratedWorld();

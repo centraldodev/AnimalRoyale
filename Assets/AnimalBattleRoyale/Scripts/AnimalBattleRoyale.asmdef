@@ -1,7 +1,14 @@
 {
     "name": "AnimalBattleRoyale",
     "rootNamespace": "AnimalBattleRoyale",
-    "references": [],
+    "references": [
+        "Unity.Collections",
+        "Unity.Networking.Transport",
+        "Unity.Netcode.Runtime",
+        "Unity.Services.Authentication",
+        "Unity.Services.Core",
+        "Unity.Services.Multiplayer"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
