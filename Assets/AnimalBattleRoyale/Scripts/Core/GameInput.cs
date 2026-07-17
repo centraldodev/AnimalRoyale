@@ -232,6 +232,23 @@ namespace AnimalBattleRoyale
             return -1;
         }
 
+        public static int ReadWeaponSelection()
+        {
+            if (GameplayInputBlocked) return -1;
+#if ENABLE_INPUT_SYSTEM
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null) return -1;
+            if (keyboard.digit1Key.wasPressedThisFrame) return 0;
+            if (keyboard.digit2Key.wasPressedThisFrame) return 1;
+            if (keyboard.digit3Key.wasPressedThisFrame) return 2;
+#else
+            if (Input.GetKeyDown(KeyCode.Alpha1)) return 0;
+            if (Input.GetKeyDown(KeyCode.Alpha2)) return 1;
+            if (Input.GetKeyDown(KeyCode.Alpha3)) return 2;
+#endif
+            return -1;
+        }
+
         public static bool ConfirmPressed()
         {
             if (GameplayInputBlocked) return false;

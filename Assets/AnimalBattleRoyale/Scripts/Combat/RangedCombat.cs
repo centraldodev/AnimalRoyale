@@ -3,6 +3,13 @@ using UnityEngine;
 
 namespace AnimalBattleRoyale
 {
+    public enum WeaponAmmoType : byte
+    {
+        Seed,
+        Tomato,
+        Watermelon
+    }
+
     public enum RangedSupplyKind
     {
         NaturalAmmo
@@ -10,9 +17,16 @@ namespace AnimalBattleRoyale
 
     public sealed class RangedProjectile : MonoBehaviour
     {
+        public const float WatermelonExplosionRadius = 3.4f;
+        public const float SeedDamage = 6f;
+        public const float TomatoDamage = 12f;
+        public const float WatermelonDamage = 15f;
         private static Material sharedTrailMaterial;
-        private static readonly Dictionary<AnimalType, Material> sharedProjectileMaterials = new Dictionary<AnimalType, Material>();
+        private static readonly Dictionary<AnimalType, Material> sharedSeedMaterials = new Dictionary<AnimalType, Material>();
+        private static readonly Dictionary<string, Material> sharedFruitMaterials = new Dictionary<string, Material>();
         private readonly RaycastHit[] hitBuffer = new RaycastHit[20];
+        private readonly Collider[] areaHitBuffer = new Collider[64];
+        private readonly HashSet<Health> areaHitTargets = new HashSet<Health>();
         private ThirdPersonAnimalController owner;
         private Transform visual;
         private Vector3 velocity;
@@ -21,6 +35,7 @@ namespace AnimalBattleRoyale
         private float radius;
         private float expiresAt;
         private Color impactColor;
+        private WeaponAmmoType ammoType;
 
         public static void Fire(ThirdPersonAnimalController source, Vector3 direction)
         {
@@ -29,6 +44,15 @@ namespace AnimalBattleRoyale
             RangedProjectile projectile = projectileObject.AddComponent<RangedProjectile>();
             projectile.Configure(source, direction);
         }
+
+        private static Color SeedColorForAnimal(AnimalType type) => type switch
+        {
+            AnimalType.Tiger => new Color(0.85f, 0.72f, 0.42f),
+            AnimalType.Ant => new Color(0.82f, 0.68f, 0.36f),
+            AnimalType.Eagle => new Color(0.8f, 0.74f, 0.5f),
+            AnimalType.Monkey => new Color(0.78f, 0.7f, 0.4f),
+            _ => new Color(0.82f, 0.7f, 0.42f)
+        };
 
         public static Vector3 GetLaunchPosition(ThirdPersonAnimalController source, Vector3 direction)
         {
@@ -45,40 +69,58 @@ namespace AnimalBattleRoyale
         private void Configure(ThirdPersonAnimalController source, Vector3 direction)
         {
             owner = source;
+            ammoType = source.CurrentWeaponAmmo;
             direction = direction.sqrMagnitude > 0.01f ? direction.normalized : source.transform.forward;
-            // Every animal fires seeds from the back-mounted launcher. Projectile
-            // speed is controlled globally by the host; damage and size vary by animal.
+            // Projectile speed is controlled globally by the host; flight feel varies
+            // by animal, while damage depends on the ammo type the crystal level grants.
             float speed = ServerGameTuning.ProjectileSpeed;
             float lift;
             float visualScale;
             switch (source.AnimalType)
             {
                 case AnimalType.Tiger:
-                    lift = 0.35f; gravity = 2.4f; damage = 11f; radius = 0.18f;
-                    visualScale = 0.34f; impactColor = new Color(0.85f, 0.72f, 0.42f);
+                    lift = 0.35f; gravity = 2.4f; radius = 0.18f; visualScale = 0.34f;
                     break;
                 case AnimalType.Ant:
-                    lift = 0.3f; gravity = 2.2f; damage = 8f; radius = 0.15f;
-                    visualScale = 0.28f; impactColor = new Color(0.82f, 0.68f, 0.36f);
+                    lift = 0.3f; gravity = 2.2f; radius = 0.15f; visualScale = 0.28f;
                     break;
                 case AnimalType.Eagle:
-                    lift = 0.4f; gravity = 2.3f; damage = 10f; radius = 0.17f;
-                    visualScale = 0.32f; impactColor = new Color(0.8f, 0.74f, 0.5f);
+                    lift = 0.4f; gravity = 2.3f; radius = 0.17f; visualScale = 0.32f;
                     break;
                 case AnimalType.Monkey:
-                    lift = 0.35f; gravity = 2.3f; damage = 9.5f; radius = 0.16f;
-                    visualScale = 0.3f; impactColor = new Color(0.78f, 0.7f, 0.4f);
+                    lift = 0.35f; gravity = 2.3f; radius = 0.16f; visualScale = 0.3f;
                     break;
                 default:
-                    lift = 0.35f; gravity = 2.3f; damage = 10f; radius = 0.17f;
-                    visualScale = 0.3f; impactColor = new Color(0.82f, 0.7f, 0.42f);
+                    lift = 0.35f; gravity = 2.3f; radius = 0.17f; visualScale = 0.3f;
                     break;
             }
+            impactColor = SeedColorForAnimal(source.AnimalType);
+
+            // Damage depends on ammo type, not the shooter's animal.
+            damage = ammoType switch
+            {
+                WeaponAmmoType.Tomato => TomatoDamage,
+                WeaponAmmoType.Watermelon => WatermelonDamage,
+                _ => SeedDamage
+            };
 
             lift *= ServerGameTuning.ProjectileLiftMultiplier;
             gravity *= ServerGameTuning.ProjectileGravityMultiplier;
             damage *= ServerGameTuning.ProjectileDamageMultiplier;
             radius *= ServerGameTuning.ProjectileRadiusMultiplier;
+            switch (ammoType)
+            {
+                case WeaponAmmoType.Tomato:
+                    impactColor = new Color(0.96f, 0.12f, 0.055f);
+                    radius *= 1.16f;
+                    visualScale *= 1.3f;
+                    break;
+                case WeaponAmmoType.Watermelon:
+                    impactColor = new Color(0.16f, 0.82f, 0.2f);
+                    radius *= 1.38f;
+                    visualScale *= 1.62f;
+                    break;
+            }
 
             transform.position = GetLaunchPosition(source, direction);
             velocity = direction * speed + Vector3.up * lift;
@@ -86,8 +128,7 @@ namespace AnimalBattleRoyale
             BuildVisual(source.AnimalType, visualScale);
             BuildTrail();
             AttackVfx.CreateBurst(transform.position, impactColor, 0.5f);
-            CombatFeedback.PlaySeedShot(transform.position);
-            CombatFeedback.PlayProjectileFly(transform.position);
+            CombatFeedback.PlayProjectileLaunch(transform.position, ammoType);
         }
 
         private void Update()
@@ -138,44 +179,179 @@ namespace AnimalBattleRoyale
 
         private void ResolveImpact(RaycastHit hit)
         {
-            CombatFeedback.PlayProjectileImpact(hit.point);
-            Health target = hit.collider != null ? hit.collider.GetComponentInParent<Health>() : null;
-            if (target != null && target != owner.Health && !target.IsDead && (target.Owner == null || !target.Owner.IsBurrowed))
+            CombatFeedback.PlayProjectileImpact(hit.point, ammoType);
+            if (ammoType == WeaponAmmoType.Watermelon)
             {
-                target.TakeDamage(damage, owner);
-                CombatFeedback.NotifyHit(owner.AnimalType, hit.point, damage);
-                if (target.Owner != null)
-                {
-                    Vector3 knockback = velocity.sqrMagnitude > 0.01f ? velocity.normalized : owner.transform.forward;
-                    target.Owner.ReceiveKnockback(new Vector3(knockback.x, 0.12f, knockback.z).normalized * 4.2f);
-                }
+                DamageArea(hit.point);
+                AttackVfx.CreateFruitExplosion(hit.point + hit.normal * 0.08f, ammoType, WatermelonExplosionRadius);
             }
-            AttackVfx.CreateBurst(hit.point + hit.normal * 0.08f, impactColor, 0.9f);
+            else
+            {
+                Health target = hit.collider != null ? hit.collider.GetComponentInParent<Health>() : null;
+                DamageDirectTarget(target, hit.point);
+                if (ammoType == WeaponAmmoType.Tomato)
+                    AttackVfx.CreateFruitExplosion(hit.point + hit.normal * 0.08f, ammoType, 1.35f);
+                else
+                    AttackVfx.CreateBurst(hit.point + hit.normal * 0.08f, impactColor, 0.9f);
+            }
             Destroy(gameObject);
+        }
+
+        private void DamageDirectTarget(Health target, Vector3 hitPoint)
+        {
+            if (!CanDamage(target)) return;
+            target.TakeDamage(damage, owner);
+            CombatFeedback.NotifyHit(owner.AnimalType, hitPoint, damage);
+            if (target.Owner == null) return;
+            Vector3 knockback = velocity.sqrMagnitude > 0.01f ? velocity.normalized : owner.transform.forward;
+            target.Owner.ReceiveKnockback(new Vector3(knockback.x, 0.12f, knockback.z).normalized * 4.2f);
+        }
+
+        private void DamageArea(Vector3 center)
+        {
+            areaHitTargets.Clear();
+            int hitCount = Physics.OverlapSphereNonAlloc(center, WatermelonExplosionRadius,
+                areaHitBuffer, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < hitCount; i++)
+            {
+                Collider candidate = areaHitBuffer[i];
+                Health target = candidate != null ? candidate.GetComponentInParent<Health>() : null;
+                if (!CanDamage(target) || !areaHitTargets.Add(target)) continue;
+
+                target.TakeDamage(damage, owner);
+                Vector3 targetPoint = target.Owner != null
+                    ? target.Owner.transform.position + Vector3.up * (target.Owner.Stats.ControllerHeight * 0.45f)
+                    : target.transform.position;
+                CombatFeedback.NotifyHit(owner.AnimalType, targetPoint, damage);
+                if (target.Owner == null) continue;
+
+                Vector3 knockback = target.Owner.transform.position - center;
+                knockback.y = 0.16f;
+                if (knockback.sqrMagnitude < 0.01f)
+                    knockback = velocity.sqrMagnitude > 0.01f ? velocity.normalized : owner.transform.forward;
+                target.Owner.ReceiveKnockback(knockback.normalized * 5.4f);
+            }
+            areaHitTargets.Clear();
+        }
+
+        private bool CanDamage(Health target)
+        {
+            return target != null && target != owner.Health && !target.IsDead
+                   && (target.Owner == null || !target.Owner.IsBurrowed);
         }
 
         private void BuildVisual(AnimalType type, float scale)
         {
-            // Seeds: a small elongated pellet for every animal.
-            GameObject instance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            instance.transform.SetParent(transform, false);
-            instance.name = "SeedProjectileVisual";
-            instance.transform.localPosition = Vector3.zero;
-            instance.transform.localScale = new Vector3(0.62f, 0.62f, 1f) * scale;
-            Collider fallbackCollider = instance.GetComponent<Collider>();
-            if (fallbackCollider != null) fallbackCollider.enabled = false;
-            Renderer renderer = instance.GetComponent<Renderer>();
-            if (renderer != null)
+            visual = BuildProjectileVisual(ammoType, type, transform, scale, impactColor);
+        }
+
+        private static Transform BuildProjectileVisual(WeaponAmmoType ammoType, AnimalType animalType, Transform parent,
+            float scale, Color seedColor)
+        {
+            switch (ammoType)
             {
-                if (!sharedProjectileMaterials.TryGetValue(type, out Material material))
-                {
-                    Shader shader = ShaderLibrary.Lit;
-                    material = new Material(shader) { name = type + "_ProjectileMaterial", color = impactColor, enableInstancing = true };
-                    sharedProjectileMaterials.Add(type, material);
-                }
-                renderer.sharedMaterial = material;
+                case WeaponAmmoType.Tomato:
+                    return BuildTomatoVisual(parent, scale);
+                case WeaponAmmoType.Watermelon:
+                    return BuildWatermelonVisual(parent, scale);
             }
-            visual = instance.transform;
+
+            if (!sharedSeedMaterials.TryGetValue(animalType, out Material seedMaterial))
+            {
+                seedMaterial = CreateSharedMaterial(animalType + "_SeedProjectileMaterial", seedColor, 0.32f);
+                sharedSeedMaterials.Add(animalType, seedMaterial);
+            }
+            GameObject seed = AddPrimitive(parent, PrimitiveType.Sphere, "SeedProjectileVisual",
+                Vector3.zero, new Vector3(0.62f, 0.62f, 1f) * scale, Quaternion.identity, seedMaterial);
+            return seed.transform;
+        }
+
+        private static Transform BuildTomatoVisual(Transform parent, float scale)
+        {
+            GameObject root = new GameObject("TomatoProjectileVisual");
+            root.transform.SetParent(parent, false);
+            Material tomato = FruitMaterial("TomatoSkin", new Color(0.94f, 0.055f, 0.035f), 0.5f);
+            Material leaf = FruitMaterial("TomatoLeaf", new Color(0.08f, 0.42f, 0.07f), 0.25f);
+            AddPrimitive(root.transform, PrimitiveType.Sphere, "TomatoBody", Vector3.zero,
+                new Vector3(1.25f, 1.08f, 1.25f) * scale, Quaternion.identity, tomato);
+            AddPrimitive(root.transform, PrimitiveType.Cylinder, "TomatoStem", Vector3.up * (0.66f * scale),
+                new Vector3(0.11f, 0.2f, 0.11f) * scale, Quaternion.Euler(9f, 0f, -12f), leaf);
+            for (int i = 0; i < 5; i++)
+            {
+                float angle = i * 72f;
+                Vector3 direction = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
+                AddPrimitive(root.transform, PrimitiveType.Sphere, "TomatoLeaf_" + i,
+                    Vector3.up * (0.55f * scale) + direction * (0.16f * scale),
+                    new Vector3(0.12f, 0.045f, 0.42f) * scale,
+                    Quaternion.Euler(0f, angle, 0f), leaf);
+            }
+            return root.transform;
+        }
+
+        private static Transform BuildWatermelonVisual(Transform parent, float scale)
+        {
+            GameObject root = new GameObject("WatermelonProjectileVisual");
+            root.transform.SetParent(parent, false);
+            Material rind = FruitMaterial("WatermelonRind", new Color(0.2f, 0.72f, 0.16f), 0.44f);
+            Material stripe = FruitMaterial("WatermelonStripe", new Color(0.025f, 0.27f, 0.055f), 0.3f);
+            AddPrimitive(root.transform, PrimitiveType.Sphere, "WatermelonBody", Vector3.zero,
+                new Vector3(1.2f, 1.2f, 1.65f) * scale, Quaternion.identity, rind);
+
+            Vector3[] stripeOffsets =
+            {
+                Vector3.right * 0.57f, Vector3.left * 0.57f,
+                Vector3.up * 0.57f, Vector3.down * 0.57f
+            };
+            for (int i = 0; i < stripeOffsets.Length; i++)
+            {
+                Vector3 offset = stripeOffsets[i] * scale;
+                Vector3 stripeScale = i < 2
+                    ? new Vector3(0.105f, 0.22f, 1.52f) * scale
+                    : new Vector3(0.22f, 0.105f, 1.52f) * scale;
+                AddPrimitive(root.transform, PrimitiveType.Sphere, "WatermelonStripe_" + i,
+                    offset, stripeScale, Quaternion.identity, stripe);
+            }
+            AddPrimitive(root.transform, PrimitiveType.Cylinder, "WatermelonStem", Vector3.forward * (-0.88f * scale),
+                new Vector3(0.1f, 0.15f, 0.1f) * scale, Quaternion.Euler(90f, 0f, 0f), stripe);
+            return root.transform;
+        }
+
+        private static GameObject AddPrimitive(Transform parent, PrimitiveType primitiveType, string objectName,
+            Vector3 localPosition, Vector3 localScale, Quaternion localRotation, Material material)
+        {
+            GameObject instance = GameObject.CreatePrimitive(primitiveType);
+            instance.name = objectName;
+            instance.transform.SetParent(parent, false);
+            instance.transform.localPosition = localPosition;
+            instance.transform.localRotation = localRotation;
+            instance.transform.localScale = localScale;
+            Collider collider = instance.GetComponent<Collider>();
+            if (collider != null) collider.enabled = false;
+            Renderer renderer = instance.GetComponent<Renderer>();
+            if (renderer != null) renderer.sharedMaterial = material;
+            return instance;
+        }
+
+        private static Material FruitMaterial(string key, Color color, float smoothness)
+        {
+            if (sharedFruitMaterials.TryGetValue(key, out Material material)) return material;
+            material = CreateSharedMaterial(key + "_ProjectileMaterial", color, smoothness);
+            sharedFruitMaterials.Add(key, material);
+            return material;
+        }
+
+        private static Material CreateSharedMaterial(string materialName, Color color, float smoothness)
+        {
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = materialName,
+                color = color,
+                enableInstancing = true,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", smoothness);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", smoothness);
+            return material;
         }
 
         private void BuildTrail()

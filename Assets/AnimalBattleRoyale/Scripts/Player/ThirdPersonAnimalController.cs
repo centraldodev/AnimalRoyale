@@ -14,9 +14,15 @@ namespace AnimalBattleRoyale
         [SerializeField] private float rotationSpeed = 14f;
         [SerializeField] private float gravity = -24f;
 
-        private const int MaxRangedAmmo = 120;
-        private const int RangedMagazineCapacity = 30;
+        private const int SeedMaxAmmo = 120;
+        private const int SeedMagazineCapacity = 30;
+        private const int TomatoMaxAmmo = 60;
+        private const int TomatoMagazineCapacity = 10;
+        private const int WatermelonMaxAmmo = 30;
+        private const int WatermelonMagazineCapacity = 5;
         private const float DefeatedCleanupDelay = 1.5f;
+        public const int CrystalsPerWeaponLevel = 5;
+        public const int MaxWeaponLevel = 3;
 
         private readonly Collider[] combatHits = new Collider[64];
         private readonly RaycastHit[] rangedAimHits = new RaycastHit[24];
@@ -50,10 +56,13 @@ namespace AnimalBattleRoyale
         private float abilitySlow;
         private Vector3 dashDirection;
         private Color abilityColor;
-        private int rangedAmmo = MaxRangedAmmo;
-        private int rangedMagazineAmmo = RangedMagazineCapacity;
+        private readonly int[] weaponReserveAmmo = { SeedMaxAmmo, 0, 0 };
+        private readonly int[] weaponMagazineAmmo = { SeedMagazineCapacity, 0, 0 };
+        private WeaponAmmoType selectedWeapon = WeaponAmmoType.Seed;
         private bool rangedReloading;
         private float rangedReloadEndsAt;
+        private int weaponLevel = 1;
+        private int weaponCrystalProgress;
         private int lastPowerSlot = -1;
         private bool defeated;
         private bool eliminated;
@@ -117,17 +126,86 @@ namespace AnimalBattleRoyale
         public bool NeedsMobilityEnergy => false;
         public bool IsMobilityRecharging => false;
         public float MobilityRechargeSecondsRemaining => 0f;
-        public int RangedAmmo => rangedAmmo;
-        public int RangedMagazineAmmo => rangedMagazineAmmo;
-        public int RangedMagazineCapacityValue => RangedMagazineCapacity;
-        public int RangedReserveAmmo => Mathf.Max(0, rangedAmmo - rangedMagazineAmmo);
+        private int SelectedReserveAmmo
+        {
+            get => weaponReserveAmmo[(int)selectedWeapon];
+            set => weaponReserveAmmo[(int)selectedWeapon] = value;
+        }
+
+        private int SelectedMagazineAmmo
+        {
+            get => weaponMagazineAmmo[(int)selectedWeapon];
+            set => weaponMagazineAmmo[(int)selectedWeapon] = value;
+        }
+
+        public int RangedAmmo => SelectedReserveAmmo;
+        public int RangedMagazineAmmo => SelectedMagazineAmmo;
+        public int RangedMagazineCapacityValue => MagazineCapacityFor(CurrentWeaponAmmo);
+        public int RangedReserveAmmo => Mathf.Max(0, SelectedReserveAmmo - SelectedMagazineAmmo);
         public bool IsRangedReloading => rangedReloading;
         public float RangedReloadSecondsRemaining => rangedReloading
             ? Mathf.Max(0f, rangedReloadEndsAt - Time.time)
             : 0f;
-        public int MaxRangedAmmoValue => MaxRangedAmmo;
-        public bool NeedsRangedAmmo => rangedAmmo < MaxRangedAmmo;
+        public int MaxRangedAmmoValue => MaxAmmoFor(CurrentWeaponAmmo);
+        public bool NeedsRangedAmmo => SelectedReserveAmmo < MaxAmmoFor(CurrentWeaponAmmo);
         public RangedSupplyKind CompatibleRangedSupply => RangedSupplyKind.NaturalAmmo;
+        public int WeaponLevel => weaponLevel;
+        public int WeaponCrystalProgress => weaponCrystalProgress;
+        public bool CanUpgradeWeapon => weaponLevel < MaxWeaponLevel;
+        public WeaponAmmoType CurrentWeaponAmmo => selectedWeapon;
+        public int SelectedWeaponSlot => (int)selectedWeapon;
+
+        /// <summary>A weapon is unlocked once enough weapon crystals raised the level to reach its slot.</summary>
+        public bool IsWeaponUnlocked(WeaponAmmoType weapon) => (int)weapon <= weaponLevel - 1;
+
+        /// <summary>Switches the active weapon among the ones already unlocked. Returns false if locked.</summary>
+        public bool TrySelectWeapon(WeaponAmmoType weapon)
+        {
+            if (!IsWeaponUnlocked(weapon) || selectedWeapon == weapon) return false;
+            selectedWeapon = weapon;
+            rangedReloading = false;
+            rangedReloadEndsAt = 0f;
+            if (SelectedMagazineAmmo <= 0 && SelectedReserveAmmo > 0) BeginRangedReload();
+            return true;
+        }
+
+        // Tomato fire rate is half of the seed launcher's; watermelon is a third of the tomato's.
+        private static float FireRateMultiplierFor(WeaponAmmoType ammoType) => ammoType switch
+        {
+            WeaponAmmoType.Tomato => 0.5f,
+            WeaponAmmoType.Watermelon => 0.5f / 3f,
+            _ => 1f
+        };
+
+        private static int MagazineCapacityFor(WeaponAmmoType ammoType) => ammoType switch
+        {
+            WeaponAmmoType.Tomato => TomatoMagazineCapacity,
+            WeaponAmmoType.Watermelon => WatermelonMagazineCapacity,
+            _ => SeedMagazineCapacity
+        };
+
+        private static int MaxAmmoFor(WeaponAmmoType ammoType) => ammoType switch
+        {
+            WeaponAmmoType.Tomato => TomatoMaxAmmo,
+            WeaponAmmoType.Watermelon => WatermelonMaxAmmo,
+            _ => SeedMaxAmmo
+        };
+        public static string DisplayNameForWeapon(WeaponAmmoType weapon) => weapon switch
+        {
+            WeaponAmmoType.Tomato => "TOMATE",
+            WeaponAmmoType.Watermelon => "MELANCIA",
+            _ => "SEMENTE"
+        };
+
+        public static Color ColorForWeapon(WeaponAmmoType weapon) => weapon switch
+        {
+            WeaponAmmoType.Tomato => new Color(0.96f, 0.12f, 0.055f),
+            WeaponAmmoType.Watermelon => new Color(0.18f, 0.82f, 0.2f),
+            _ => new Color(0.82f, 0.7f, 0.42f)
+        };
+
+        public string WeaponAmmoDisplayName => DisplayNameForWeapon(CurrentWeaponAmmo);
+        public Color WeaponAmmoColor => ColorForWeapon(CurrentWeaponAmmo);
         public int LastPowerSlot => lastPowerSlot;
 
         public Vector3 ViewAimDirection
@@ -141,10 +219,14 @@ namespace AnimalBattleRoyale
             }
         }
 
-        // Every animal now fires seeds from the seed-launcher mounted on its back.
-        public string RangedAmmoName => "SEMENTES";
+        public string RangedAmmoName => WeaponAmmoDisplayName;
 
-        public string RangedAttackName => "RAJADA DE SEMENTES";
+        public string RangedAttackName => CurrentWeaponAmmo switch
+        {
+            WeaponAmmoType.Tomato => "RAJADA DE TOMATES",
+            WeaponAmmoType.Watermelon => "MELANCIA EXPLOSIVA",
+            _ => "RAJADA DE SEMENTES"
+        };
 
         public string LastPowerName => Stats.AbilityNames != null && lastPowerSlot >= 0 && lastPowerSlot < Stats.AbilityNames.Length
             ? Stats.AbilityNames[lastPowerSlot] : "Ataque base";
@@ -275,11 +357,17 @@ namespace AnimalBattleRoyale
         }
 
         public void ApplyNetworkSnapshot(Vector3 position, Quaternion rotation, float replicatedHealth, int replicatedLives,
-            int replicatedAmmo, int replicatedMagazineAmmo, bool replicatedEliminated, bool applyTransform)
+            int replicatedAmmo, int replicatedMagazineAmmo, int replicatedWeaponLevel,
+            int replicatedCrystalProgress, int replicatedSelectedWeapon, bool replicatedEliminated, bool applyTransform)
         {
             livesRemaining = Mathf.Clamp(replicatedLives, 0, MaxLives);
-            rangedAmmo = Mathf.Clamp(replicatedAmmo, 0, MaxRangedAmmo);
-            rangedMagazineAmmo = Mathf.Clamp(replicatedMagazineAmmo, 0, Mathf.Min(RangedMagazineCapacity, rangedAmmo));
+            weaponLevel = Mathf.Clamp(replicatedWeaponLevel, 1, MaxWeaponLevel);
+            selectedWeapon = (WeaponAmmoType)Mathf.Clamp(replicatedSelectedWeapon, 0, weaponLevel - 1);
+            SelectedReserveAmmo = Mathf.Clamp(replicatedAmmo, 0, MaxAmmoFor(CurrentWeaponAmmo));
+            SelectedMagazineAmmo = Mathf.Clamp(replicatedMagazineAmmo, 0, Mathf.Min(MagazineCapacityFor(CurrentWeaponAmmo), SelectedReserveAmmo));
+            weaponCrystalProgress = weaponLevel >= MaxWeaponLevel
+                ? 0
+                : Mathf.Clamp(replicatedCrystalProgress, 0, CrystalsPerWeaponLevel - 1);
             health?.ApplyReplicatedState(replicatedHealth);
             eliminated = replicatedEliminated;
             defeated = replicatedEliminated;
@@ -305,7 +393,11 @@ namespace AnimalBattleRoyale
                     TryUsePower(0, actionDirection);
                     break;
                 case OnlineActionType.Consume:
-                    if (!RangedAmmoPickup.TryCollectNearest(this)) LifePickup.TryConsumeNearest(this);
+                    if (!WeaponUpgradeCrystal.TryCollectNearest(this)
+                        && !RangedAmmoPickup.TryCollectNearest(this)) LifePickup.TryConsumeNearest(this);
+                    break;
+                case OnlineActionType.SelectWeapon:
+                    TrySelectWeapon((WeaponAmmoType)Mathf.RoundToInt(direction.x));
                     break;
             }
         }
@@ -360,10 +452,18 @@ namespace AnimalBattleRoyale
             characterController.skinWidth = 0.04f;
             Transform visualRoot = AnimalVisualFactory.Build(transform, type, stats.MainColor, stats.VisualScale);
             visualMotion = visualRoot != null ? visualRoot.GetComponent<AnimalVisualMotion>() : null;
-            rangedAmmo = MaxRangedAmmo;
-            rangedMagazineAmmo = RangedMagazineCapacity;
+            weaponLevel = 1;
+            selectedWeapon = WeaponAmmoType.Seed;
+            for (int slot = 0; slot < weaponReserveAmmo.Length; slot++)
+            {
+                weaponReserveAmmo[slot] = 0;
+                weaponMagazineAmmo[slot] = 0;
+            }
+            weaponReserveAmmo[(int)WeaponAmmoType.Seed] = SeedMaxAmmo;
+            weaponMagazineAmmo[(int)WeaponAmmoType.Seed] = SeedMagazineCapacity;
             rangedReloading = false;
             rangedReloadEndsAt = 0f;
+            weaponCrystalProgress = 0;
             health.Initialize(stats.MaxHealth, this);
             if (!refillHealth) health.ReconfigureMaxHealth(stats.MaxHealth, false);
         }
@@ -419,8 +519,15 @@ namespace AnimalBattleRoyale
                 online?.ReportAction(OnlineActionType.Consume, transform.forward);
                 if (online == null || !online.UsesRemoteAuthority)
                 {
-                    if (!RangedAmmoPickup.TryCollectNearest(this)) LifePickup.TryConsumeNearest(this);
+                    if (!WeaponUpgradeCrystal.TryCollectNearest(this)
+                        && !RangedAmmoPickup.TryCollectNearest(this)) LifePickup.TryConsumeNearest(this);
                 }
+            }
+            int weaponSelection = GameInput.ReadWeaponSelection();
+            if (weaponSelection >= 0 && TrySelectWeapon((WeaponAmmoType)weaponSelection))
+            {
+                OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.SelectWeapon,
+                    new Vector3(weaponSelection, 0f, 0f));
             }
         }
 
@@ -442,7 +549,7 @@ namespace AnimalBattleRoyale
         {
             if (hangingVine)
             {
-                HandleHangingMovement(jumpPressed);
+                HandleHangingMovement(direction, jumpPressed);
                 return;
             }
             bool grounded = characterController.isGrounded;
@@ -517,26 +624,30 @@ namespace AnimalBattleRoyale
             if (tigerLeaping) DamageTigerLeapTargets();
         }
 
-        private void HandleHangingMovement(bool releasePressed)
+        private void HandleHangingMovement(Vector3 swingDirection, bool releasePressed)
         {
             if (heldVine == null) { hangingVine = false; return; }
             visualMotion?.SetLocomotion(false, false, true);
             verticalVelocity = Vector3.zero;
             extraVelocity = Vector3.zero;
 
+            VineAnchor vineAnchor = heldVine.GetComponent<VineAnchor>();
+            vineAnchor?.DriveSwing(swingDirection, Time.deltaTime);
+
             if (releasePressed)
             {
-                TryLaunchFromVine(ViewAimDirection);
+                TryLaunchFromVine(swingDirection.sqrMagnitude > 0.01f ? swingDirection : ViewAimDirection);
                 return;
             }
 
-            // Hold the grip point smoothly and face the aim direction.
+            // Follow the moving grip point while WASD pumps the vine's pendulum.
             Vector3 target = heldVine.position - Vector3.up * (stats.ControllerHeight * 0.82f);
             Vector3 delta = target - transform.position;
             if (delta.sqrMagnitude > 0.0001f) characterController.Move(delta * Mathf.Clamp01(12f * Time.deltaTime));
-            Vector3 aimFlat = new Vector3(ViewAimDirection.x, 0f, ViewAimDirection.z);
-            if (aimFlat.sqrMagnitude > 0.01f)
-                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(aimFlat.normalized, Vector3.up), rotationSpeed * Time.deltaTime);
+            Vector3 facing = swingDirection.sqrMagnitude > 0.01f ? swingDirection : ViewAimDirection;
+            Vector3 facingFlat = new Vector3(facing.x, 0f, facing.z);
+            if (facingFlat.sqrMagnitude > 0.01f)
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(facingFlat.normalized, Vector3.up), rotationSpeed * Time.deltaTime);
         }
 
         private Vector3 GetCameraRelativeDirection(Vector2 input)
@@ -587,28 +698,28 @@ namespace AnimalBattleRoyale
         {
             if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return false;
             UpdateRangedReload();
-            if (rangedReloading || rangedAmmo <= 0) return false;
-            if (rangedMagazineAmmo <= 0)
+            if (rangedReloading || SelectedReserveAmmo <= 0) return false;
+            if (SelectedMagazineAmmo <= 0)
             {
                 BeginRangedReload();
                 return false;
             }
             if (Time.time < nextBasicAttackTime) return false;
             direction = direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
-            rangedAmmo--;
-            rangedMagazineAmmo--;
+            SelectedReserveAmmo--;
+            SelectedMagazineAmmo--;
             nextBasicAttackTime = Time.time + RangedAttackCooldown();
             Vector3 flatDirection = new Vector3(direction.x, 0f, direction.z);
             if (flatDirection.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(flatDirection.normalized, Vector3.up);
             visualMotion?.TriggerAttack(false);
             RangedProjectile.Fire(this, direction);
-            if (rangedMagazineAmmo <= 0 && rangedAmmo > 0) BeginRangedReload();
+            if (SelectedMagazineAmmo <= 0 && SelectedReserveAmmo > 0) BeginRangedReload();
             return true;
         }
 
         private void BeginRangedReload()
         {
-            if (rangedReloading || rangedMagazineAmmo > 0 || rangedAmmo <= 0) return;
+            if (rangedReloading || SelectedMagazineAmmo > 0 || SelectedReserveAmmo <= 0) return;
             rangedReloading = true;
             rangedReloadEndsAt = Time.time + ServerGameTuning.RangedReloadSeconds;
         }
@@ -618,13 +729,15 @@ namespace AnimalBattleRoyale
             if (!rangedReloading || Time.time < rangedReloadEndsAt) return;
             rangedReloading = false;
             rangedReloadEndsAt = 0f;
-            rangedMagazineAmmo = Mathf.Min(RangedMagazineCapacity, rangedAmmo);
+            SelectedMagazineAmmo = Mathf.Min(MagazineCapacityFor(CurrentWeaponAmmo), SelectedReserveAmmo);
         }
 
-        // Seed-launcher cadence is controlled by the host in shots per second.
+        // Seed-launcher cadence is controlled by the host in shots per second; other
+        // ammo types fire slower relative to it (see FireRateMultiplierFor).
         private float RangedAttackCooldown()
         {
-            return 1f / Mathf.Max(0.01f, ServerGameTuning.RangedShotsPerSecond);
+            float shotsPerSecond = ServerGameTuning.RangedShotsPerSecond * FireRateMultiplierFor(CurrentWeaponAmmo);
+            return 1f / Mathf.Max(0.01f, shotsPerSecond);
         }
 
         private void TryBasicAttack(Vector3 direction)
@@ -864,9 +977,33 @@ namespace AnimalBattleRoyale
         public bool TryRefillRangedAmmo(RangedSupplyKind supplyKind, int amount)
         {
             if (defeated || health == null || health.IsDead || supplyKind != CompatibleRangedSupply || amount <= 0 || !NeedsRangedAmmo) return false;
-            rangedAmmo = Mathf.Min(MaxRangedAmmo, rangedAmmo + amount);
-            if (rangedMagazineAmmo <= 0) BeginRangedReload();
+            SelectedReserveAmmo = Mathf.Min(MaxAmmoFor(CurrentWeaponAmmo), SelectedReserveAmmo + amount);
+            if (SelectedMagazineAmmo <= 0) BeginRangedReload();
             AttackVfx.CreateBurst(transform.position + Vector3.up * 0.6f, new Color(1f, 0.76f, 0.18f), 1.25f);
+            return true;
+        }
+
+        public bool TryCollectWeaponCrystal()
+        {
+            if (defeated || health == null || health.IsDead || !CanUpgradeWeapon) return false;
+
+            weaponCrystalProgress++;
+            bool upgraded = weaponCrystalProgress >= CrystalsPerWeaponLevel;
+            if (upgraded)
+            {
+                weaponLevel = Mathf.Min(MaxWeaponLevel, weaponLevel + 1);
+                weaponCrystalProgress = 0;
+                // The newly unlocked weapon comes with a full clip and reserve, ready to select.
+                int newSlot = weaponLevel - 1;
+                weaponReserveAmmo[newSlot] = MaxAmmoFor((WeaponAmmoType)newSlot);
+                weaponMagazineAmmo[newSlot] = MagazineCapacityFor((WeaponAmmoType)newSlot);
+            }
+
+            Color crystalColor = upgraded
+                ? new Color(0.18f, 1f, 0.95f)
+                : new Color(0.08f, 0.78f, 1f);
+            AttackVfx.CreateBurst(transform.position + Vector3.up * 0.75f, crystalColor, upgraded ? 2.8f : 1.45f);
+            BattleRoyaleManager.Instance?.NotifyWeaponCrystalCollected(this, upgraded);
             return true;
         }
 
@@ -946,14 +1083,17 @@ namespace AnimalBattleRoyale
         public bool TryLaunchFromVine(Vector3 direction)
         {
             if (!hangingVine) return false;
+            VineAnchor vineAnchor = heldVine != null ? heldVine.GetComponent<VineAnchor>() : null;
+            Vector3 carriedSwingVelocity = vineAnchor != null ? vineAnchor.SwingVelocity : Vector3.zero;
             hangingVine = false;
             heldVine = null;
             targetVine = null;
             vinesVisitedInChain = 0;
             Vector3 flat = new Vector3(direction.x, 0f, direction.z);
             Vector3 forward = flat.sqrMagnitude > 0.01f ? flat.normalized : transform.forward;
-            verticalVelocity.y = VineLaunchUp;
-            extraVelocity += forward * VineLaunchForward;
+            verticalVelocity.y = VineLaunchUp + Mathf.Max(0f, carriedSwingVelocity.y * 0.35f);
+            extraVelocity += forward * VineLaunchForward
+                             + Vector3.ProjectOnPlane(carriedSwingVelocity, Vector3.up) * 0.8f;
             AttackVfx.CreateBurst(transform.position + Vector3.up * 0.6f, new Color(0.5f, 0.9f, 0.35f), 1.2f);
             return true;
         }
@@ -982,6 +1122,19 @@ namespace AnimalBattleRoyale
             return livesRemaining > 0;
         }
 
+        /// <summary>Hides the body during the countdown before a respawn (kept alive, not eliminated).</summary>
+        public void BeginRespawnCountdown()
+        {
+            if (characterController != null) characterController.enabled = false;
+            foreach (Collider collider in GetComponentsInChildren<Collider>()) if (collider != null) collider.enabled = false;
+            Transform visual = transform.Find("VisualRoot");
+            if (visual != null)
+            {
+                visualMotion?.Freeze();
+                visual.gameObject.SetActive(false);
+            }
+        }
+
         /// <summary>Revive at a fresh position with brief spawn protection (keeps the same GameObject).</summary>
         public void Respawn(Vector3 position)
         {
@@ -1006,11 +1159,15 @@ namespace AnimalBattleRoyale
 
             Transform visual = transform.Find("VisualRoot");
             if (visual != null) visual.gameObject.SetActive(true);
+            visualMotion?.Unfreeze();
             foreach (Collider collider in GetComponentsInChildren<Collider>()) if (collider != null) collider.enabled = true;
 
             health.Initialize(stats.MaxHealth, this);
-            rangedAmmo = MaxRangedAmmo;
-            rangedMagazineAmmo = RangedMagazineCapacity;
+            for (int slot = 0; slot < weaponLevel; slot++)
+            {
+                weaponReserveAmmo[slot] = MaxAmmoFor((WeaponAmmoType)slot);
+                weaponMagazineAmmo[slot] = MagazineCapacityFor((WeaponAmmoType)slot);
+            }
             rangedReloading = false;
             rangedReloadEndsAt = 0f;
             SafeZoneController safeZone = SafeZoneController.Instance;

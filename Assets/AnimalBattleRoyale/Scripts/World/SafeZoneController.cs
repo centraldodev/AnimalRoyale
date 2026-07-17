@@ -12,9 +12,12 @@ namespace AnimalBattleRoyale
         [SerializeField] private int circleSegments = 96;
         [SerializeField, Min(0f)] private float respawnEdgeMargin = 6f;
         [SerializeField, Range(30f, 180f)] private float boundaryParticlesPerSecond = 110f;
+        [SerializeField, Range(2f, 40f)] private float fireSoundFadeDistance = 16f;
 
         private LineRenderer lineRenderer;
         private ParticleSystem boundaryFire;
+        private AudioSource fireAudioSource;
+        private float fireSoundVolume;
         private JungleGenerator jungle;
         private float matchStartTime;
         private bool matchActive;
@@ -40,6 +43,7 @@ namespace AnimalBattleRoyale
             finalCenter = startCenter;
             CreateLineRenderer();
             CreateBoundaryFire();
+            CreateFireAudio();
         }
 
         private void Update()
@@ -63,6 +67,7 @@ namespace AnimalBattleRoyale
 
             DrawCircle();
             EmitBoundaryFire();
+            UpdateFireSound();
             if (OnlineMultiplayerManager.Instance != null && OnlineMultiplayerManager.Instance.IsClientOnly) return;
             UpdateWildfireExposure();
         }
@@ -70,17 +75,40 @@ namespace AnimalBattleRoyale
         public void BeginMatch()
         {
             startCenter = transform.position;
+            finalCenter = PickRandomFinalCenter();
             matchStartTime = Time.time;
             CurrentRadius = initialRadius;
             matchActive = true;
             acceleratedUntil = 0f;
             boundaryEmissionAccumulator = 0f;
+            fireSoundVolume = 0f;
+            if (fireAudioSource != null)
+            {
+                fireAudioSource.volume = 0f;
+                fireAudioSource.Play();
+            }
             ResetWildfireExposure();
         }
 
         public void SetFinalCenter(Vector3 worldPosition)
         {
             finalCenter = new Vector3(worldPosition.x, 0f, worldPosition.z);
+        }
+
+        // A different spot each match, always fully on dry land, so the zone never
+        // closes in the same place (or inside the lake) twice.
+        private Vector3 PickRandomFinalCenter()
+        {
+            if (jungle == null) jungle = FindAnyObjectByType<JungleGenerator>();
+            if (jungle == null) return Vector3.zero;
+
+            float maxDistance = jungle.MapSize * 0.5f - finalRadius - 6f;
+            float minDistance = jungle.LakeRadius + finalRadius + 4f;
+            if (maxDistance <= minDistance) return Vector3.zero;
+
+            float angle = Random.value * Mathf.PI * 2f;
+            float distance = Random.Range(minDistance, maxDistance);
+            return new Vector3(Mathf.Cos(angle) * distance, 0f, Mathf.Sin(angle) * distance);
         }
 
         public void AccelerateShrink(float duration)
@@ -218,6 +246,19 @@ namespace AnimalBattleRoyale
             renderer.sharedMaterial = WildfireEffect.SharedParticleMaterial;
         }
 
+        private void CreateFireAudio()
+        {
+            GameObject audioObject = new GameObject("WildfireSound");
+            audioObject.transform.SetParent(transform, false);
+            fireAudioSource = audioObject.AddComponent<AudioSource>();
+            fireAudioSource.clip = Resources.Load<AudioClip>("Audio/SFX/FireSound");
+            fireAudioSource.loop = true;
+            fireAudioSource.playOnAwake = false;
+            fireAudioSource.spatialBlend = 0f;
+            fireAudioSource.volume = 0f;
+            fireAudioSource.priority = 140;
+        }
+
         private void EmitBoundaryFire()
         {
             if (!matchActive || boundaryFire == null) return;
@@ -241,6 +282,32 @@ namespace AnimalBattleRoyale
                 };
                 boundaryFire.Emit(emit, 1);
             }
+        }
+
+        // Non-positional: the danger zone surrounds the player rather than sitting at one
+        // point, so the fire crackle fades in globally as they approach the edge from inside
+        // and reaches full volume once they step outside.
+        private void UpdateFireSound()
+        {
+            if (fireAudioSource == null) return;
+            ThirdPersonAnimalController localPlayer = BattleRoyaleManager.Instance != null
+                ? BattleRoyaleManager.Instance.LocalPlayer
+                : null;
+
+            float targetVolume = 0f;
+            if (localPlayer != null && !localPlayer.IsDefeated && localPlayer.Health != null && !localPlayer.Health.IsDead)
+            {
+                Vector2 flatOffset = new Vector2(
+                    localPlayer.transform.position.x - Center.x,
+                    localPlayer.transform.position.z - Center.z);
+                float distanceFromEdge = CurrentRadius - flatOffset.magnitude;
+                targetVolume = distanceFromEdge <= 0f
+                    ? 1f
+                    : Mathf.Clamp01(1f - distanceFromEdge / Mathf.Max(0.01f, fireSoundFadeDistance));
+            }
+
+            fireSoundVolume = Mathf.MoveTowards(fireSoundVolume, targetVolume, Time.deltaTime * 2.5f);
+            fireAudioSource.volume = fireSoundVolume;
         }
 
         private void DrawCircle()

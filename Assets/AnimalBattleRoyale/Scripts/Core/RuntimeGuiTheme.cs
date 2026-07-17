@@ -6,6 +6,26 @@ namespace AnimalBattleRoyale
     {
         private static Texture2D roundedTexture;
         private static GUIStyle roundedStyle;
+        private static Texture2D circleTexture;
+        private static Texture2D ringTexture;
+
+        public static Texture2D CircleTexture
+        {
+            get
+            {
+                if (circleTexture == null) circleTexture = CreateCircleTexture(false);
+                return circleTexture;
+            }
+        }
+
+        public static Texture2D RingTexture
+        {
+            get
+            {
+                if (ringTexture == null) ringTexture = CreateCircleTexture(true);
+                return ringTexture;
+            }
+        }
 
         public static void Ensure()
         {
@@ -38,6 +58,43 @@ namespace AnimalBattleRoyale
             DrawRoundedRect(rect, border);
             DrawRoundedRect(new Rect(rect.x + borderSize, rect.y + borderSize,
                 rect.width - borderSize * 2f, rect.height - borderSize * 2f), fill);
+        }
+
+        /// <summary>Filled circle (or thin ring, when <paramref name="ring"/> is true) tinted via GUI.color.</summary>
+        public static void DrawCircle(Rect rect, Color color, bool ring = false)
+        {
+            Color previous = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(rect, ring ? RingTexture : CircleTexture, ScaleMode.StretchToFill, true);
+            GUI.color = previous;
+        }
+
+        private static Texture2D CreateCircleTexture(bool ring)
+        {
+            const int size = 96;
+            Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = ring ? "RuntimeGuiRing" : "RuntimeGuiCircle",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            Color[] pixels = new Color[size * size];
+            Vector2 center = Vector2.one * ((size - 1) * 0.5f);
+            float radius = size * 0.48f;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float normalized = Vector2.Distance(new Vector2(x, y), center) / radius;
+                    float alpha = ring
+                        ? Mathf.Clamp01(1f - Mathf.Abs(normalized - 0.92f) * 24f)
+                        : Mathf.Clamp01((1f - normalized) * 12f);
+                    pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                }
+            }
+            texture.SetPixels(pixels);
+            texture.Apply(false, true);
+            return texture;
         }
 
         private static Texture2D CreateRoundedTexture()

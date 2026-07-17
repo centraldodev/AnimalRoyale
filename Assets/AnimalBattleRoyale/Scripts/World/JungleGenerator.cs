@@ -26,10 +26,14 @@ namespace AnimalBattleRoyale
         [SerializeField, Range(0, 4000)] private int grassTuftCount = 1600;
         [SerializeField, Range(0, 220)] private int rockCount = 96;
         [SerializeField, Range(0, 100)] private int anthillCount = 40;
+        [SerializeField, Range(12f, 48f)] private float anthillMinimumSpacing = 26f;
         [SerializeField, Range(0, 48)] private int mountainCount = 26;
         [SerializeField, Range(0, 100)] private int lifePickupCount = 24;
         [SerializeField, Range(0, 90)] private int rangedSupplyCount = 45;
+        [SerializeField, Range(0, 100)] private int weaponCrystalCount = 40;
+        [SerializeField, Range(4f, 30f)] private float pickupMinimumSpacing = 12f;
         [SerializeField, Range(0, 40)] private int houseCount = 16;
+        [SerializeField, Range(12f, 40f)] private float houseMinimumSpacing = 22f;
         [SerializeField, Range(0, 16)] private int eagleMountainCount = 8;
 
         [Header("NatureStarterKit2")]
@@ -52,15 +56,16 @@ namespace AnimalBattleRoyale
         private static readonly GameObject[] cachedArtRefBushPrefabs = new GameObject[8];
         private static bool artRefBushesLoaded;
         private static GameObject cachedArtRefBambooPrefab;
-        private static GameObject cachedArtRefStoneRuinPrefab;
+        private static readonly GameObject[] cachedArtRefRockPrefabs = new GameObject[5];
+        private static bool artRefRocksLoaded;
+        private static readonly GameObject[] cachedArtRefHousePrefabs = new GameObject[5];
+        private static bool artRefHousesLoaded;
         private static GameObject cachedBushPrefab;
         private static GameObject cachedMountainPrefab;
-        private static GameObject cachedRockPrefab;
         private static GameObject cachedFlowerPrefab;
         private static GameObject cachedHighDetailTreePrefab;
         private static GameObject cachedBroadleafPrefab;
         private static GameObject cachedHighDetailMountainPrefab;
-        private static GameObject cachedMossyRockPrefab;
         private static GameObject cachedFlowerClusterPrefab;
         private static NatureEnvironmentCatalog cachedNatureCatalog;
         private static readonly Dictionary<string, Material> detailedMaterialCache = new Dictionary<string, Material>();
@@ -69,6 +74,16 @@ namespace AnimalBattleRoyale
         private static Mesh cachedLakeDiscMesh;
         private static Mesh cachedLakeShoreMesh;
         private readonly List<TrailRoute> trailRoutes = new List<TrailRoute>();
+        private readonly List<Vector3> anthillPlanarPositions = new List<Vector3>();
+        private readonly List<Vector3> housePlanarPositions = new List<Vector3>();
+        private const float LakesideHouseAngleDegrees = 142f;
+        private const float LakesideHouseRadiusOffset = 7.2f;
+        private const float HeroLakeRockAngleDegrees = 42f;
+        private const float HeroLakeRockRadiusOffset = 5.4f;
+        private static readonly Vector2 AnthillFlatInnerExtents = new Vector2(2.6f, 2.6f);
+        private static readonly Vector2 AnthillFlatOuterExtents = new Vector2(6.5f, 6.5f);
+        private static readonly Vector2 HouseFlatInnerExtents = new Vector2(6.4f, 5.4f);
+        private static readonly Vector2 HouseFlatOuterExtents = new Vector2(10.5f, 8.8f);
 
         public float MapSize => mapSize;
         public float LakeRadius => lakeRadius;
@@ -184,6 +199,8 @@ namespace AnimalBattleRoyale
             Material lakeWaterMaterial = CreateWaterMaterial(new Color(0.045f, 0.55f, 0.82f, 0.72f));
 
             BuildTrailRoutes();
+            BuildAnthillPositions();
+            BuildHousePositions();
 
             CreateGround(generated.transform, groundMaterial);
             CreateBoundaries(generated.transform);
@@ -234,11 +251,8 @@ namespace AnimalBattleRoyale
 
             Transform anthillsRoot = new GameObject("Anthills").transform;
             anthillsRoot.SetParent(generated.transform, false);
-            for (int i = 0; i < anthillCount; i++)
-            {
-                Vector3 position = RandomMapPosition(15f);
+            foreach (Vector3 position in anthillPlanarPositions)
                 CreateAnthill(anthillsRoot, position, moundMaterial, moundDarkMaterial);
-            }
 
             Transform mountainsRoot = new GameObject("RockFormations").transform;
             mountainsRoot.SetParent(generated.transform, false);
@@ -262,13 +276,28 @@ namespace AnimalBattleRoyale
 
             Transform housesRoot = new GameObject("HideoutHouses").transform;
             housesRoot.SetParent(generated.transform, false);
-            for (int i = 0; i < houseCount; i++)
+            // Keep the landmark stair house alone on the shore and distribute the other four variants inland.
+            CreateLakesideStairHouse(housesRoot, null);
+            for (int i = 0; i < housePlanarPositions.Count; i++)
             {
-                Vector3 position = RandomMapPosition(24f);
-                CreateHouse(housesRoot, position, houseWallMaterial, houseRoofMaterial);
+                Vector3 position = housePlanarPositions[i];
+                GameObject prefab = GetDistributedArtRefHousePrefab(i);
+                if (prefab != null)
+                {
+                    CreateArtRefHouse(housesRoot, position, prefab,
+                        Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), "ArtRefMapHouse",
+                        Random.Range(0.92f, 1.08f));
+                }
+                else
+                {
+                    CreateHouse(housesRoot, position, houseWallMaterial, houseRoofMaterial);
+                }
             }
 
             // Scattered life orbs: each fully restores (100%) the animal's health.
+            // Life, ammo and weapon-crystal pickups share one spacing list so none of the
+            // three kinds spawns right next to another, regardless of type.
+            List<Vector3> pickupPositions = new List<Vector3>(lifePickupCount + rangedSupplyCount + weaponCrystalCount);
             Transform lifeRoot = new GameObject("LifePickups").transform;
             lifeRoot.SetParent(generated.transform, false);
             Vector3 playerShoreSpawn = GetShoreSpawnPosition();
@@ -278,10 +307,11 @@ namespace AnimalBattleRoyale
             {
                 Vector3 position = i switch
                 {
-                    0 => GetGroundPosition(playerShoreSpawn + pickupInward * 9f - pickupRight * 4f),
-                    1 => GetGroundPosition(playerShoreSpawn + pickupInward * 17f + pickupRight * 5f),
-                    _ => RandomMapPosition(9f)
+                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 9f - pickupRight * 4f)),
+                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 17f + pickupRight * 5f)),
+                    _ => RandomSpacedMapPosition(9f, pickupMinimumSpacing, pickupPositions)
                 };
+                pickupPositions.Add(position);
                 LifePickup.Create(position).transform.SetParent(lifeRoot, true);
             }
 
@@ -292,12 +322,28 @@ namespace AnimalBattleRoyale
                 RangedSupplyKind kind = RangedSupplyKind.NaturalAmmo;
                 Vector3 position = i switch
                 {
-                    0 => GetGroundPosition(playerShoreSpawn + pickupInward * 7f + pickupRight * 4f),
-                    1 => GetGroundPosition(playerShoreSpawn + pickupInward * 14f - pickupRight * 5f),
-                    2 => GetGroundPosition(playerShoreSpawn + pickupInward * 22f + pickupRight * 2f),
-                    _ => RandomMapPosition(12f)
+                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 7f + pickupRight * 4f)),
+                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 14f - pickupRight * 5f)),
+                    2 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 22f + pickupRight * 2f)),
+                    _ => RandomSpacedMapPosition(12f, pickupMinimumSpacing, pickupPositions)
                 };
+                pickupPositions.Add(position);
                 RangedAmmoPickup.Create(position, kind).transform.SetParent(rangedSuppliesRoot, true);
+            }
+
+            Transform weaponCrystalsRoot = new GameObject("WeaponUpgradeCrystals").transform;
+            weaponCrystalsRoot.SetParent(generated.transform, false);
+            for (int i = 0; i < weaponCrystalCount; i++)
+            {
+                Vector3 position = i switch
+                {
+                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 12f + pickupRight * 7f)),
+                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 19f - pickupRight * 6f)),
+                    2 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 28f + pickupRight * 3f)),
+                    _ => RandomSpacedMapPosition(13f, pickupMinimumSpacing, pickupPositions)
+                };
+                pickupPositions.Add(position);
+                WeaponUpgradeCrystal.Create(position).transform.SetParent(weaponCrystalsRoot, true);
             }
 
             Transform flowersRoot = new GameObject("FlowerPatches").transform;
@@ -441,12 +487,19 @@ namespace AnimalBattleRoyale
             for (int i = 0; i < 18; i++)
             {
                 float angle = i * Mathf.PI * 2f / 18f + Random.Range(-0.14f, 0.14f);
+                if (Mathf.Abs(Mathf.DeltaAngle(angle * Mathf.Rad2Deg, LakesideHouseAngleDegrees)) < 13f)
+                {
+                    continue;
+                }
                 float radius = lakeRadius * Random.Range(0.91f, 1.06f);
                 Vector3 localPosition = new Vector3(Mathf.Cos(angle) * radius, -0.05f, Mathf.Sin(angle) * radius);
                 if (i % 3 == 0)
                 {
-                    CreateLakePrimitive(lake.transform, PrimitiveType.Sphere, "ShoreRock", localPosition,
-                        new Vector3(Random.Range(0.8f, 1.45f), Random.Range(0.45f, 0.8f), Random.Range(0.75f, 1.35f)), rockMaterial);
+                    Vector3 worldPosition = lake.transform.TransformPoint(localPosition);
+                    worldPosition.y = Mathf.Max(CalculateGroundHeight(worldPosition.x, worldPosition.z), lakeSurfaceHeight - 0.12f);
+                    CreateArtRefRock(lake.transform, worldPosition, GetRandomArtRefRockPrefab(),
+                        new Vector3(Random.Range(0.48f, 0.78f), Random.Range(0.38f, 0.62f), Random.Range(0.48f, 0.82f)),
+                        "ShoreArtRefRock", 0.035f);
                 }
                 else
                 {
@@ -461,6 +514,8 @@ namespace AnimalBattleRoyale
                     }
                 }
             }
+
+            CreateHeroLakeRock(lake.transform);
 
             for (int i = 0; i < 14; i++)
             {
@@ -746,7 +801,7 @@ namespace AnimalBattleRoyale
             trunkCollider.height = 5.1f;
             trunkCollider.radius = 0.48f;
 
-            if (VineAnchor.RegisterExistingVines(treeVisual.transform) == 0 && Random.value < 0.72f)
+            if (VineAnchor.RegisterExistingVines(treeVisual.transform) == 0)
             {
                 VineAnchor.Create(treeVisual.transform,
                     new Vector3(Random.Range(-0.65f, 0.65f), Random.Range(5.2f, 6.4f), Random.Range(-0.45f, 0.45f)),
@@ -778,7 +833,10 @@ namespace AnimalBattleRoyale
             if (middleRenderers.Count == 0) middleRenderers.AddRange(nearRenderers);
             if (farRenderers.Count == 0) farRenderers.AddRange(middleRenderers);
 
-            LODGroup lodGroup = root.GetComponent<LODGroup>();
+            // Imported FBX prefabs already contain an LODGroup. Reuse it so each
+            // renderer belongs to only one group (trees use a separate wrapper root).
+            LODGroup lodGroup = visual.GetComponentInChildren<LODGroup>(true);
+            if (lodGroup == null) lodGroup = root.GetComponent<LODGroup>();
             if (lodGroup == null) lodGroup = root.AddComponent<LODGroup>();
             lodGroup.fadeMode = LODFadeMode.CrossFade;
             lodGroup.animateCrossFading = true;
@@ -1053,25 +1111,14 @@ namespace AnimalBattleRoyale
 
         private static void CreateRock(Transform parent, Vector3 position, Material material)
         {
-            if (cachedRockPrefab == null) cachedRockPrefab = Resources.Load<GameObject>("EnvironmentModels/JungleRock/JungleRock");
-            if (cachedMossyRockPrefab == null) cachedMossyRockPrefab = Resources.Load<GameObject>("EnvironmentModels/MossyRockHD/MossyRockHD");
-            bool useHighDetail = cachedMossyRockPrefab != null && Random.value < 0.58f;
-            GameObject rockPrefab = useHighDetail ? cachedMossyRockPrefab : cachedRockPrefab;
+            GameObject rockPrefab = GetRandomArtRefRockPrefab();
             if (rockPrefab != null)
             {
-                GameObject boulder = Object.Instantiate(rockPrefab, parent, false);
-                boulder.name = useHighDetail ? "HighDetailMossyRock" : "BlenderJungleRock";
-                boulder.transform.position = position;
-                boulder.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                float size = Random.Range(0.55f, 1.35f);
-                boulder.transform.localScale = new Vector3(
-                    size * Random.Range(0.85f, 1.2f), size * Random.Range(0.7f, 1.1f), size * Random.Range(0.85f, 1.2f));
-                if (useHighDetail) EnhanceImportedMaterials(boulder);
-                SetVisualOnGround(boulder, position.y, 0.1f);
-                BoxCollider rockCollider = boulder.AddComponent<BoxCollider>();
-                rockCollider.center = new Vector3(0f, 0.7f, 0f);
-                rockCollider.size = new Vector3(2.2f, 1.4f, 1.8f);
-                ConfigureVisualOptimization(boulder, 0.012f);
+                float size = Random.Range(0.58f, 1.42f);
+                CreateArtRefRock(parent, position, rockPrefab,
+                    new Vector3(size * Random.Range(0.82f, 1.18f), size * Random.Range(0.72f, 1.08f),
+                        size * Random.Range(0.82f, 1.18f)),
+                    "ArtRefJungleRock", 0.08f);
                 return;
             }
 
@@ -1083,6 +1130,147 @@ namespace AnimalBattleRoyale
             rock.transform.localScale = new Vector3(Random.Range(0.7f, 2f), Random.Range(0.5f, 1.25f), Random.Range(0.7f, 2f));
             rock.GetComponent<Renderer>().sharedMaterial = material;
             rock.isStatic = true;
+        }
+
+        private void CreateHeroLakeRock(Transform lake)
+        {
+            GameObject largestRock = GetLargestArtRefRockPrefab();
+            if (largestRock == null) return;
+
+            Vector2 planarPosition = GetHeroLakeRockPlanarPosition();
+            Vector3 position = new Vector3(planarPosition.x, 0f, planarPosition.y);
+            position.y = CalculateGroundHeight(position.x, position.z);
+            CreateArtRefRock(lake, position, largestRock, new Vector3(4.7f, 3.9f, 5.05f),
+                "LargeLakeLandmarkRock", 0.32f, false);
+        }
+
+        private static GameObject GetRandomArtRefRockPrefab()
+        {
+            EnsureArtRefRocksLoaded();
+            int availableCount = 0;
+            for (int i = 0; i < cachedArtRefRockPrefabs.Length; i++)
+            {
+                if (cachedArtRefRockPrefabs[i] != null) availableCount++;
+            }
+            if (availableCount == 0) return null;
+
+            int selection = Random.Range(0, availableCount);
+            for (int i = 0; i < cachedArtRefRockPrefabs.Length; i++)
+            {
+                if (cachedArtRefRockPrefabs[i] == null) continue;
+                if (selection-- == 0) return cachedArtRefRockPrefabs[i];
+            }
+            return null;
+        }
+
+        private static GameObject GetLargestArtRefRockPrefab()
+        {
+            EnsureArtRefRocksLoaded();
+            for (int i = cachedArtRefRockPrefabs.Length - 1; i >= 0; i--)
+            {
+                if (cachedArtRefRockPrefabs[i] != null) return cachedArtRefRockPrefabs[i];
+            }
+            return null;
+        }
+
+        private static void EnsureArtRefRocksLoaded()
+        {
+            if (artRefRocksLoaded) return;
+            artRefRocksLoaded = true;
+            for (int i = 0; i < cachedArtRefRockPrefabs.Length; i++)
+            {
+                cachedArtRefRockPrefabs[i] = Resources.Load<GameObject>(
+                    $"EnvironmentModels/ArtRefRocks/ArtRefRock{i + 1:00}");
+            }
+        }
+
+        private static GameObject CreateArtRefRock(Transform parent, Vector3 position, GameObject prefab,
+            Vector3 scale, string objectName, float embedDepth, bool allowTilt = true)
+        {
+            if (prefab == null) return null;
+            GameObject rock = Object.Instantiate(prefab, parent, false);
+            rock.name = objectName;
+            rock.transform.position = position;
+            rock.transform.rotation = Quaternion.Euler(
+                allowTilt ? Random.Range(-7f, 7f) : 0f,
+                Random.Range(0f, 360f),
+                allowTilt ? Random.Range(-7f, 7f) : 0f);
+            rock.transform.localScale = scale;
+            ApplyArtRefMaterial(rock, GetArtRefRockMaterial());
+            ConfigureArtRefRockLods(rock);
+            SetVisualOnGround(rock, position.y, embedDepth);
+            AddRockCollider(rock);
+            rock.isStatic = true;
+            return rock;
+        }
+
+        private static void ConfigureArtRefRockLods(GameObject rock)
+        {
+            if (rock == null) return;
+            foreach (Renderer renderer in rock.GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.shadowCastingMode = ShadowCastingMode.On;
+                renderer.receiveShadows = true;
+                foreach (Material rendererMaterial in renderer.sharedMaterials)
+                {
+                    if (rendererMaterial != null) rendererMaterial.enableInstancing = true;
+                }
+            }
+
+            LODGroup lodGroup = rock.GetComponentInChildren<LODGroup>(true);
+            if (lodGroup == null)
+            {
+                ConfigureArtRefLods(rock, rock, 0.28f, 0.105f, 0.014f, true);
+                return;
+            }
+
+            LOD[] lods = lodGroup.GetLODs();
+            if (lods.Length >= 3)
+            {
+                lods[0].screenRelativeTransitionHeight = 0.28f;
+                lods[1].screenRelativeTransitionHeight = 0.105f;
+                lods[2].screenRelativeTransitionHeight = 0.014f;
+                lodGroup.SetLODs(lods);
+            }
+            lodGroup.fadeMode = LODFadeMode.CrossFade;
+            lodGroup.animateCrossFading = true;
+            lodGroup.RecalculateBounds();
+        }
+
+        private static void AddRockCollider(GameObject rock)
+        {
+            Renderer[] renderers = rock.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0) return;
+
+            bool hasBounds = false;
+            Bounds localBounds = default;
+            foreach (Renderer renderer in renderers)
+            {
+                Bounds bounds = renderer.bounds;
+                for (int x = -1; x <= 1; x += 2)
+                {
+                    for (int y = -1; y <= 1; y += 2)
+                    {
+                        for (int z = -1; z <= 1; z += 2)
+                        {
+                            Vector3 worldCorner = bounds.center + Vector3.Scale(bounds.extents, new Vector3(x, y, z));
+                            Vector3 localCorner = rock.transform.InverseTransformPoint(worldCorner);
+                            if (!hasBounds)
+                            {
+                                localBounds = new Bounds(localCorner, Vector3.zero);
+                                hasBounds = true;
+                            }
+                            else localBounds.Encapsulate(localCorner);
+                        }
+                    }
+                }
+            }
+            if (!hasBounds) return;
+
+            BoxCollider collider = rock.AddComponent<BoxCollider>();
+            collider.center = localBounds.center;
+            collider.size = new Vector3(localBounds.size.x * 0.86f,
+                localBounds.size.y * 0.92f, localBounds.size.z * 0.86f);
         }
 
         private static GameObject cachedTunnelHolePrefab;
@@ -1128,48 +1316,33 @@ namespace AnimalBattleRoyale
 
         private static void CreateRockFormation(Transform parent, Vector3 position, Material material)
         {
-            GameObject stoneRuinPrefab = GetArtRefStoneRuinPrefab();
-            if (stoneRuinPrefab != null)
-            {
-                CreateArtRefStoneRuin(parent, position, stoneRuinPrefab);
-                return;
-            }
-
-            if (cachedRockPrefab == null) cachedRockPrefab = Resources.Load<GameObject>("EnvironmentModels/JungleRock/JungleRock");
-
             GameObject formation = new GameObject("ClimbableRockFormation");
             formation.transform.SetParent(parent, false);
             formation.transform.position = position;
             formation.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-            float formationWidth = Random.Range(1.55f, 2.35f);
-            formation.transform.localScale = new Vector3(
-                formationWidth,
-                formationWidth * Random.Range(0.82f, 1.08f),
-                formationWidth * Random.Range(0.82f, 1.18f));
             formation.isStatic = true;
 
-            if (cachedRockPrefab != null)
+            if (GetRandomArtRefRockPrefab() != null)
             {
-                // A stepped pile of real boulders keeps the formation climbable
-                // while reading as natural rock instead of stacked spheres.
-                int boulderCount = Random.Range(4, 6);
+                int boulderCount = Random.Range(5, 8);
                 for (int i = 0; i < boulderCount; i++)
                 {
                     float progress = i / (float)(boulderCount - 1);
                     float angle = Random.Range(0f, Mathf.PI * 2f);
-                    float spread = Mathf.Lerp(1.7f, 0.25f, progress);
-                    GameObject boulder = Object.Instantiate(cachedRockPrefab, formation.transform, false);
-                    boulder.name = "ClimbableBoulder";
+                    float spread = Mathf.Lerp(3.2f, 0.25f, progress);
+                    GameObject boulder = Object.Instantiate(GetRandomArtRefRockPrefab(), formation.transform, false);
+                    boulder.name = "ClimbableArtRefBoulder";
                     boulder.transform.localPosition = new Vector3(
-                        Mathf.Cos(angle) * spread, progress * 3.4f, Mathf.Sin(angle) * spread);
+                        Mathf.Cos(angle) * spread, progress * 2.15f, Mathf.Sin(angle) * spread);
                     boulder.transform.localRotation = Quaternion.Euler(
-                        Random.Range(-9f, 9f), Random.Range(0f, 360f), Random.Range(-9f, 9f));
-                    float size = Mathf.Lerp(2.8f, 1.5f, progress) * Random.Range(0.88f, 1.15f);
-                    boulder.transform.localScale = new Vector3(size, size * Random.Range(0.85f, 1.05f), size);
-                    BoxCollider boulderCollider = boulder.AddComponent<BoxCollider>();
-                    boulderCollider.center = new Vector3(0f, 0.7f, 0f);
-                    boulderCollider.size = new Vector3(2.2f, 1.4f, 1.8f);
-                    ConfigureVisualOptimization(boulder, 0.01f);
+                        Random.Range(-12f, 12f), Random.Range(0f, 360f), Random.Range(-12f, 12f));
+                    float size = Mathf.Lerp(2.25f, 1.15f, progress) * Random.Range(0.88f, 1.14f);
+                    boulder.transform.localScale = new Vector3(size * Random.Range(0.9f, 1.12f),
+                        size * Random.Range(0.82f, 1.05f), size * Random.Range(0.9f, 1.12f));
+                    ApplyArtRefMaterial(boulder, GetArtRefRockMaterial());
+                    ConfigureArtRefRockLods(boulder);
+                    AddRockCollider(boulder);
+                    boulder.isStatic = true;
                 }
                 return;
             }
@@ -1185,37 +1358,6 @@ namespace AnimalBattleRoyale
                 boulder.GetComponent<Renderer>().sharedMaterial = material;
                 boulder.isStatic = true;
             }
-        }
-
-        private static GameObject GetArtRefStoneRuinPrefab()
-        {
-            if (cachedArtRefStoneRuinPrefab == null)
-            {
-                cachedArtRefStoneRuinPrefab = Resources.Load<GameObject>(
-                    "EnvironmentModels/ArtRefEnvironment/ArtRefStoneRuin");
-            }
-            return cachedArtRefStoneRuinPrefab;
-        }
-
-        private static void CreateArtRefStoneRuin(Transform parent, Vector3 position, GameObject prefab)
-        {
-            GameObject ruin = Object.Instantiate(prefab, parent, false);
-            ruin.name = "ClimbableStoneRuin";
-            ruin.transform.position = position;
-            ruin.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-            ruin.transform.localScale = Vector3.one * Random.Range(0.88f, 1.18f);
-            ApplyArtRefMaterial(ruin, GetArtRefStoneMaterial());
-            ConfigureArtRefLods(ruin, ruin, 0.32f, 0.13f, 0.02f, true);
-            SetVisualOnGround(ruin, position.y, 0.12f);
-
-            for (int i = 0; i < 4; i++)
-            {
-                float height = 4.7f - i * 1.02f;
-                BoxCollider step = ruin.AddComponent<BoxCollider>();
-                step.center = new Vector3(-2.65f + i * 1.72f, height * 0.5f, 0f);
-                step.size = new Vector3(1.88f, height, 1.38f);
-            }
-            ruin.isStatic = true;
         }
 
         private static void CreateEagleMountain(Transform parent, Vector3 position, Material material)
@@ -1326,6 +1468,123 @@ namespace AnimalBattleRoyale
                 if (collider != null) Destroy(collider);
                 crown.isStatic = true;
             }
+        }
+
+        private void CreateLakesideStairHouse(Transform parent, ICollection<Vector3> occupiedPositions)
+        {
+            GameObject stairHouse = GetArtRefHousePrefab(4);
+            if (stairHouse == null) return;
+
+            Vector2 planarPosition = GetLakesideHousePlanarPosition();
+            Vector3 position = new Vector3(planarPosition.x, 0f, planarPosition.y);
+            Vector3 outward = new Vector3(planarPosition.x, 0f, planarPosition.y).normalized;
+            position.y = CalculateGroundHeight(position.x, position.z);
+            Quaternion facesLake = Quaternion.LookRotation(-outward, Vector3.up);
+            CreateArtRefHouse(parent, position, stairHouse, facesLake, "LakesideStairHouse", 1.04f);
+            occupiedPositions?.Add(position);
+        }
+
+        private static GameObject GetDistributedArtRefHousePrefab(int sequence)
+        {
+            EnsureArtRefHousesLoaded();
+            const int distributedVariantCount = 4;
+            int availableCount = 0;
+            for (int i = 0; i < distributedVariantCount; i++)
+            {
+                if (cachedArtRefHousePrefabs[i] != null) availableCount++;
+            }
+            if (availableCount == 0) return null;
+
+            int selection = sequence % availableCount;
+            for (int i = 0; i < distributedVariantCount; i++)
+            {
+                if (cachedArtRefHousePrefabs[i] == null) continue;
+                if (selection-- == 0) return cachedArtRefHousePrefabs[i];
+            }
+            return null;
+        }
+
+        private static GameObject GetArtRefHousePrefab(int index)
+        {
+            EnsureArtRefHousesLoaded();
+            return index >= 0 && index < cachedArtRefHousePrefabs.Length
+                ? cachedArtRefHousePrefabs[index]
+                : null;
+        }
+
+        private static void EnsureArtRefHousesLoaded()
+        {
+            if (artRefHousesLoaded) return;
+            artRefHousesLoaded = true;
+            for (int i = 0; i < cachedArtRefHousePrefabs.Length; i++)
+            {
+                cachedArtRefHousePrefabs[i] = Resources.Load<GameObject>(
+                    $"EnvironmentModels/ArtRefHouses/ArtRefHouse{i + 1:00}");
+            }
+        }
+
+        private static GameObject CreateArtRefHouse(Transform parent, Vector3 position, GameObject prefab,
+            Quaternion rotation, string objectName, float scale)
+        {
+            GameObject house = Object.Instantiate(prefab, parent, false);
+            house.name = objectName;
+            house.transform.position = position;
+            house.transform.rotation = rotation;
+            house.transform.localScale = Vector3.one * scale;
+            ApplyArtRefMaterial(house, GetArtRefHouseMaterial());
+            ConfigureArtRefHouseLods(house);
+            SetVisualOnGround(house, position.y, 0.035f);
+            AddArtRefHouseCollider(house);
+            foreach (Transform child in house.GetComponentsInChildren<Transform>(true))
+            {
+                child.gameObject.isStatic = true;
+            }
+            return house;
+        }
+
+        private static void ConfigureArtRefHouseLods(GameObject house)
+        {
+            LODGroup lodGroup = house.GetComponentInChildren<LODGroup>(true);
+            if (lodGroup == null)
+            {
+                ConfigureArtRefLods(house, house, 0.34f, 0.13f, 0.018f, true);
+                return;
+            }
+
+            foreach (Renderer renderer in house.GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.shadowCastingMode = ShadowCastingMode.On;
+                renderer.receiveShadows = true;
+            }
+            LOD[] lods = lodGroup.GetLODs();
+            if (lods.Length >= 3)
+            {
+                lods[0].screenRelativeTransitionHeight = 0.34f;
+                lods[1].screenRelativeTransitionHeight = 0.13f;
+                lods[2].screenRelativeTransitionHeight = 0.018f;
+                lodGroup.SetLODs(lods);
+            }
+            lodGroup.fadeMode = LODFadeMode.CrossFade;
+            lodGroup.animateCrossFading = true;
+            lodGroup.RecalculateBounds();
+        }
+
+        private static void AddArtRefHouseCollider(GameObject house)
+        {
+            MeshFilter collisionMesh = null;
+            foreach (MeshFilter filter in house.GetComponentsInChildren<MeshFilter>(true))
+            {
+                if (filter.sharedMesh == null) continue;
+                if (collisionMesh == null) collisionMesh = filter;
+                if (!filter.name.Contains("_LOD2")) continue;
+                collisionMesh = filter;
+                break;
+            }
+            if (collisionMesh == null || collisionMesh.GetComponent<Collider>() != null) return;
+
+            MeshCollider collider = collisionMesh.gameObject.AddComponent<MeshCollider>();
+            collider.sharedMesh = collisionMesh.sharedMesh;
+            collider.convex = false;
         }
 
         private static void CreateHouse(Transform parent, Vector3 position, Material wallMaterial, Material roofMaterial)
@@ -1473,15 +1732,39 @@ namespace AnimalBattleRoyale
 
             for (int i = 0; i < 4; i++)
             {
-                GameObject baseRock = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                baseRock.name = "CrystalBaseRock";
-                baseRock.transform.SetParent(cluster.transform, false);
                 float angle = i * Mathf.PI * 0.5f + Random.Range(-0.3f, 0.3f);
-                baseRock.transform.localPosition = new Vector3(Mathf.Cos(angle) * 0.72f, 0.16f, Mathf.Sin(angle) * 0.72f);
-                baseRock.transform.localScale = new Vector3(Random.Range(0.45f, 0.75f), Random.Range(0.2f, 0.38f), Random.Range(0.45f, 0.75f));
-                baseRock.GetComponent<Renderer>().sharedMaterial = rockMaterial;
-                Collider rockCollider = baseRock.GetComponent<Collider>();
-                if (rockCollider != null) Destroy(rockCollider);
+                GameObject rockPrefab = GetRandomArtRefRockPrefab();
+                if (rockPrefab != null)
+                {
+                    GameObject baseRock = Object.Instantiate(rockPrefab, cluster.transform, false);
+                    baseRock.name = "CrystalBaseArtRefRock";
+                    baseRock.transform.localPosition = new Vector3(
+                        Mathf.Cos(angle) * 0.72f, 0.02f, Mathf.Sin(angle) * 0.72f);
+                    baseRock.transform.localRotation = Quaternion.Euler(
+                        Random.Range(-8f, 8f), Random.Range(0f, 360f), Random.Range(-8f, 8f));
+                    float size = Random.Range(0.28f, 0.48f);
+                    baseRock.transform.localScale = new Vector3(size, size * Random.Range(0.62f, 0.88f), size);
+                    ApplyArtRefMaterial(baseRock, GetArtRefRockMaterial());
+                    ConfigureArtRefRockLods(baseRock);
+                    foreach (Collider rockCollider in baseRock.GetComponentsInChildren<Collider>(true))
+                    {
+                        if (rockCollider != null) Destroy(rockCollider);
+                    }
+                    baseRock.isStatic = true;
+                }
+                else
+                {
+                    GameObject baseRock = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    baseRock.name = "CrystalBaseRockFallback";
+                    baseRock.transform.SetParent(cluster.transform, false);
+                    baseRock.transform.localPosition = new Vector3(
+                        Mathf.Cos(angle) * 0.72f, 0.16f, Mathf.Sin(angle) * 0.72f);
+                    baseRock.transform.localScale = new Vector3(Random.Range(0.45f, 0.75f),
+                        Random.Range(0.2f, 0.38f), Random.Range(0.45f, 0.75f));
+                    baseRock.GetComponent<Renderer>().sharedMaterial = rockMaterial;
+                    Collider rockCollider = baseRock.GetComponent<Collider>();
+                    if (rockCollider != null) Destroy(rockCollider);
+                }
             }
 
             int count = Random.Range(3, 7);
@@ -1511,13 +1794,22 @@ namespace AnimalBattleRoyale
             landmark.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
             landmark.isStatic = true;
 
-            GameObject cliff = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            cliff.name = "WaterfallCliff";
-            cliff.transform.SetParent(landmark.transform, false);
-            cliff.transform.localPosition = new Vector3(0f, 5.2f, 0f);
-            cliff.transform.localScale = new Vector3(10f, 10f, 4.5f);
-            cliff.GetComponent<Renderer>().sharedMaterial = rockMaterial;
-            cliff.isStatic = true;
+            GameObject cliffPrefab = GetLargestArtRefRockPrefab();
+            if (cliffPrefab != null)
+            {
+                CreateArtRefRock(landmark.transform, position, cliffPrefab,
+                    new Vector3(5.2f, 4.6f, 2.35f), "WaterfallArtRefCliff", 0.2f);
+            }
+            else
+            {
+                GameObject cliff = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                cliff.name = "WaterfallCliffFallback";
+                cliff.transform.SetParent(landmark.transform, false);
+                cliff.transform.localPosition = new Vector3(0f, 5.2f, 0f);
+                cliff.transform.localScale = new Vector3(10f, 10f, 4.5f);
+                cliff.GetComponent<Renderer>().sharedMaterial = rockMaterial;
+                cliff.isStatic = true;
+            }
 
             GameObject water = GameObject.CreatePrimitive(PrimitiveType.Cube);
             water.name = "Waterfall";
@@ -1671,6 +1963,33 @@ namespace AnimalBattleRoyale
             }
         }
 
+        // Positions are picked before the ground mesh is built so CalculateGroundHeight
+        // can flatten the terrain under each tunnel entrance while the mesh is baked.
+        private void BuildAnthillPositions()
+        {
+            anthillPlanarPositions.Clear();
+            for (int i = 0; i < anthillCount; i++)
+                anthillPlanarPositions.Add(RandomSpacedMapPosition(15f, anthillMinimumSpacing, anthillPlanarPositions));
+        }
+
+        // Seeded with the landmark stair house's spot so the distributed houses keep
+        // their spacing from it, same as before; only the position math moved earlier.
+        private void BuildHousePositions()
+        {
+            housePlanarPositions.Clear();
+            Vector2 landmarkPlanar = GetLakesideHousePlanarPosition();
+            List<Vector3> occupied = new List<Vector3>(houseCount + 1)
+            {
+                new Vector3(landmarkPlanar.x, 0f, landmarkPlanar.y)
+            };
+            for (int i = 0; i < houseCount; i++)
+            {
+                Vector3 position = RandomSpacedMapPosition(lakeRadius + 12f, houseMinimumSpacing, occupied);
+                occupied.Add(position);
+                housePlanarPositions.Add(position);
+            }
+        }
+
         private Vector3 EvaluateTrailPosition(TrailRoute route, float progress)
         {
             progress = Mathf.Clamp01(progress);
@@ -1762,6 +2081,57 @@ namespace AnimalBattleRoyale
             return new Vector3(point.x, CalculateGroundHeight(point.x, point.y), point.y);
         }
 
+        // Shore-relative pickup spots are placed by fixed offsets and can land inside the
+        // lake; push them back out to dry ground along the same radial direction.
+        private Vector3 ClampAwayFromLake(Vector3 position)
+        {
+            float minDistance = lakeRadius + 4f;
+            Vector2 planar = new Vector2(position.x, position.z);
+            float distance = planar.magnitude;
+            if (distance >= minDistance) return position;
+            Vector2 direction = distance > 0.01f ? planar / distance : Vector2.right;
+            Vector2 safePoint = direction * minDistance;
+            return new Vector3(safePoint.x, position.y, safePoint.y);
+        }
+
+        private Vector3 RandomSpacedMapPosition(float centerClearRadius, float minimumSpacing,
+            IReadOnlyList<Vector3> existingPositions)
+        {
+            const int maximumAttempts = 96;
+            float requiredSpacingSqr = minimumSpacing * minimumSpacing;
+            Vector3 bestCandidate = RandomMapPosition(centerClearRadius);
+            float bestNearestDistanceSqr = NearestPlanarDistanceSqr(bestCandidate, existingPositions);
+            if (bestNearestDistanceSqr >= requiredSpacingSqr) return bestCandidate;
+
+            for (int attempt = 1; attempt < maximumAttempts; attempt++)
+            {
+                Vector3 candidate = RandomMapPosition(centerClearRadius);
+                float nearestDistanceSqr = NearestPlanarDistanceSqr(candidate, existingPositions);
+                if (nearestDistanceSqr >= requiredSpacingSqr) return candidate;
+                if (nearestDistanceSqr <= bestNearestDistanceSqr) continue;
+                bestCandidate = candidate;
+                bestNearestDistanceSqr = nearestDistanceSqr;
+            }
+
+            // Dense custom maps may not fit the requested spacing. In that case, use the
+            // best of the sampled positions rather than grouping entrances arbitrarily.
+            return bestCandidate;
+        }
+
+        private static float NearestPlanarDistanceSqr(Vector3 candidate, IReadOnlyList<Vector3> positions)
+        {
+            if (positions == null || positions.Count == 0) return float.PositiveInfinity;
+            float nearestDistanceSqr = float.PositiveInfinity;
+            for (int i = 0; i < positions.Count; i++)
+            {
+                float deltaX = candidate.x - positions[i].x;
+                float deltaZ = candidate.z - positions[i].z;
+                float distanceSqr = deltaX * deltaX + deltaZ * deltaZ;
+                if (distanceSqr < nearestDistanceSqr) nearestDistanceSqr = distanceSqr;
+            }
+            return nearestDistanceSqr;
+        }
+
         private bool IsNearTrail(Vector2 point, float clearance)
         {
             if (clearance <= 0f || trailRoutes.Count == 0) return false;
@@ -1807,7 +2177,81 @@ namespace AnimalBattleRoyale
             return position;
         }
 
+        private Vector2 GetLakesideHousePlanarPosition()
+        {
+            float angle = LakesideHouseAngleDegrees * Mathf.Deg2Rad;
+            return new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * (lakeRadius + LakesideHouseRadiusOffset);
+        }
+
+        private Vector2 GetHeroLakeRockPlanarPosition()
+        {
+            float angle = HeroLakeRockAngleDegrees * Mathf.Deg2Rad;
+            return new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * (lakeRadius + HeroLakeRockRadiusOffset);
+        }
+
         private float CalculateGroundHeight(float x, float z)
+        {
+            float height = CalculateUnmodifiedGroundHeight(x, z);
+
+            Vector2 houseCenter = GetLakesideHousePlanarPosition();
+            float houseHeight = CalculateUnmodifiedGroundHeight(houseCenter.x, houseCenter.y);
+            height = ApplyLandmarkPlateau(height, new Vector2(x, z), houseCenter, houseHeight,
+                HouseFlatInnerExtents, HouseFlatOuterExtents);
+
+            Vector2 rockCenter = GetHeroLakeRockPlanarPosition();
+            float rockHeight = CalculateUnmodifiedGroundHeight(rockCenter.x, rockCenter.y);
+            height = ApplyLandmarkPlateau(height, new Vector2(x, z), rockCenter, rockHeight,
+                new Vector2(6.8f, 5.6f), new Vector2(10.8f, 9.2f));
+
+            for (int i = 0; i < anthillPlanarPositions.Count; i++)
+            {
+                Vector2 anthillCenter = new Vector2(anthillPlanarPositions[i].x, anthillPlanarPositions[i].z);
+                float anthillHeight = CalculateUnmodifiedGroundHeight(anthillCenter.x, anthillCenter.y);
+                height = ApplyLandmarkPlateau(height, new Vector2(x, z), anthillCenter, anthillHeight,
+                    AnthillFlatInnerExtents, AnthillFlatOuterExtents);
+            }
+
+            for (int i = 0; i < housePlanarPositions.Count; i++)
+            {
+                Vector2 houseSpotCenter = new Vector2(housePlanarPositions[i].x, housePlanarPositions[i].z);
+                float houseSpotHeight = CalculateUnmodifiedGroundHeight(houseSpotCenter.x, houseSpotCenter.y);
+                height = ApplyLandmarkPlateau(height, new Vector2(x, z), houseSpotCenter, houseSpotHeight,
+                    HouseFlatInnerExtents, HouseFlatOuterExtents);
+            }
+
+            return height;
+        }
+
+        private static float ApplyLandmarkPlateau(float currentHeight, Vector2 position, Vector2 center,
+            float plateauHeight, Vector2 innerExtents, Vector2 outerExtents)
+        {
+            Vector2 delta = position - center;
+            float distance = delta.magnitude;
+            if (distance < 0.001f) return plateauHeight;
+
+            Vector2 outward = center.sqrMagnitude > 0.001f ? center.normalized : Vector2.up;
+            Vector2 tangent = new Vector2(-outward.y, outward.x);
+            Vector2 direction = delta / distance;
+            float tangentDirection = Vector2.Dot(direction, tangent);
+            float radialDirection = Vector2.Dot(direction, outward);
+            float innerRadius = EllipseRadius(tangentDirection, radialDirection, innerExtents);
+            if (distance <= innerRadius) return plateauHeight;
+
+            float outerRadius = EllipseRadius(tangentDirection, radialDirection, outerExtents);
+            if (distance >= outerRadius) return currentHeight;
+
+            float blend = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(innerRadius, outerRadius, distance));
+            return Mathf.Lerp(plateauHeight, currentHeight, blend);
+        }
+
+        private static float EllipseRadius(float directionX, float directionY, Vector2 extents)
+        {
+            float normalizedX = directionX / Mathf.Max(0.001f, extents.x);
+            float normalizedY = directionY / Mathf.Max(0.001f, extents.y);
+            return 1f / Mathf.Sqrt(normalizedX * normalizedX + normalizedY * normalizedY);
+        }
+
+        private float CalculateUnmodifiedGroundHeight(float x, float z)
         {
             // PerlinNoise loses precision and can return NaN when a randomized
             // 32-bit seed is multiplied directly into billion-scale coordinates.

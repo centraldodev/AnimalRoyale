@@ -9,7 +9,8 @@ namespace AnimalBattleRoyale
         private static Material cachedArtRefTreeMaterial;
         private static Material cachedArtRefBushMaterial;
         private static Material cachedArtRefBambooMaterial;
-        private static Material cachedArtRefStoneMaterial;
+        private static Material cachedArtRefRockMaterial;
+        private static Material cachedArtRefHouseMaterial;
 
         private static Material GetArtRefTreeMaterial()
         {
@@ -53,9 +54,66 @@ namespace AnimalBattleRoyale
             return GetArtRefEnvironmentMaterial(ref cachedArtRefBambooMaterial, "bamboo", "ArtRefBamboo_RuntimePBR", 0.68f, 0.14f);
         }
 
-        private static Material GetArtRefStoneMaterial()
+        private static Material GetArtRefRockMaterial()
         {
-            return GetArtRefEnvironmentMaterial(ref cachedArtRefStoneMaterial, "stone", "ArtRefStone_RuntimePBR", 0.82f, 0.2f);
+            if (cachedArtRefRockMaterial != null) return cachedArtRefRockMaterial;
+
+            Texture2D albedo = Resources.Load<Texture2D>("EnvironmentModels/ArtRefRocks/texture_diffuse");
+            if (albedo == null) return null;
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = "ArtRefRock_RuntimePBR",
+                color = Color.white,
+                enableInstancing = true
+            };
+            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", albedo);
+            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", albedo);
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", Color.white);
+
+            Texture2D normal = Resources.Load<Texture2D>("EnvironmentModels/ArtRefRocks/texture_normal");
+            if (normal != null && material.HasProperty("_BumpMap"))
+            {
+                material.SetTexture("_BumpMap", normal);
+                material.SetFloat("_BumpScale", 0.86f);
+                material.EnableKeyword("_NORMALMAP");
+            }
+
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.12f);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.12f);
+            cachedArtRefRockMaterial = material;
+            return cachedArtRefRockMaterial;
+        }
+
+        private static Material GetArtRefHouseMaterial()
+        {
+            if (cachedArtRefHouseMaterial != null) return cachedArtRefHouseMaterial;
+
+            Texture2D albedo = Resources.Load<Texture2D>("EnvironmentModels/ArtRefHouses/texture_diffuse");
+            if (albedo == null) return null;
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = "ArtRefHouse_RuntimePBR",
+                color = Color.white,
+                enableInstancing = true
+            };
+            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", albedo);
+            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", albedo);
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", Color.white);
+
+            Texture2D normal = Resources.Load<Texture2D>("EnvironmentModels/ArtRefHouses/texture_normal");
+            if (normal != null && material.HasProperty("_BumpMap"))
+            {
+                material.SetTexture("_BumpMap", normal);
+                material.SetFloat("_BumpScale", 0.76f);
+                material.EnableKeyword("_NORMALMAP");
+            }
+
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.17f);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.17f);
+            cachedArtRefHouseMaterial = material;
+            return cachedArtRefHouseMaterial;
         }
 
         private static Material GetArtRefEnvironmentMaterial(ref Material cachedMaterial, string texturePrefix,

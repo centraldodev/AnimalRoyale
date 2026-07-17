@@ -17,7 +17,8 @@ namespace AnimalBattleRoyale
         RangedAttack,
         MeleeAttack,
         Ability,
-        Consume
+        Consume,
+        SelectWeapon
     }
 
     public readonly struct NetworkSpawnDefinition
@@ -73,22 +74,29 @@ namespace AnimalBattleRoyale
         private string directAddress = "127.0.0.1";
         private string status = "OFFLINE";
         private string visibleJoinCode = string.Empty;
-        private GUIStyle titleStyle;
-        private GUIStyle textStyle;
-        private GUIStyle buttonStyle;
-        private GUIStyle fieldStyle;
 
         public bool IsConnected => connected && networkManager != null && networkManager.IsListening;
         public bool IsHost => IsConnected && networkManager.IsHost;
         public bool IsClientOnly => IsConnected && networkManager.IsClient && !networkManager.IsHost;
         public bool MatchStarted => matchStarted;
         public bool UsesRemoteAuthority => matchStarted && IsClientOnly;
+        public bool IsBusy => busy;
         public int ParticipantTarget => TargetParticipants;
         public int HumanPlayerCount => session != null ? session.PlayerCount
             : networkManager != null && networkManager.IsListening ? networkManager.ConnectedClientsIds.Count : 1;
         public int PlannedBotCount => Mathf.Max(0, TargetParticipants - HumanPlayerCount);
         public string Status => status;
         public string JoinCode => visibleJoinCode;
+        public string JoinCodeInput
+        {
+            get => joinCodeInput;
+            set => joinCodeInput = value ?? string.Empty;
+        }
+        public string DirectAddress
+        {
+            get => directAddress;
+            set => directAddress = value ?? string.Empty;
+        }
 
         private void Awake()
         {
@@ -194,7 +202,7 @@ namespace AnimalBattleRoyale
             localFighter = null;
         }
 
-        private async void CreateRelaySession()
+        public async void CreateRelaySession()
         {
             if (busy || IsConnected) return;
             if (string.IsNullOrWhiteSpace(Application.cloudProjectId))
@@ -234,7 +242,7 @@ namespace AnimalBattleRoyale
             }
         }
 
-        private async void JoinRelaySession()
+        public async void JoinRelaySession()
         {
             if (busy || IsConnected) return;
             if (string.IsNullOrWhiteSpace(Application.cloudProjectId))
@@ -289,7 +297,7 @@ namespace AnimalBattleRoyale
             }
         }
 
-        private void StartLocalHost()
+        public void StartLocalHost()
         {
             if (busy || IsConnected) return;
             transport.SetConnectionData("127.0.0.1", LocalPort, "0.0.0.0");
@@ -307,7 +315,7 @@ namespace AnimalBattleRoyale
             Debug.Log($"[Multiplayer] Host local iniciado na porta {LocalPort}.");
         }
 
-        private void StartLocalClient()
+        public void StartLocalClient()
         {
             if (busy || IsConnected) return;
             string address = string.IsNullOrWhiteSpace(directAddress) ? "127.0.0.1" : directAddress.Trim();
@@ -644,6 +652,9 @@ namespace AnimalBattleRoyale
                 writer.WriteValueSafe(fighter.LivesRemaining);
                 writer.WriteValueSafe(fighter.RangedAmmo);
                 writer.WriteValueSafe(fighter.RangedMagazineAmmo);
+                writer.WriteValueSafe(fighter.WeaponLevel);
+                writer.WriteValueSafe(fighter.WeaponCrystalProgress);
+                writer.WriteValueSafe(fighter.SelectedWeaponSlot);
                 writer.WriteValueSafe(fighter.IsEliminated);
             }
 
@@ -668,12 +679,15 @@ namespace AnimalBattleRoyale
                 reader.ReadValueSafe(out int lives);
                 reader.ReadValueSafe(out int ammo);
                 reader.ReadValueSafe(out int magazineAmmo);
+                reader.ReadValueSafe(out int weaponLevel);
+                reader.ReadValueSafe(out int crystalProgress);
+                reader.ReadValueSafe(out int selectedWeapon);
                 reader.ReadValueSafe(out bool eliminated);
                 if (!entities.TryGetValue(entityId, out ThirdPersonAnimalController fighter) || fighter == null) continue;
                 bool isLocal = fighter == localFighter;
                 bool hostRespawnedLocalPlayer = isLocal && lives < fighter.LivesRemaining && !eliminated;
-                fighter.ApplyNetworkSnapshot(position, rotation, health, lives, ammo, magazineAmmo, eliminated,
-                    !isLocal || hostRespawnedLocalPlayer);
+                fighter.ApplyNetworkSnapshot(position, rotation, health, lives, ammo, magazineAmmo,
+                    weaponLevel, crystalProgress, selectedWeapon, eliminated, !isLocal || hostRespawnedLocalPlayer);
             }
             BattleRoyaleManager.Instance?.RefreshReplicatedState();
         }
@@ -687,66 +701,6 @@ namespace AnimalBattleRoyale
             if (!entityOwners.TryGetValue(entityId, out ulong ownerId) || ownerId != sender) return;
             if (!entities.TryGetValue(entityId, out ThirdPersonAnimalController fighter) || fighter == null) return;
             fighter.ExecuteNetworkAction((OnlineActionType)actionValue, direction);
-        }
-
-        private void OnGUI()
-        {
-            if (bootstrap == null || bootstrap.MatchStarted) return;
-            EnsureStyles();
-            float scale = Mathf.Clamp(Mathf.Min(Screen.width / 1280f, Screen.height / 720f), 0.72f, 1.18f);
-            float width = Screen.width / scale;
-            float height = Screen.height / scale;
-            Matrix4x4 previous = GUI.matrix;
-            GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
-
-            Rect panel = new Rect(20f, height - 144f, 312f, 124f);
-            RuntimeGuiTheme.DrawPanel(panel, new Color(0.012f, 0.045f, 0.04f, 0.97f),
-                IsConnected ? new Color(0.2f, 1f, 0.48f, 1f) : new Color(0.36f, 0.64f, 0.48f, 1f), 1f);
-            GUI.Label(new Rect(panel.x + 10f, panel.y + 5f, panel.width - 20f, 20f), "MULTIPLAYER — 10 PARTICIPANTES", titleStyle);
-
-            if (IsConnected)
-            {
-                string role = IsHost ? "HOST" : "CLIENTE";
-                GUI.Label(new Rect(panel.x + 10f, panel.y + 30f, panel.width - 20f, 24f),
-                    $"{role}  •  HUMANOS {HumanPlayerCount}/{TargetParticipants}  •  BOTS {Mathf.Max(0, TargetParticipants - HumanPlayerCount)}", textStyle);
-                GUI.Label(new Rect(panel.x + 10f, panel.y + 56f, panel.width - 20f, 24f),
-                    string.IsNullOrEmpty(visibleJoinCode) ? status : $"CÓDIGO: {visibleJoinCode}", textStyle);
-                GUI.Label(new Rect(panel.x + 10f, panel.y + 84f, panel.width - 20f, 29f), status, textStyle);
-            }
-            else
-            {
-                Rect createButton = new Rect(panel.x + 10f, panel.y + 30f, 140f, 28f);
-                DrawButton(createButton, busy ? "AGUARDE..." : "CRIAR ONLINE", CreateRelaySession);
-                joinCodeInput = GUI.TextField(new Rect(panel.x + 158f, panel.y + 30f, 62f, 28f), joinCodeInput, 8, fieldStyle).ToUpperInvariant();
-                DrawButton(new Rect(panel.x + 226f, panel.y + 30f, 76f, 28f), "ENTRAR", JoinRelaySession);
-
-                DrawButton(new Rect(panel.x + 10f, panel.y + 65f, 140f, 28f), "HOST LOCAL", StartLocalHost);
-                directAddress = GUI.TextField(new Rect(panel.x + 158f, panel.y + 65f, 96f, 28f), directAddress, 32, fieldStyle);
-                DrawButton(new Rect(panel.x + 260f, panel.y + 65f, 42f, 28f), "LAN", StartLocalClient);
-                GUI.Label(new Rect(panel.x + 10f, panel.y + 96f, panel.width - 20f, 20f), status, textStyle);
-            }
-
-            GUI.matrix = previous;
-        }
-
-        private void DrawButton(Rect rect, string label, Action action)
-        {
-            bool hovered = rect.Contains(Event.current.mousePosition);
-            RuntimeGuiTheme.DrawPanel(rect,
-                hovered ? new Color(0.15f, 0.52f, 0.31f, 1f) : new Color(0.08f, 0.28f, 0.2f, 1f),
-                hovered ? new Color(0.52f, 1f, 0.68f, 1f) : new Color(0.27f, 0.72f, 0.48f, 1f), 1f, false);
-            GUI.Label(rect, label, buttonStyle);
-            if (GUI.Button(rect, GUIContent.none, GUIStyle.none)) action?.Invoke();
-        }
-
-        private void EnsureStyles()
-        {
-            if (titleStyle != null) return;
-            RuntimeGuiTheme.Ensure();
-            titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 11, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(0.72f, 1f, 0.8f) } };
-            textStyle = new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Clip, normal = { textColor = Color.white } };
-            buttonStyle = new GUIStyle(textStyle) { fontSize = 10 };
-            fieldStyle = new GUIStyle(GUI.skin.textField) { fontSize = 11, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white, background = Texture2D.grayTexture } };
         }
 
         private static string ShortError(Exception exception)

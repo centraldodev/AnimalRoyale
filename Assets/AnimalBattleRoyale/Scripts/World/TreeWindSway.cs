@@ -8,12 +8,14 @@ namespace AnimalBattleRoyale
     {
         private static readonly List<TreeWindSway> activeTrees = new List<TreeWindSway>();
         private Quaternion restingRotation;
+        private Vector3 restingPosition;
         private float phase;
         private bool isSwaying;
 
         private void Awake()
         {
             restingRotation = transform.localRotation;
+            restingPosition = transform.localPosition;
             phase = Random.value * Mathf.PI * 2f;
         }
 
@@ -41,14 +43,27 @@ namespace AnimalBattleRoyale
             bool closeEnough = viewer == null || (viewer.position - transform.position).sqrMagnitude <= 72f * 72f;
             if (!closeEnough)
             {
-                if (isSwaying) transform.localRotation = restingRotation;
+                if (isSwaying)
+                {
+                    transform.localPosition = restingPosition;
+                    transform.localRotation = restingRotation;
+                }
                 isSwaying = false;
                 return;
             }
 
             isSwaying = true;
-            float gust = Mathf.Sin(time * 0.78f + phase) * 1.7f + Mathf.Sin(time * 1.63f + phase) * 0.65f;
-            transform.localRotation = restingRotation * Quaternion.Euler(gust, 0f, gust * 0.55f);
+            float sideSway = Mathf.Sin(time * 0.78f + phase) * 1.65f
+                             + Mathf.Sin(time * 1.63f + phase * 0.73f) * 0.55f;
+            float depthSway = Mathf.Sin(time * 0.61f + phase * 1.31f) * 0.9f;
+
+            // Apply the wind in the parent/map horizontal axes before the FBX rest rotation.
+            // Imported variants can have different internal axes; post-multiplying the sway made
+            // some of them appear to bob vertically instead of bending sideways.
+            Quaternion horizontalSway = Quaternion.AngleAxis(sideSway, Vector3.forward)
+                                         * Quaternion.AngleAxis(depthSway, Vector3.right);
+            transform.localPosition = restingPosition;
+            transform.localRotation = horizontalSway * restingRotation;
         }
     }
 }

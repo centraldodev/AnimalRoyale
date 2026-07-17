@@ -115,6 +115,12 @@ namespace AnimalBattleRoyale
             if (animator != null) animator.speed = 0f;
         }
 
+        public void Unfreeze()
+        {
+            frozen = false;
+            if (animator != null) animator.speed = 1f;
+        }
+
         private void Update()
         {
             if (frozen) return;

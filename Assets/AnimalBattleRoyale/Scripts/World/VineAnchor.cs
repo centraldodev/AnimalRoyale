@@ -9,9 +9,22 @@ namespace AnimalBattleRoyale
         public const float GroundUseRange = 10f;
         public const float ChainUseRange = 12f;
         private const int IndicatorSegments = 24;
+        private const float MaximumSwingAngle = 32f;
+        private const float SwingSpring = 24f;
+        private const float SwingDamping = 3.1f;
         private static readonly List<VineAnchor> anchors = new List<VineAnchor>();
         private static Material sharedIndicatorMaterial;
         private LineRenderer gripIndicator;
+        private Transform swingPivot;
+        private Quaternion restLocalRotation = Quaternion.identity;
+        private Vector2 swingAngles;
+        private Vector2 swingAngularVelocity;
+        private Vector3 previousAnchorPosition;
+        private Vector3 swingVelocity;
+        private int lastDrivenFrame = -1;
+        private bool swingPositionInitialized;
+
+        public Vector3 SwingVelocity => swingVelocity;
 
         private void OnEnable()
         {
@@ -22,6 +35,20 @@ namespace AnimalBattleRoyale
         {
             anchors.Remove(this);
             if (gripIndicator != null) gripIndicator.enabled = false;
+        }
+
+        private void LateUpdate()
+        {
+            if (swingPivot == null || lastDrivenFrame == Time.frameCount) return;
+            SimulateSwing(Vector3.zero, Time.deltaTime);
+        }
+
+        /// <summary>Pushes the bottom of the vine toward the requested world direction.</summary>
+        public void DriveSwing(Vector3 worldDirection, float deltaTime)
+        {
+            if (swingPivot == null) return;
+            lastDrivenFrame = Time.frameCount;
+            SimulateSwing(worldDirection, deltaTime);
         }
 
         internal static void TickIndicators(ThirdPersonAnimalController player, Camera camera, float time)
@@ -111,23 +138,81 @@ namespace AnimalBattleRoyale
 
         public static VineAnchor Create(Transform tree, Vector3 localStart, Vector3 localEnd, Material material)
         {
-            GameObject anchor = new GameObject("VineAnchor");
-            anchor.transform.SetParent(tree, false);
-            anchor.transform.localPosition = localEnd;
-            anchor.AddComponent<VineAnchor>();
-
             Vector3 direction = localEnd - localStart;
+            float length = direction.magnitude;
+            if (tree == null || length <= 0.01f) return null;
+
+            GameObject pivot = new GameObject("VineSwingPivot");
+            pivot.transform.SetParent(tree, false);
+            pivot.transform.localPosition = localStart;
+            pivot.transform.localRotation = Quaternion.FromToRotation(Vector3.down, direction.normalized);
+
+            GameObject anchor = new GameObject("VineAnchor");
+            anchor.transform.SetParent(pivot.transform, false);
+            anchor.transform.localPosition = Vector3.down * length;
+            VineAnchor vineAnchor = anchor.AddComponent<VineAnchor>();
+            vineAnchor.ConfigureSwing(pivot.transform);
+
             GameObject vine = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             vine.name = "ClimbableVine";
-            vine.transform.SetParent(tree, false);
-            vine.transform.localPosition = (localStart + localEnd) * 0.5f;
-            vine.transform.localScale = new Vector3(0.07f, direction.magnitude * 0.5f, 0.07f);
-            vine.transform.up = direction.normalized;
+            vine.transform.SetParent(pivot.transform, false);
+            vine.transform.localPosition = Vector3.down * (length * 0.5f);
+            vine.transform.localScale = new Vector3(0.07f, length * 0.5f, 0.07f);
             vine.GetComponent<Renderer>().sharedMaterial = material;
             Collider collider = vine.GetComponent<Collider>();
             if (collider != null) collider.enabled = false;
-            vine.isStatic = true;
-            return anchor.GetComponent<VineAnchor>();
+            return vineAnchor;
+        }
+
+        private void ConfigureSwing(Transform pivot)
+        {
+            swingPivot = pivot;
+            restLocalRotation = pivot != null ? pivot.localRotation : Quaternion.identity;
+            previousAnchorPosition = transform.position;
+            swingPositionInitialized = true;
+        }
+
+        private void SimulateSwing(Vector3 worldDirection, float deltaTime)
+        {
+            float step = Mathf.Clamp(deltaTime, 0f, 0.05f);
+            if (step <= 0f || swingPivot == null) return;
+
+            Vector3 localDirection = worldDirection;
+            if (swingPivot.parent != null)
+                localDirection = swingPivot.parent.InverseTransformDirection(worldDirection);
+            localDirection = Quaternion.Inverse(restLocalRotation) * localDirection;
+            localDirection.y = 0f;
+            localDirection = Vector3.ClampMagnitude(localDirection, 1f);
+
+            Vector2 targetAngles = new Vector2(-localDirection.z, localDirection.x) * MaximumSwingAngle;
+            Vector2 acceleration = (targetAngles - swingAngles) * SwingSpring;
+            swingAngularVelocity += acceleration * step;
+            swingAngularVelocity *= Mathf.Exp(-SwingDamping * step);
+            swingAngles += swingAngularVelocity * step;
+
+            if (swingAngles.magnitude > MaximumSwingAngle)
+            {
+                swingAngles = swingAngles.normalized * MaximumSwingAngle;
+                if (Vector2.Dot(swingAngularVelocity, swingAngles) > 0f)
+                    swingAngularVelocity *= 0.45f;
+            }
+
+            if (localDirection.sqrMagnitude < 0.0001f
+                && swingAngles.sqrMagnitude < 0.0004f
+                && swingAngularVelocity.sqrMagnitude < 0.0025f)
+            {
+                swingAngles = Vector2.zero;
+                swingAngularVelocity = Vector2.zero;
+            }
+
+            swingPivot.localRotation = restLocalRotation
+                                       * Quaternion.Euler(swingAngles.x, 0f, swingAngles.y);
+            Vector3 currentPosition = transform.position;
+            if (swingPositionInitialized)
+                swingVelocity = (currentPosition - previousAnchorPosition) / step;
+            else
+                swingPositionInitialized = true;
+            previousAnchorPosition = currentPosition;
         }
 
         public static int RegisterExistingVines(Transform treeVisual)

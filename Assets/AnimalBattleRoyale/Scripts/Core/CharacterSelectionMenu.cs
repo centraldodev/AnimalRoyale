@@ -1,25 +1,24 @@
+using System;
 using UnityEngine;
 
 namespace AnimalBattleRoyale
 {
     public sealed class CharacterSelectionMenu : MonoBehaviour
     {
-        private static readonly Rect FrontPortraitUv = new Rect(0f, 0.12f, 0.36f, 0.76f);
-
         private GameBootstrap bootstrap;
         private AnimalType selected;
         private GUIStyle logoStyle;
         private GUIStyle titleStyle;
         private GUIStyle subtitleStyle;
-        private GUIStyle textStyle;
         private GUIStyle selectedStyle;
         private GUIStyle buttonStyle;
         private GUIStyle playButtonStyle;
         private GUIStyle cardTitleStyle;
-        private GUIStyle statStyle;
-        private GUIStyle statValueStyle;
         private GUIStyle footerStyle;
         private GUIStyle roomStyle;
+        private GUIStyle onlineTitleStyle;
+        private GUIStyle onlineButtonStyle;
+        private GUIStyle onlineFieldStyle;
         private readonly Texture2D[] portraitArt = new Texture2D[AnimalRoster.Count];
         private readonly RenderTexture[] fallbackArt = new RenderTexture[AnimalRoster.Count];
 
@@ -68,7 +67,7 @@ namespace AnimalBattleRoyale
             float contentX = (viewWidth - contentWidth) * 0.5f;
             const float gap = 14f;
             const float cardY = 124f;
-            float cardHeight = Mathf.Clamp(viewHeight - 310f, 400f, 560f);
+            float cardHeight = Mathf.Clamp(viewHeight * 0.42f, 300f, 360f);
             float cardWidth = (contentWidth - gap * (AnimalRoster.Count - 1f)) / AnimalRoster.Count;
 
             for (int i = 0; i < AnimalRoster.Count; i++)
@@ -137,98 +136,40 @@ namespace AnimalBattleRoyale
             float lift = hovered ? 6f : 0f;
             Rect card = new Rect(baseRect.x - lift * 0.35f, baseRect.y - lift, baseRect.width + lift * 0.7f, baseRect.height + lift);
 
-            if (isSelected)
-            {
-                RuntimeGuiTheme.DrawPanel(new Rect(card.x - 4f, card.y - 4f, card.width + 8f, card.height + 8f),
-                    new Color(0.08f, 0.34f, 0.17f, 0.42f), new Color(0.18f, 1f, 0.42f, 0.88f), 2f);
-            }
+            float diameter = Mathf.Min(card.width - 20f, card.height * 0.66f);
+            Rect circle = new Rect(card.center.x - diameter * 0.5f, card.y + 6f, diameter, diameter);
 
-            DrawCartoonPanel(card,
-                hovered ? new Color(0.018f, 0.075f, 0.06f, 0.98f) : new Color(0.012f, 0.046f, 0.04f, 0.96f),
-                isSelected ? new Color(0.2f, 1f, 0.45f, 1f) : hovered ? accent : new Color(accent.r, accent.g, accent.b, 0.68f),
-                isSelected || hovered ? 2f : 1f);
+            Color ringColor = isSelected
+                ? new Color(0.2f, 1f, 0.45f, 1f)
+                : hovered
+                    ? accent
+                    : new Color(accent.r, accent.g, accent.b, 0.55f);
 
-            RuntimeGuiTheme.DrawRoundedRect(new Rect(card.x + 8f, card.y + 8f, card.width - 16f, 4f), accent);
+            RuntimeGuiTheme.DrawCircle(new Rect(circle.x + 2f, circle.y + 4f, circle.width, circle.height),
+                new Color(0f, 0f, 0f, 0.32f));
+            RuntimeGuiTheme.DrawCircle(circle, ringColor, true);
+            Rect inner = new Rect(circle.x + 6f, circle.y + 6f, circle.width - 12f, circle.height - 12f);
+            RuntimeGuiTheme.DrawCircle(inner, new Color(0.94f, 0.925f, 0.89f, 1f));
+            DrawFrontPortrait(index, inner);
 
-            float portraitHeight = card.height * 0.48f;
-            Rect portrait = new Rect(card.x + 10f, card.y + 16f, card.width - 20f, portraitHeight);
-            RuntimeGuiTheme.DrawPanel(portrait, new Color(0.94f, 0.925f, 0.89f, 1f),
-                new Color(accent.r, accent.g, accent.b, hovered || isSelected ? 0.95f : 0.48f), 1f, false);
-            DrawFrontPortrait(index, portrait);
-
-            if (isSelected)
-            {
-                Rect selectedPill = new Rect(card.xMax - 116f, card.y + 22f, 101f, 25f);
-                RuntimeGuiTheme.DrawPanel(selectedPill, new Color(0.08f, 0.52f, 0.23f, 0.98f),
-                    new Color(0.35f, 1f, 0.5f, 1f), 1f, false);
-                GUI.Label(selectedPill, "SELECIONADO  ✓", selectedStyle);
-            }
-
-            float infoY = portrait.yMax + 7f;
-            GUI.Label(new Rect(card.x + 12f, infoY, card.width - 24f, 28f), stats.DisplayName.ToUpperInvariant(), cardTitleStyle);
-            GUI.Label(new Rect(card.x + 12f, infoY + 27f, card.width - 24f, 27f), GetAbilitySummary(type), textStyle);
-
-            float metricsY = infoY + 58f;
-            DrawMetric(new Rect(card.x + 14f, metricsY, card.width - 28f, 22f), "VIDA", stats.MaxHealth / 100f,
-                $"{stats.MaxHealth:0}", new Color(0.16f, 0.86f, 0.36f));
-            DrawMetric(new Rect(card.x + 14f, metricsY + 28f, card.width - 28f, 22f), "DANO", stats.AttackDamage / 25f,
-                $"{stats.AttackDamage:0}", new Color(1f, 0.52f, 0.08f));
-            DrawMetric(new Rect(card.x + 14f, metricsY + 56f, card.width - 28f, 22f), "VELOCIDADE", stats.SprintSpeed / 10f,
-                $"{stats.SprintSpeed:0.0}", new Color(0.08f, 0.66f, 1f));
-
-            Rect abilityRow = new Rect(card.x + 14f, card.yMax - 48f, card.width - 28f, 34f);
-            RuntimeGuiTheme.DrawRoundedRect(abilityRow, new Color(0.005f, 0.025f, 0.02f, 0.86f));
-            GUI.Label(new Rect(abilityRow.x + 8f, abilityRow.y, abilityRow.width * 0.38f, abilityRow.height), "HABILIDADE", statStyle);
-            GUI.Label(new Rect(abilityRow.x + abilityRow.width * 0.34f, abilityRow.y, abilityRow.width * 0.63f - 8f, abilityRow.height),
-                stats.AbilityNames[0], statValueStyle);
-
-            if (hovered && !isSelected)
-            {
-                GUI.Label(new Rect(card.x + 14f, card.yMax - 76f, card.width - 28f, 20f), "CLIQUE PARA SELECIONAR", selectedStyle);
-            }
+            GUI.Label(new Rect(card.x, circle.yMax + 10f, card.width, 32f), stats.DisplayName.ToUpperInvariant(), cardTitleStyle);
 
             if (GUI.Button(card, GUIContent.none, GUIStyle.none)) selected = type;
         }
 
-        private void DrawFrontPortrait(int index, Rect portrait)
+        private void DrawFrontPortrait(int index, Rect inner)
         {
             Texture2D texture = portraitArt[index];
-            if (texture == null)
-            {
-                if (fallbackArt[index] != null)
-                {
-                    GUI.DrawTexture(new Rect(portrait.x + 5f, portrait.y + 5f, portrait.width - 10f, portrait.height - 10f),
-                        fallbackArt[index], ScaleMode.ScaleToFit, true);
-                }
-                return;
-            }
-
-            float sourceAspect = texture.width * FrontPortraitUv.width / (texture.height * FrontPortraitUv.height);
-            float availableHeight = portrait.height - 8f;
-            float drawWidth = availableHeight * sourceAspect;
-            float maxWidth = portrait.width - 8f;
-            if (drawWidth > maxWidth)
-            {
-                drawWidth = maxWidth;
-                availableHeight = drawWidth / sourceAspect;
-            }
-
-            Rect drawRect = new Rect(portrait.center.x - drawWidth * 0.5f, portrait.center.y - availableHeight * 0.5f,
-                drawWidth, availableHeight);
-            GUI.DrawTextureWithTexCoords(drawRect, texture, FrontPortraitUv, true);
+            Texture source = texture != null ? texture : fallbackArt[index];
+            if (source == null) return;
+            Rect drawRect = new Rect(inner.x + 5f, inner.y + 5f, inner.width - 10f, inner.height - 10f);
+            GUI.DrawTexture(drawRect, source, ScaleMode.ScaleToFit, true);
         }
 
         private void DrawFooter(float contentX, float contentWidth, float requestedY, float viewHeight)
         {
-            float contractWidth = Mathf.Min(690f, contentWidth - 80f);
-            float contractY = Mathf.Min(requestedY, viewHeight - 128f);
-            Rect contract = new Rect(contentX + contentWidth * 0.5f - contractWidth * 0.5f, contractY, contractWidth, 36f);
-            DrawCartoonPanel(contract, new Color(0.025f, 0.07f, 0.06f, 0.96f), new Color(0.35f, 0.66f, 0.48f, 1f), 1f);
-            GUI.Label(contract,
-                $"CONTRATO: {ForestProgression.DailyContract}   •   MEMÓRIAS {ForestProgression.LoreCount}/12   •   CONQUISTAS {ForestProgression.AchievementCount}/2",
-                footerStyle);
-
-            Rect playButton = new Rect(contentX + contentWidth * 0.5f - 210f, contract.yMax + 10f, 420f, 58f);
+            float playButtonY = Mathf.Min(requestedY, viewHeight - 226f);
+            Rect playButton = new Rect(contentX + contentWidth * 0.5f - 210f, playButtonY, 420f, 58f);
             bool hovered = playButton.Contains(Event.current.mousePosition);
             DrawCartoonPanel(playButton,
                 hovered ? new Color(1f, 0.63f, 0.05f, 1f) : new Color(0.94f, 0.47f, 0.025f, 1f),
@@ -236,21 +177,71 @@ namespace AnimalBattleRoyale
                 hovered ? 3f : 2f);
             GUI.Label(playButton, "INICIAR PARTIDA", playButtonStyle);
             if (GUI.Button(playButton, GUIContent.none, GUIStyle.none)) StartMatch();
+
+            DrawOnlinePanel(contentX, contentWidth, playButton.yMax + 16f);
+        }
+
+        private void DrawOnlinePanel(float contentX, float contentWidth, float y)
+        {
+            OnlineMultiplayerManager online = OnlineMultiplayerManager.Instance;
+            if (online == null) return;
+
+            bool connected = online.IsConnected;
+            float panelWidth = Mathf.Min(560f, contentWidth - 80f);
+            float panelHeight = connected ? 92f : 134f;
+            Rect panel = new Rect(contentX + contentWidth * 0.5f - panelWidth * 0.5f, y, panelWidth, panelHeight);
+
+            RuntimeGuiTheme.DrawPanel(new Rect(panel.x + 3f, panel.y + 4f, panel.width, panel.height),
+                new Color(0f, 0f, 0f, 0.3f), new Color(0f, 0f, 0f, 0f), 0f, false);
+            DrawCartoonPanel(panel, new Color(0.014f, 0.05f, 0.043f, 0.97f),
+                connected ? new Color(0.22f, 1f, 0.5f, 0.95f) : new Color(0.32f, 0.6f, 0.46f, 0.9f), 1f);
+            RuntimeGuiTheme.DrawRoundedRect(new Rect(panel.x + panel.width * 0.5f - 78f, panel.y - 11f, 156f, 22f),
+                new Color(0.014f, 0.05f, 0.043f, 0.97f));
+            GUI.Label(new Rect(panel.x + panel.width * 0.5f - 78f, panel.y - 11f, 156f, 22f), "◆  JOGO ONLINE  ◆", onlineTitleStyle);
+
+            if (connected)
+            {
+                string role = online.IsHost ? "HOST" : "CLIENTE";
+                GUI.Label(new Rect(panel.x + 18f, panel.y + 16f, panel.width - 36f, 24f),
+                    $"{role}   •   HUMANOS {online.HumanPlayerCount}/{online.ParticipantTarget}   •   BOTS {online.PlannedBotCount}",
+                    footerStyle);
+                string codeLine = string.IsNullOrEmpty(online.JoinCode) ? online.Status : $"CÓDIGO  {online.JoinCode}";
+                GUI.Label(new Rect(panel.x + 18f, panel.y + 44f, panel.width - 36f, 24f), codeLine, footerStyle);
+                GUI.Label(new Rect(panel.x + 18f, panel.y + 68f, panel.width - 36f, 20f), online.Status, footerStyle);
+                return;
+            }
+
+            const float rowHeight = 32f;
+            const float rowGap = 8f;
+            float row1Y = panel.y + 20f;
+            DrawOnlineButton(new Rect(panel.x + 16f, row1Y, 148f, rowHeight),
+                online.IsBusy ? "AGUARDE..." : "CRIAR ONLINE", online.CreateRelaySession);
+            online.JoinCodeInput = GUI.TextField(new Rect(panel.x + 172f, row1Y, 88f, rowHeight),
+                online.JoinCodeInput, 8, onlineFieldStyle).ToUpperInvariant();
+            DrawOnlineButton(new Rect(panel.x + 268f, row1Y, panel.width - 284f, rowHeight), "ENTRAR", online.JoinRelaySession);
+
+            float row2Y = row1Y + rowHeight + rowGap;
+            DrawOnlineButton(new Rect(panel.x + 16f, row2Y, 148f, rowHeight), "HOST LOCAL", online.StartLocalHost);
+            online.DirectAddress = GUI.TextField(new Rect(panel.x + 172f, row2Y, 108f, rowHeight),
+                online.DirectAddress, 32, onlineFieldStyle);
+            DrawOnlineButton(new Rect(panel.x + 288f, row2Y, panel.width - 304f, rowHeight), "LAN", online.StartLocalClient);
+
+            GUI.Label(new Rect(panel.x + 16f, row2Y + rowHeight + 6f, panel.width - 32f, 18f), online.Status, footerStyle);
+        }
+
+        private void DrawOnlineButton(Rect rect, string label, Action action)
+        {
+            bool hovered = rect.Contains(Event.current.mousePosition);
+            DrawCartoonPanel(rect,
+                hovered ? new Color(0.15f, 0.52f, 0.31f, 1f) : new Color(0.055f, 0.2f, 0.15f, 1f),
+                hovered ? new Color(0.52f, 1f, 0.68f, 1f) : new Color(0.27f, 0.72f, 0.48f, 1f), hovered ? 2f : 1f);
+            GUI.Label(rect, label, onlineButtonStyle);
+            if (GUI.Button(rect, GUIContent.none, GUIStyle.none)) action?.Invoke();
         }
 
         private void OnDestroy()
         {
             for (int i = 0; i < fallbackArt.Length; i++) AnimalPreviewRenderer.Release(fallbackArt[i]);
-        }
-
-        private void DrawMetric(Rect rect, string label, float normalized, string value, Color color)
-        {
-            GUI.Label(new Rect(rect.x, rect.y, rect.width * 0.35f, rect.height), label, statStyle);
-            GUI.Label(new Rect(rect.x + rect.width * 0.83f, rect.y, rect.width * 0.17f, rect.height), value, statValueStyle);
-            Rect bar = new Rect(rect.x + rect.width * 0.37f, rect.y + 7f, rect.width * 0.43f, 8f);
-            RuntimeGuiTheme.DrawRoundedRect(bar, new Color(0.005f, 0.012f, 0.012f, 0.96f));
-            RuntimeGuiTheme.DrawRoundedRect(new Rect(bar.x + 1f, bar.y + 1f,
-                (bar.width - 2f) * Mathf.Clamp01(normalized), bar.height - 2f), color);
         }
 
         private void StartMatch()
@@ -277,14 +268,14 @@ namespace AnimalBattleRoyale
             titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
             subtitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(0.92f, 0.95f, 0.77f) } };
             selectedStyle = new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Clip, normal = { textColor = new Color(0.72f, 1f, 0.78f) } };
-            textStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold, wordWrap = true, alignment = TextAnchor.UpperCenter, normal = { textColor = new Color(0.88f, 0.93f, 0.85f) } };
             buttonStyle = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
             playButtonStyle = new GUIStyle(buttonStyle) { fontSize = 24 };
             cardTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
-            statStyle = new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, clipping = TextClipping.Clip, normal = { textColor = new Color(0.8f, 0.86f, 0.79f) } };
-            statValueStyle = new GUIStyle(statStyle) { alignment = TextAnchor.MiddleRight, normal = { textColor = new Color(0.42f, 1f, 0.56f) } };
             footerStyle = new GUIStyle(GUI.skin.label) { fontSize = 11, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Clip, normal = { textColor = new Color(0.94f, 0.95f, 0.82f) } };
             roomStyle = new GUIStyle(GUI.skin.label) { fontSize = 17, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, richText = true, normal = { textColor = Color.white } };
+            onlineTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(0.55f, 1f, 0.72f) } };
+            onlineButtonStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Clip, normal = { textColor = Color.white } };
+            onlineFieldStyle = new GUIStyle(GUI.skin.textField) { fontSize = 13, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white, background = Texture2D.grayTexture } };
         }
 
         private static Color GetCardAccent(AnimalType type)
@@ -296,18 +287,6 @@ namespace AnimalBattleRoyale
                 AnimalType.Eagle => new Color(0.08f, 0.68f, 1f),
                 AnimalType.Monkey => new Color(1f, 0.58f, 0.08f),
                 _ => new Color(0.3f, 0.9f, 0.6f)
-            };
-        }
-
-        private static string GetAbilitySummary(AnimalType type)
-        {
-            return type switch
-            {
-                AnimalType.Tiger => "PULO LONGO E RÁPIDO",
-                AnimalType.Ant => "TÚNEL OU ARREMESSO",
-                AnimalType.Eagle => "SALTO PLANADO",
-                AnimalType.Monkey => "SEQUÊNCIA DE CIPÓS",
-                _ => string.Empty
             };
         }
 

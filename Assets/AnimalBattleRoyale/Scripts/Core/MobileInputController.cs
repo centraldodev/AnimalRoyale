@@ -218,12 +218,14 @@ namespace AnimalBattleRoyale
             joystickRadius = 82f * scale;
             joystickCenter = new Vector2(safeLeft + margin + joystickRadius, safeBottom - margin - joystickRadius);
 
+            // Aim/shoot cluster stacked vertically (fire, then melee, then jump above it),
+            // mirroring the reference layout's aim-over-shoot column on the bottom right.
             fireRect = CenteredRect(new Vector2(safeRight - margin - buttonSize * 0.68f,
                 safeBottom - margin - buttonSize * 0.74f), buttonSize * 1.34f);
-            meleeRect = CenteredRect(new Vector2(fireRect.center.x - buttonSize * 1.24f,
-                fireRect.center.y + buttonSize * 0.08f), buttonSize * 0.84f);
-            jumpRect = CenteredRect(new Vector2(fireRect.center.x - buttonSize * 0.42f,
-                fireRect.center.y - buttonSize * 1.23f), buttonSize * 0.82f);
+            meleeRect = CenteredRect(new Vector2(fireRect.center.x, fireRect.center.y - buttonSize * 1.15f),
+                buttonSize * 0.86f);
+            jumpRect = CenteredRect(new Vector2(fireRect.center.x, meleeRect.center.y - smallButtonSize * 1.05f),
+                smallButtonSize * 0.78f);
 
             float utilityY = safeBottom - margin - buttonSize * 0.52f;
             float utilitySpacing = buttonSize * 1.13f;
@@ -252,7 +254,12 @@ namespace AnimalBattleRoyale
         {
             if (lookTouchId >= 0 || position.x < Screen.width * 0.34f) return false;
             // The upper-left menu is handled by GameMenuController's IMGUI button.
-            return !(position.x < 170f && position.y < 190f);
+            if (position.x < 170f && position.y < 190f) return false;
+            // Let taps on the weapon selector (docked under the minimap) reach its
+            // own GUI.Button targets instead of starting a camera drag.
+            BattleRoyaleManager manager = BattleRoyaleManager.Instance;
+            if (manager != null && manager.WeaponSelectorScreenRect.Contains(position)) return false;
+            return true;
         }
 
         private void UpdateMovement(Vector2 position)
@@ -322,18 +329,32 @@ namespace AnimalBattleRoyale
             float joystickSize = joystickRadius * 2f;
             Rect joystickRect = CenteredRect(joystickCenter, joystickSize);
             DrawCircle(joystickRect, new Color(0.02f, 0.055f, 0.06f, 0.46f));
+            DrawDPadArrows(joystickRect);
 
             Vector2 knobOffset = movement * (joystickRadius * 0.58f);
             Rect knobRect = CenteredRect(joystickCenter + new Vector2(knobOffset.x, -knobOffset.y), joystickRadius * 0.78f);
             DrawCircle(knobRect, new Color(0.32f, 0.9f, 0.58f, 0.74f));
             GUI.Label(new Rect(joystickRect.x, joystickRect.yMax + 2f, joystickRect.width, 26f), "MOVIMENTO", hintStyle);
 
-            DrawCircularActionButton(fireRect, "TIRO", fireHeld, new Color(0.98f, 0.42f, 0.12f, 0.92f), true);
-            DrawCircularActionButton(meleeRect, "GOLPE", meleePressed, new Color(0.86f, 0.26f, 0.16f, 0.88f));
-            DrawCircularActionButton(jumpRect, "PULO", jumpHeld, new Color(0.12f, 0.62f, 0.94f, 0.88f));
-            DrawHexActionButton(sprintRect, "CORRER", sprintHeld, new Color(0.92f, 0.67f, 0.08f, 0.9f));
-            DrawHexActionButton(abilityRect, "PODER", abilityPressed, new Color(0.52f, 0.22f, 0.92f, 0.94f));
-            DrawHexActionButton(consumeRect, "USAR", consumePressed, new Color(0.15f, 0.72f, 0.42f, 0.9f));
+            DrawCircularActionButton(fireRect, "ATIRAR", fireHeld, new Color(0.98f, 0.42f, 0.12f, 0.92f), true);
+            DrawCircularActionButton(meleeRect, "BATER", meleePressed, new Color(0.86f, 0.26f, 0.16f, 0.88f));
+            DrawCircularActionButton(jumpRect, "PULAR", jumpHeld, new Color(0.12f, 0.62f, 0.94f, 0.88f));
+            DrawHexActionButton(sprintRect, "CORRIDA", sprintHeld, new Color(0.92f, 0.67f, 0.08f, 0.9f));
+            DrawHexActionButton(abilityRect, "DISPARO\nESPECIAL", abilityPressed, new Color(0.52f, 0.22f, 0.92f, 0.94f));
+            DrawHexActionButton(consumeRect, "CURA", consumePressed, new Color(0.15f, 0.72f, 0.42f, 0.9f));
+        }
+
+        private void DrawDPadArrows(Rect joystickRect)
+        {
+            float inset = joystickRect.width * 0.2f;
+            float arrowSize = joystickRect.width * 0.22f;
+            Color previous = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, 0.4f);
+            GUI.Label(new Rect(joystickRect.center.x - arrowSize * 0.5f, joystickRect.y + inset * 0.35f, arrowSize, arrowSize), "▲", buttonLabelStyle);
+            GUI.Label(new Rect(joystickRect.center.x - arrowSize * 0.5f, joystickRect.yMax - inset * 0.35f - arrowSize, arrowSize, arrowSize), "▼", buttonLabelStyle);
+            GUI.Label(new Rect(joystickRect.x + inset * 0.35f, joystickRect.center.y - arrowSize * 0.5f, arrowSize, arrowSize), "◀", buttonLabelStyle);
+            GUI.Label(new Rect(joystickRect.xMax - inset * 0.35f - arrowSize, joystickRect.center.y - arrowSize * 0.5f, arrowSize, arrowSize), "▶", buttonLabelStyle);
+            GUI.color = previous;
         }
 
         private void EnsureGuiResources()

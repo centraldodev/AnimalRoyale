@@ -108,17 +108,32 @@ namespace AnimalBattleRoyale
         private Vector3 GetSafeDropPosition(Vector3 position)
         {
             SafeZoneController zone = SafeZoneController.Instance;
-            if (zone == null) return jungle.GetGroundPosition(position);
-
-            Vector3 fromCenter = position - zone.Center;
-            fromCenter.y = 0f;
-            float safeRadius = Mathf.Max(2f, zone.CurrentRadius - 3f);
-            if (fromCenter.sqrMagnitude > safeRadius * safeRadius)
+            if (zone != null)
             {
-                Vector3 direction = fromCenter.sqrMagnitude > 0.01f ? fromCenter.normalized : Vector3.forward;
-                position = zone.Center + direction * safeRadius;
+                Vector3 fromCenter = position - zone.Center;
+                fromCenter.y = 0f;
+                float safeRadius = Mathf.Max(2f, zone.CurrentRadius - 3f);
+                if (fromCenter.sqrMagnitude > safeRadius * safeRadius)
+                {
+                    Vector3 direction = fromCenter.sqrMagnitude > 0.01f ? fromCenter.normalized : Vector3.forward;
+                    position = zone.Center + direction * safeRadius;
+                }
             }
+            position = ClampAwayFromLake(position);
             return jungle.GetGroundPosition(position);
+        }
+
+        // A fighter can die while swimming; keep dropped diamonds out of the lake.
+        private Vector3 ClampAwayFromLake(Vector3 position)
+        {
+            if (jungle == null) return position;
+            float minDistance = jungle.LakeRadius + 4f;
+            Vector2 planar = new Vector2(position.x, position.z);
+            float distance = planar.magnitude;
+            if (distance >= minDistance) return position;
+            Vector2 direction = distance > 0.01f ? planar / distance : Vector2.right;
+            Vector2 safePoint = direction * minDistance;
+            return new Vector3(safePoint.x, position.y, safePoint.y);
         }
 
         private Vector3 FindPortalPosition(out bool usesLakeAccess)

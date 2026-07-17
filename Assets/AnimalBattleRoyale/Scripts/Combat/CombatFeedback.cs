@@ -47,14 +47,38 @@ namespace AnimalBattleRoyale
         public static void PlayEagleFlight(Vector3 position) =>
             PlaySfx(position, "EagleFlight", 0.48f, 0.97f, 1.03f, 40f, 0.9f, 0.4f, 2);
 
+        public static void PlayProjectileLaunch(Vector3 position, WeaponAmmoType ammoType)
+        {
+            if (ammoType == WeaponAmmoType.Seed)
+                PlaySfx(position, "SeedProjectile", 0.26f, 0.98f, 1.03f, 34f, 0.9f, 0.055f, 6);
+            else
+                PlaySfx(position, "ProjectileFly", 0.13f, 0.98f, 1.025f, 32f, 1f, 0.12f, 3);
+        }
+
         public static void PlaySeedShot(Vector3 position) =>
-            PlaySfx(position, "SeedShot", 0.28f, 0.96f, 1.05f, 34f, 0.9f, 0.065f, 5);
+            PlayProjectileLaunch(position, WeaponAmmoType.Seed);
 
         public static void PlayProjectileFly(Vector3 position) =>
             PlaySfx(position, "ProjectileFly", 0.2f, 0.98f, 1.04f, 30f, 1f, 0.18f, 3);
 
+        public static void PlayProjectileImpact(Vector3 position, WeaponAmmoType ammoType)
+        {
+            switch (ammoType)
+            {
+                case WeaponAmmoType.Tomato:
+                    PlaySfx(position, "TomatoBurst", 0.56f, 0.98f, 1.025f, 42f, 1f, 0.07f, 4);
+                    break;
+                case WeaponAmmoType.Watermelon:
+                    PlaySfx(position, "WatermelonBurst", 0.68f, 0.97f, 1.015f, 52f, 1f, 0.12f, 3);
+                    break;
+                default:
+                    PlaySfx(position, "ProjectileImpact", 0.34f, 0.96f, 1.04f, 36f, 1f, 0.055f, 6);
+                    break;
+            }
+        }
+
         public static void PlayProjectileImpact(Vector3 position) =>
-            PlaySfx(position, "ProjectileImpact", 0.4f, 0.94f, 1.06f, 36f, 1f, 0.055f, 6);
+            PlayProjectileImpact(position, WeaponAmmoType.Seed);
 
         public static void PlayPlayerHit(Vector3 position) =>
             PlaySfx(position, "PlayerHit", 0.38f, 0.95f, 1.05f, 32f, 0.9f, 0.075f, 5);

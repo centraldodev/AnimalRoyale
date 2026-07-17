@@ -80,19 +80,19 @@ namespace AnimalBattleRoyale
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogDensity = 0.0028f;
             RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.38f, 0.62f, 0.84f);
-            RenderSettings.ambientEquatorColor = new Color(0.25f, 0.48f, 0.3f);
-            RenderSettings.ambientGroundColor = new Color(0.12f, 0.2f, 0.085f);
+            RenderSettings.ambientSkyColor = new Color(0.4f, 0.66f, 0.88f);
+            RenderSettings.ambientEquatorColor = new Color(0.28f, 0.54f, 0.32f);
+            RenderSettings.ambientGroundColor = new Color(0.14f, 0.24f, 0.1f);
             RenderSettings.reflectionIntensity = 0.82f;
 
             Shader skyShader = ShaderLibrary.Find("Skybox/Procedural");
             if (skyShader != null)
             {
                 if (cartoonSkyMaterial == null) cartoonSkyMaterial = new Material(skyShader) { name = "CartoonJungleSky" };
-                cartoonSkyMaterial.SetColor("_SkyTint", new Color(0.055f, 0.43f, 1f));
-                cartoonSkyMaterial.SetColor("_GroundColor", new Color(0.19f, 0.39f, 0.25f));
-                cartoonSkyMaterial.SetFloat("_AtmosphereThickness", 0.72f);
-                cartoonSkyMaterial.SetFloat("_Exposure", 1.42f);
+                cartoonSkyMaterial.SetColor("_SkyTint", new Color(0.08f, 0.5f, 1f));
+                cartoonSkyMaterial.SetColor("_GroundColor", new Color(0.2f, 0.42f, 0.26f));
+                cartoonSkyMaterial.SetFloat("_AtmosphereThickness", 0.68f);
+                cartoonSkyMaterial.SetFloat("_Exposure", 1.48f);
                 cartoonSkyMaterial.SetFloat("_SunSize", 0.035f);
                 RenderSettings.skybox = cartoonSkyMaterial;
             }
@@ -104,10 +104,10 @@ namespace AnimalBattleRoyale
                 light = lightObject.AddComponent<Light>();
             }
             light.type = LightType.Directional;
-            light.intensity = 1.78f;
-            light.color = new Color(1f, 0.9f, 0.72f);
+            light.intensity = 1.85f;
+            light.color = new Color(1f, 0.92f, 0.76f);
             light.shadows = mobile ? LightShadows.Hard : LightShadows.Soft;
-            light.shadowStrength = 0.72f;
+            light.shadowStrength = 0.68f;
             light.shadowBias = 0.055f;
             light.shadowNormalBias = 0.32f;
             light.transform.rotation = Quaternion.Euler(46f, -34f, 0f);
@@ -117,7 +117,7 @@ namespace AnimalBattleRoyale
             Light fillLight = fillObject.GetComponent<Light>();
             if (fillLight == null) fillLight = fillObject.AddComponent<Light>();
             fillLight.type = LightType.Directional;
-            fillLight.intensity = 0.28f;
+            fillLight.intensity = 0.3f;
             fillLight.color = new Color(0.35f, 0.58f, 1f);
             fillLight.shadows = LightShadows.None;
             fillObject.transform.rotation = Quaternion.Euler(32f, 142f, 0f);
