@@ -8,12 +8,15 @@ namespace AnimalBattleRoyale
 {
     public static class GameInput
     {
+        private const float MovementDeadZone = 0.18f;
+
         private static bool GameplayInputBlocked => GameMenuController.Instance != null
                                                     && GameMenuController.Instance.IsBlockingGameplayInput;
 
         public static Vector2 ReadMovement()
         {
             if (GameplayInputBlocked) return Vector2.zero;
+            if (MobileInputController.ControlsEnabled) return ApplyMovementDeadZone(MobileInputController.Movement);
 #if ENABLE_INPUT_SYSTEM
             Vector2 value = Vector2.zero;
             Keyboard keyboard = Keyboard.current;
@@ -32,7 +35,7 @@ namespace AnimalBattleRoyale
                 value = gamepad.leftStick.ReadValue();
             }
 
-            return Vector2.ClampMagnitude(value, 1f);
+            return ApplyMovementDeadZone(value);
 #else
             Vector2 value = Vector2.zero;
             if (GameInputBindings.IsHeld(GameInputAction.MoveForward)) value.y += 1f;
@@ -42,12 +45,26 @@ namespace AnimalBattleRoyale
 #endif
             Vector2 mobileMovement = MobileInputController.Movement;
             if (mobileMovement.sqrMagnitude > value.sqrMagnitude) value = mobileMovement;
-            return Vector2.ClampMagnitude(value, 1f);
+            return ApplyMovementDeadZone(value);
+        }
+
+        private static Vector2 ApplyMovementDeadZone(Vector2 value)
+        {
+            float magnitude = value.magnitude;
+            if (magnitude <= MovementDeadZone) return Vector2.zero;
+
+            float normalizedMagnitude = Mathf.InverseLerp(MovementDeadZone, 1f, Mathf.Min(magnitude, 1f));
+            return value.normalized * normalizedMagnitude;
         }
 
         public static Vector2 ReadLook()
         {
             if (GameplayInputBlocked) return Vector2.zero;
+            // Touchscreen events can also surface as a simulated mouse pointer
+            // on Android. Reading that delta here made the movement joystick
+            // rotate the camera. Mobile look must come exclusively from the
+            // right-side touch captured by MobileInputController.
+            if (MobileInputController.ControlsEnabled) return MobileInputController.LookDelta;
 #if ENABLE_INPUT_SYSTEM
             Vector2 value = Mouse.current != null ? Mouse.current.delta.ReadValue() : Vector2.zero;
             if (Gamepad.current != null)
@@ -57,12 +74,13 @@ namespace AnimalBattleRoyale
 #else
             Vector2 value = new Vector2(Input.GetAxis("Mouse X"), Input.GetAxis("Mouse Y")) * 10f;
 #endif
-            return value + MobileInputController.LookDelta;
+            return value;
         }
 
         public static bool JumpPressed()
         {
             if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return MobileInputController.JumpPressed;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
                    || (Gamepad.current != null && Gamepad.current.buttonSouth.wasPressedThisFrame)
@@ -76,6 +94,7 @@ namespace AnimalBattleRoyale
         public static bool JumpHeld()
         {
             if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return MobileInputController.JumpHeld;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && Keyboard.current.spaceKey.isPressed)
                    || (Gamepad.current != null && Gamepad.current.buttonSouth.isPressed)
@@ -88,6 +107,7 @@ namespace AnimalBattleRoyale
         public static bool DescendHeld()
         {
             if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return false;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && (Keyboard.current.leftCtrlKey.isPressed || Keyboard.current.cKey.isPressed))
                    || (Gamepad.current != null && gamepadLeftTriggerHeld());
@@ -106,6 +126,7 @@ namespace AnimalBattleRoyale
         public static bool SprintHeld()
         {
             if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return MobileInputController.SprintHeld;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && Keyboard.current.leftShiftKey.isPressed)
                    || (Gamepad.current != null && Gamepad.current.leftStickButton.isPressed)
@@ -118,6 +139,7 @@ namespace AnimalBattleRoyale
         public static bool RangedAttackPressed()
         {
             if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return MobileInputController.FirePressed;
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
                    || (Gamepad.current != null && Gamepad.current.rightShoulder.wasPressedThisFrame)
@@ -131,6 +153,7 @@ namespace AnimalBattleRoyale
         public static bool RangedAttackHeld()
         {
             if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return MobileInputController.FireHeld;
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.leftButton.isPressed)
                    || (Gamepad.current != null && Gamepad.current.rightShoulder.isPressed)
@@ -145,6 +168,7 @@ namespace AnimalBattleRoyale
         public static bool ConsumePressed()
         {
             if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return MobileInputController.ConsumePressed;
 #if ENABLE_INPUT_SYSTEM
             return (Keyboard.current != null && Keyboard.current.fKey.wasPressedThisFrame)
                    || MobileInputController.ConsumePressed;
@@ -157,6 +181,7 @@ namespace AnimalBattleRoyale
         public static bool AbilityOnePressed()
         {
             if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return MobileInputController.AbilityPressed;
 #if ENABLE_INPUT_SYSTEM
             return Keyboard.current != null && keyboardQPressed()
                    || (Gamepad.current != null && Gamepad.current.leftShoulder.wasPressedThisFrame)
@@ -169,6 +194,7 @@ namespace AnimalBattleRoyale
 
         public static bool AbilityTwoPressed()
         {
+            if (MobileInputController.ControlsEnabled) return false;
 #if ENABLE_INPUT_SYSTEM
             return Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
 #else
@@ -178,6 +204,7 @@ namespace AnimalBattleRoyale
 
         public static bool AbilityThreePressed()
         {
+            if (MobileInputController.ControlsEnabled) return false;
 #if ENABLE_INPUT_SYSTEM
             return Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame;
 #else
@@ -188,6 +215,7 @@ namespace AnimalBattleRoyale
         public static bool MeleeAttackPressed()
         {
             if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return MobileInputController.MeleePressed;
 #if ENABLE_INPUT_SYSTEM
             return (Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
                    || (Gamepad.current != null && Gamepad.current.leftTrigger.wasPressedThisFrame)

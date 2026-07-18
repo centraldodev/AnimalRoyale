@@ -164,7 +164,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ab99957a6a2c749d2afbe105c704f216, type: 3}
   m_Name:
   m_EditorClassIdentifier: 
-  botCount: 15
+  botCount: 14
   initialAnimal: 0
   generateJungleOnStart: 1
   openingProtectionDuration: 6

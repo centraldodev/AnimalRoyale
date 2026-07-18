@@ -7,9 +7,13 @@ from mathutils import Vector
 
 
 args = sys.argv[sys.argv.index("--") + 1:]
-if len(args) != 3:
-    raise RuntimeError("Usage: <blend> --python render_character_action.py -- <action> <frame> <output.png>")
-action_name, frame_text, output_path = args
+if len(args) not in {3, 4}:
+    raise RuntimeError(
+        "Usage: <blend> --python render_character_action.py -- "
+        "<action> <frame> <output.png> [--no-axis-correction]"
+    )
+action_name, frame_text, output_path = args[:3]
+apply_axis_correction = "--no-axis-correction" not in args[3:]
 frame = int(frame_text)
 
 rig = next(obj for obj in bpy.context.scene.objects if obj.type == "ARMATURE")
@@ -21,12 +25,13 @@ bpy.context.scene.frame_set(frame)
 
 # Source characters intentionally use Unity-style Y-up coordinates. Rotate all
 # root objects as one group so the preview stands upright in Blender's Z-up view.
-preview_root = bpy.data.objects.new("PreviewAxisCorrection", None)
-bpy.context.scene.collection.objects.link(preview_root)
-preview_root.rotation_euler.x = math.radians(90)
-for obj in list(bpy.context.scene.objects):
-    if obj != preview_root and obj.parent is None and obj.type in {"ARMATURE", "MESH"}:
-        obj.parent = preview_root
+if apply_axis_correction:
+    preview_root = bpy.data.objects.new("PreviewAxisCorrection", None)
+    bpy.context.scene.collection.objects.link(preview_root)
+    preview_root.rotation_euler.x = math.radians(90)
+    for obj in list(bpy.context.scene.objects):
+        if obj != preview_root and obj.parent is None and obj.type in {"ARMATURE", "MESH"}:
+            obj.parent = preview_root
 
 world = bpy.context.scene.world
 world.color = (0.035, 0.055, 0.08)

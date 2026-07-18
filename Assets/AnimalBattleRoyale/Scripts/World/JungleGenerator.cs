@@ -11,6 +11,9 @@ namespace AnimalBattleRoyale
         [SerializeField] private int seed = 106;
         [SerializeField] private bool randomizeSeedEveryMatch = true;
 
+        [Header("Environment Mode")]
+        [SerializeField] private bool rebuildEnvironmentOnly = true;
+
         [Header("Terrain")]
         [SerializeField, Range(32, 160)] private int terrainResolution = 96;
         [SerializeField, Range(1f, 12f)] private float terrainHeight = 8.2f;
@@ -163,6 +166,25 @@ namespace AnimalBattleRoyale
             NatureEnvironmentCatalog natureCatalog = useNatureStarterVegetation ? cachedNatureCatalog : null;
 
             Material groundMaterial = CreateGroundMaterial(natureCatalog != null ? natureCatalog.GrassGround : null);
+            if (rebuildEnvironmentOnly)
+            {
+                // Keep the previous environment code available while the map is rebuilt
+                // from the new user-supplied environment packs.
+                trailRoutes.Clear();
+                anthillPlanarPositions.Clear();
+                housePlanarPositions.Clear();
+                CreateGround(generated.transform, groundMaterial);
+                CreateBoundaries(generated.transform);
+                CreateNewCentralLake(generated.transform);
+                CreateNewRockEnvironment(generated.transform);
+                CreateNewNatureEnvironment(generated.transform);
+                CreateNewSwampEnvironment(generated.transform);
+                RuntimeNavMeshSurface cleanNavigation = generated.AddComponent<RuntimeNavMeshSurface>();
+                cleanNavigation.Configure(mapSize);
+                Debug.Log("[Jungle] Modo de reconstrucao ativo: terreno, lago, rochas e natureza gerados.");
+                return;
+            }
+
             Material trunkMaterial = CreateMaterial(new Color(0.31f, 0.12f, 0.035f));
             Material leafMaterial = CreateMaterial(new Color(0.035f, 0.39f, 0.075f));
             Material leafLightMaterial = CreateMaterial(new Color(0.19f, 0.62f, 0.11f));
@@ -2192,6 +2214,7 @@ namespace AnimalBattleRoyale
         private float CalculateGroundHeight(float x, float z)
         {
             float height = CalculateUnmodifiedGroundHeight(x, z);
+            if (rebuildEnvironmentOnly) return height;
 
             Vector2 houseCenter = GetLakesideHousePlanarPosition();
             float houseHeight = CalculateUnmodifiedGroundHeight(houseCenter.x, houseCenter.y);
@@ -2253,6 +2276,19 @@ namespace AnimalBattleRoyale
 
         private float CalculateUnmodifiedGroundHeight(float x, float z)
         {
+            float naturalHeight = CalculateNaturalLandHeight(x, z);
+            naturalHeight = ApplySwampLakeBasin(naturalHeight, x, z);
+            float distanceFromCenter = new Vector2(x, z).magnitude;
+            float shoreProgress = Mathf.InverseLerp(lakeRadius, lakeRadius + 9f, distanceFromCenter);
+            float lakeInfluence = 1f - Mathf.SmoothStep(0f, 1f, shoreProgress);
+            if (lakeInfluence <= 0f) return naturalHeight;
+            float depthProgress = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(distanceFromCenter / lakeRadius));
+            float lakeBed = Mathf.Lerp(lakeSurfaceHeight - 3.15f, lakeSurfaceHeight - 0.38f, depthProgress);
+            return Mathf.Lerp(naturalHeight, lakeBed, lakeInfluence);
+        }
+
+        private float CalculateNaturalLandHeight(float x, float z)
+        {
             // PerlinNoise loses precision and can return NaN when a randomized
             // 32-bit seed is multiplied directly into billion-scale coordinates.
             // Fold the seed into stable offsets while preserving all seed bits.
@@ -2265,14 +2301,7 @@ namespace AnimalBattleRoyale
             float ridgeNoise = Mathf.Pow(1f - Mathf.Abs(ridgeSample * 2f - 1f), 2.8f);
             float rolling = broadNoise * terrainHeight * 1.45f + detailNoise * terrainHeight * 0.32f;
             float shallowValley = Mathf.Sin((x + z) * 0.018f) * terrainHeight * 0.18f;
-            float naturalHeight = rolling + shallowValley + ridgeNoise * terrainHeight * 0.38f;
-            float distanceFromCenter = new Vector2(x, z).magnitude;
-            float shoreProgress = Mathf.InverseLerp(lakeRadius, lakeRadius + 9f, distanceFromCenter);
-            float lakeInfluence = 1f - Mathf.SmoothStep(0f, 1f, shoreProgress);
-            if (lakeInfluence <= 0f) return naturalHeight;
-            float depthProgress = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(distanceFromCenter / lakeRadius));
-            float lakeBed = Mathf.Lerp(lakeSurfaceHeight - 3.15f, lakeSurfaceHeight - 0.38f, depthProgress);
-            return Mathf.Lerp(naturalHeight, lakeBed, lakeInfluence);
+            return rolling + shallowValley + ridgeNoise * terrainHeight * 0.38f;
         }
 
         private void ClearGeneratedWorld()

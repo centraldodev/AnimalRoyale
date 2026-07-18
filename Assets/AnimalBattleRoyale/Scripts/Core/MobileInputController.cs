@@ -12,12 +12,10 @@ namespace AnimalBattleRoyale
     {
         private enum TouchAction
         {
-            Fire,
             Melee,
             Ability,
             Jump,
-            Consume,
-            Sprint
+            Consume
         }
 
         private static MobileInputController instance;
@@ -25,14 +23,17 @@ namespace AnimalBattleRoyale
         private readonly Dictionary<int, TouchAction> actionTouches = new Dictionary<int, TouchAction>();
         private int movementTouchId = -1;
         private int lookTouchId = -1;
+        private bool lookTouchCanFire;
         private bool gameplayActive;
         private Vector2 movement;
         private Vector2 lookDelta;
+        private Vector2 fireJoystickOffset;
         private Vector2 joystickCenter;
         private float joystickRadius;
         private Texture2D circleTexture;
         private Texture2D hexTexture;
         private GUIStyle buttonLabelStyle;
+        private GUIStyle compactButtonLabelStyle;
         private GUIStyle hintStyle;
 
         private Rect fireRect;
@@ -40,7 +41,6 @@ namespace AnimalBattleRoyale
         private Rect abilityRect;
         private Rect jumpRect;
         private Rect consumeRect;
-        private Rect sprintRect;
 
         private bool firePressed;
         private bool fireHeld;
@@ -49,7 +49,6 @@ namespace AnimalBattleRoyale
         private bool jumpPressed;
         private bool jumpHeld;
         private bool consumePressed;
-        private bool sprintHeld;
 
         public static bool ControlsEnabled => instance != null
                                               && instance.gameplayActive
@@ -68,7 +67,7 @@ namespace AnimalBattleRoyale
         public static bool JumpPressed => ControlsEnabled && instance.jumpPressed;
         public static bool JumpHeld => ControlsEnabled && instance.jumpHeld;
         public static bool ConsumePressed => ControlsEnabled && instance.consumePressed;
-        public static bool SprintHeld => ControlsEnabled && instance.sprintHeld;
+        public static bool SprintHeld => false;
 
         public static void EnsureExists()
         {
@@ -143,10 +142,16 @@ namespace AnimalBattleRoyale
                     if (ended)
                     {
                         lookTouchId = -1;
+                        lookTouchCanFire = false;
+                        fireJoystickOffset = Vector2.zero;
                     }
-                    else if (touch.phase == TouchPhase.Moved)
+                    else
                     {
-                        lookDelta += touch.deltaPosition * 0.82f;
+                        if (touch.phase == TouchPhase.Moved)
+                        {
+                            lookDelta += touch.deltaPosition * 0.82f;
+                        }
+                        UpdateFireLookState(guiPosition);
                     }
                     continue;
                 }
@@ -159,7 +164,11 @@ namespace AnimalBattleRoyale
                 }
 
                 if (touch.phase != TouchPhase.Began) continue;
-                if (TryGetAction(guiPosition, out TouchAction action))
+                if (ContainsCircle(fireRect, guiPosition) && CanStartLook(guiPosition))
+                {
+                    StartLookTouch(touch.fingerId, guiPosition, true);
+                }
+                else if (TryGetAction(guiPosition, out TouchAction action))
                 {
                     actionTouches[touch.fingerId] = action;
                     SetActionState(action, true);
@@ -171,7 +180,7 @@ namespace AnimalBattleRoyale
                 }
                 else if (CanStartLook(guiPosition))
                 {
-                    lookTouchId = touch.fingerId;
+                    StartLookTouch(touch.fingerId, guiPosition, false);
                 }
             }
         }
@@ -186,7 +195,6 @@ namespace AnimalBattleRoyale
             consumePressed = false;
             fireHeld = false;
             jumpHeld = false;
-            sprintHeld = false;
         }
 
         private void ResetContinuousInput()
@@ -194,6 +202,8 @@ namespace AnimalBattleRoyale
             movement = Vector2.zero;
             movementTouchId = -1;
             lookTouchId = -1;
+            lookTouchCanFire = false;
+            fireJoystickOffset = Vector2.zero;
             actionTouches.Clear();
         }
 
@@ -212,30 +222,37 @@ namespace AnimalBattleRoyale
             float safeBottom = Screen.height - safe.yMin;
             float scale = Mathf.Clamp(Mathf.Min(Screen.width, Screen.height) / 720f, 0.78f, 1.6f);
             float margin = 22f * scale;
-            float buttonSize = 76f * scale;
-            float smallButtonSize = 62f * scale;
+            float secondaryButtonSize = 66f * scale;
+            float buttonGap = 10f * scale;
 
             joystickRadius = 82f * scale;
             joystickCenter = new Vector2(safeLeft + margin + joystickRadius, safeBottom - margin - joystickRadius);
 
-            // Aim/shoot cluster stacked vertically (fire, then melee, then jump above it),
-            // mirroring the reference layout's aim-over-shoot column on the bottom right.
-            fireRect = CenteredRect(new Vector2(safeRight - margin - buttonSize * 0.68f,
-                safeBottom - margin - buttonSize * 0.74f), buttonSize * 1.34f);
-            meleeRect = CenteredRect(new Vector2(fireRect.center.x, fireRect.center.y - buttonSize * 1.15f),
-                buttonSize * 0.86f);
-            jumpRect = CenteredRect(new Vector2(fireRect.center.x, meleeRect.center.y - smallButtonSize * 1.05f),
-                smallButtonSize * 0.78f);
+            // Mirror the movement joystick on the right. The four secondary
+            // actions form one row immediately above it, leaving the upper-right
+            // weapon selector unobstructed and the middle available for aiming.
+            float fireJoystickSize = joystickRadius * 2f;
+            Vector2 fireCenter = new Vector2(safeRight - margin - joystickRadius, joystickCenter.y);
+            fireRect = CenteredRect(fireCenter, fireJoystickSize);
 
-            float utilityY = safeBottom - margin - buttonSize * 0.52f;
-            float utilitySpacing = buttonSize * 1.13f;
-            abilityRect = CenteredRect(new Vector2(Screen.width * 0.5f, utilityY), buttonSize * 0.94f);
-            sprintRect = CenteredRect(new Vector2(abilityRect.center.x - utilitySpacing, utilityY), buttonSize * 0.88f);
-            consumeRect = CenteredRect(new Vector2(abilityRect.center.x + utilitySpacing, utilityY), buttonSize * 0.88f);
+            float actionY = fireRect.yMin - buttonGap - secondaryButtonSize * 0.5f;
+            float actionStep = secondaryButtonSize + buttonGap;
+            float rightActionX = safeRight - margin - secondaryButtonSize * 0.5f;
+            jumpRect = CenteredRect(new Vector2(rightActionX, actionY), secondaryButtonSize);
+            meleeRect = CenteredRect(new Vector2(rightActionX - actionStep, actionY), secondaryButtonSize);
+            consumeRect = CenteredRect(new Vector2(rightActionX - actionStep * 2f, actionY), secondaryButtonSize);
+            abilityRect = CenteredRect(new Vector2(rightActionX - actionStep * 3f, actionY), secondaryButtonSize);
 
-            // Keep the controls below notches and rounded screen corners.
+            // Keep the action row below notches and rounded screen corners.
             float minimumTop = safeTop + margin;
-            if (jumpRect.y < minimumTop) jumpRect.y = minimumTop;
+            float correction = Mathf.Max(0f, minimumTop - abilityRect.yMin);
+            if (correction > 0f)
+            {
+                jumpRect.y += correction;
+                meleeRect.y += correction;
+                consumeRect.y += correction;
+                abilityRect.y += correction;
+            }
         }
 
         private static Rect CenteredRect(Vector2 center, float size)
@@ -246,20 +263,55 @@ namespace AnimalBattleRoyale
         private bool CanStartMovement(Vector2 position)
         {
             return movementTouchId < 0
-                   && position.x < Screen.width * 0.42f
+                   && position.x < Screen.width * 0.34f
                    && Vector2.Distance(position, joystickCenter) <= joystickRadius * 1.65f;
         }
 
         private bool CanStartLook(Vector2 position)
         {
-            if (lookTouchId >= 0 || position.x < Screen.width * 0.34f) return false;
-            // The upper-left menu is handled by GameMenuController's IMGUI button.
-            if (position.x < 170f && position.y < 190f) return false;
+            // Camera input is deliberately restricted to the right half. This
+            // leaves a dead zone between the joystick and look surface, so a
+            // movement touch can never be interpreted as a camera drag.
+            if (lookTouchId >= 0 || position.x < Screen.width * 0.5f) return false;
             // Let taps on the weapon selector (docked under the minimap) reach its
             // own GUI.Button targets instead of starting a camera drag.
             BattleRoyaleManager manager = BattleRoyaleManager.Instance;
             if (manager != null && manager.WeaponSelectorScreenRect.Contains(position)) return false;
             return true;
+        }
+
+        private void StartLookTouch(int fingerId, Vector2 position, bool canFire)
+        {
+            lookTouchId = fingerId;
+            lookTouchCanFire = canFire;
+            fireJoystickOffset = Vector2.zero;
+            if (canFire)
+            {
+                firePressed = true;
+                fireHeld = true;
+            }
+            UpdateFireLookState(position);
+        }
+
+        private void UpdateFireLookState(Vector2 position)
+        {
+            if (!lookTouchCanFire) return;
+
+            float radius = fireRect.width * 0.5f;
+            Vector2 offset = position - fireRect.center;
+            fireJoystickOffset = radius > 0.01f
+                ? Vector2.ClampMagnitude(offset / radius, 1f)
+                : Vector2.zero;
+            // Once a touch begins on the fire joystick, keep shooting even if
+            // the aiming drag leaves the circle. Releasing that captured touch
+            // is the only way to stop continuous fire.
+            fireHeld = true;
+        }
+
+        private static bool ContainsCircle(Rect rect, Vector2 position)
+        {
+            float radius = Mathf.Min(rect.width, rect.height) * 0.5f;
+            return (position - rect.center).sqrMagnitude <= radius * radius;
         }
 
         private void UpdateMovement(Vector2 position)
@@ -273,17 +325,20 @@ namespace AnimalBattleRoyale
             }
 
             float normalizedMagnitude = Mathf.InverseLerp(0.12f, 1f, magnitude);
-            movement = raw.normalized * normalizedMagnitude;
+            // A four-way joystick is easier to control on a small screen and
+            // prevents accidental diagonal movement.
+            Vector2 cardinalDirection = Mathf.Abs(raw.x) >= Mathf.Abs(raw.y)
+                ? new Vector2(Mathf.Sign(raw.x), 0f)
+                : new Vector2(0f, Mathf.Sign(raw.y));
+            movement = cardinalDirection * normalizedMagnitude;
         }
 
         private bool TryGetAction(Vector2 position, out TouchAction action)
         {
-            if (fireRect.Contains(position)) action = TouchAction.Fire;
-            else if (meleeRect.Contains(position)) action = TouchAction.Melee;
+            if (meleeRect.Contains(position)) action = TouchAction.Melee;
             else if (abilityRect.Contains(position)) action = TouchAction.Ability;
             else if (jumpRect.Contains(position)) action = TouchAction.Jump;
             else if (consumeRect.Contains(position)) action = TouchAction.Consume;
-            else if (sprintRect.Contains(position)) action = TouchAction.Sprint;
             else
             {
                 action = default;
@@ -296,10 +351,6 @@ namespace AnimalBattleRoyale
         {
             switch (action)
             {
-                case TouchAction.Fire:
-                    fireHeld = true;
-                    firePressed |= pressedThisFrame;
-                    break;
                 case TouchAction.Melee:
                     meleePressed |= pressedThisFrame;
                     break;
@@ -312,9 +363,6 @@ namespace AnimalBattleRoyale
                     break;
                 case TouchAction.Consume:
                     consumePressed |= pressedThisFrame;
-                    break;
-                case TouchAction.Sprint:
-                    sprintHeld = true;
                     break;
             }
         }
@@ -336,12 +384,12 @@ namespace AnimalBattleRoyale
             DrawCircle(knobRect, new Color(0.32f, 0.9f, 0.58f, 0.74f));
             GUI.Label(new Rect(joystickRect.x, joystickRect.yMax + 2f, joystickRect.width, 26f), "MOVIMENTO", hintStyle);
 
-            DrawCircularActionButton(fireRect, "ATIRAR", fireHeld, new Color(0.98f, 0.42f, 0.12f, 0.92f), true);
+            DrawCircularActionButton(fireRect, "ATIRAR", fireHeld,
+                new Color(0.98f, 0.42f, 0.12f, 0.92f), true, true);
             DrawCircularActionButton(meleeRect, "BATER", meleePressed, new Color(0.86f, 0.26f, 0.16f, 0.88f));
             DrawCircularActionButton(jumpRect, "PULAR", jumpHeld, new Color(0.12f, 0.62f, 0.94f, 0.88f));
-            DrawHexActionButton(sprintRect, "CORRIDA", sprintHeld, new Color(0.92f, 0.67f, 0.08f, 0.9f));
-            DrawHexActionButton(abilityRect, "DISPARO\nESPECIAL", abilityPressed, new Color(0.52f, 0.22f, 0.92f, 0.94f));
-            DrawHexActionButton(consumeRect, "CURA", consumePressed, new Color(0.15f, 0.72f, 0.42f, 0.9f));
+            DrawHexActionButton(abilityRect, "HABILIDADE", abilityPressed, new Color(0.52f, 0.22f, 0.92f, 0.94f));
+            DrawHexActionButton(consumeRect, "USAR", consumePressed, new Color(0.15f, 0.72f, 0.42f, 0.9f));
         }
 
         private void DrawDPadArrows(Rect joystickRect)
@@ -425,11 +473,35 @@ namespace AnimalBattleRoyale
                     fontSize = Mathf.RoundToInt(Mathf.Clamp(Screen.height / 58f, 12f, 20f))
                 };
                 hintStyle.normal.textColor = new Color(0.9f, 1f, 0.94f, 0.82f);
+
+                compactButtonLabelStyle = new GUIStyle(buttonLabelStyle)
+                {
+                    fontSize = Mathf.RoundToInt(Mathf.Clamp(Screen.height / 75f, 11f, 15f)),
+                    wordWrap = false
+                };
             }
         }
 
-        private void DrawCircularActionButton(Rect rect, string label, bool active, Color color, bool primary = false)
+        private void DrawCircularActionButton(Rect rect, string label, bool active, Color color,
+            bool primary = false, bool isFireJoystick = false)
         {
+            if (isFireJoystick)
+            {
+                DrawCircle(rect, new Color(0.02f, 0.055f, 0.06f, 0.52f));
+                Vector2 knobCenter = rect.center;
+                if (lookTouchCanFire && lookTouchId >= 0)
+                {
+                    knobCenter += fireJoystickOffset * (rect.width * 0.29f);
+                }
+
+                Rect knobRect = CenteredRect(knobCenter, rect.width * 0.39f);
+                DrawCircle(ExpandRect(knobRect, 5f), new Color(0.92f, 1f, 0.96f, active ? 0.9f : 0.58f));
+                DrawCircle(knobRect, active ? Color.Lerp(color, Color.white, 0.24f) : color);
+                GUI.Label(knobRect, label, compactButtonLabelStyle);
+                GUI.Label(new Rect(rect.x, rect.yMax + 2f, rect.width, 26f), "ATIRAR + CÂMERA", hintStyle);
+                return;
+            }
+
             Color fill = active ? Color.Lerp(color, Color.white, 0.28f) : color;
             Rect border = ExpandRect(rect, primary ? 7f : 4f);
             DrawCircle(border, new Color(0.92f, 1f, 0.96f, primary ? 0.9f : 0.56f));
@@ -444,7 +516,7 @@ namespace AnimalBattleRoyale
             DrawTexture(ExpandRect(rect, 4f), hexTexture, new Color(0.92f, 1f, 0.96f, 0.74f));
             DrawTexture(rect, hexTexture, new Color(0.012f, 0.032f, 0.036f, 0.94f));
             DrawTexture(ShrinkRect(rect, 6f), hexTexture, fill);
-            GUI.Label(rect, label, buttonLabelStyle);
+            GUI.Label(rect, label, label.Length > 7 ? compactButtonLabelStyle : buttonLabelStyle);
         }
 
         private static Rect ExpandRect(Rect rect, float amount)

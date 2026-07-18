@@ -7,6 +7,13 @@
 [Ll]ogs/
 [Uu]ser[Ss]ettings/
 
+# Optional packages and generated upgrade data kept only in this workstation.
+# The ground textures already tracked from NatureStarterKit2 remain tracked.
+/Assets/NatureStarterKit2/**
+/Assets/_TerrainAutoUpgrade.meta
+/Assets/_TerrainAutoUpgrade/
+/ProjectSettings/Packages/
+
 # IDE and operating-system files
 .vs/
 .idea/

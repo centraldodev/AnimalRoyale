@@ -155,6 +155,17 @@ namespace AnimalBattleRoyale
             if (naturalTexture != null)
                 return CreateNaturalSurfaceMaterial(naturalTexture, new Color(0.72f, 0.9f, 0.64f), 1f);
 
+            Texture2D natureStarterGrass = Resources.Load<Texture2D>(
+                "EnvironmentModels/NewNaturePack/NatureStarterGrass");
+            if (natureStarterGrass != null)
+            {
+                // The source is a seamless 2K ground texture. A saturated tint and
+                // broad tiling preserve the game's cartoon palette while adding the
+                // missing fine grass detail between the lightweight 3D tufts.
+                return CreateNaturalSurfaceMaterial(
+                    natureStarterGrass, new Color(0.82f, 1f, 0.68f), 28f);
+            }
+
             Material material = CreateMaterial(Color.white);
             const int size = 128;
             Texture2D texture = new Texture2D(size, size, TextureFormat.RGB24, true)

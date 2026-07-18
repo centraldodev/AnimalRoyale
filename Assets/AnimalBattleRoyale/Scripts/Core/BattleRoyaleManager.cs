@@ -380,7 +380,10 @@ namespace AnimalBattleRoyale
                 : string.Empty;
             if (!string.IsNullOrEmpty(contextHint)) DrawContextHint(contextHint);
 
-            DrawPowerBar();
+            // The mobile ability is represented by the right-side action button.
+            // Keeping the desktop cooldown widget here would occupy the middle of
+            // the touch layout.
+            if (!mobileControls) DrawPowerBar();
 
             DrawAimReticle();
 
@@ -668,7 +671,8 @@ namespace AnimalBattleRoyale
         private void DrawWeaponSelector()
         {
             if (LocalPlayer == null) return;
-            const float iconSize = 46f;
+            bool mobileControls = MobileInputController.ControlsEnabled;
+            float iconSize = mobileControls ? 58f : 46f;
             const float textHeight = 16f;
             const float textGap = 4f;
             const float spacing = 8f;
@@ -676,15 +680,31 @@ namespace AnimalBattleRoyale
             float rowHeight = iconSize + textGap + textHeight;
             float columnHeight = rowHeight * WeaponSelectorSlots.Length + spacing * (WeaponSelectorSlots.Length - 1);
 
-            // Below the whole right-side info column (minimap, then the zone and
-            // objective panels docked under it) — no panel of its own, just image + text.
-            float minimapSize = Mathf.Clamp(viewHeight * 0.29f, 190f, 232f);
-            float stackBottom = 58f + minimapSize + 29f + 10f + 86f + 70f;
-            float startX = viewWidth - 20f - iconSize;
-            float startY = stackBottom + 16f;
+            float startX;
+            float startY;
+            if (mobileControls)
+            {
+                // Keep weapon selection on the right, beside the minimap, while
+                // reserving the lower-right corner for the fire joystick and its
+                // four action buttons.
+                startX = viewWidth - 20f - iconSize - 210f;
+                startY = 72f;
+            }
+            else
+            {
+                // Below the whole right-side info column (minimap, then the zone
+                // and objective panels) on desktop.
+                float minimapSize = Mathf.Clamp(viewHeight * 0.29f, 190f, 232f);
+                float stackBottom = 58f + minimapSize + 29f + 10f + 86f + 70f;
+                startX = viewWidth - 20f - iconSize;
+                startY = stackBottom + 16f;
+            }
 
-            WeaponSelectorScreenRect = new Rect(startX * uiScale, startY * uiScale,
-                iconSize * uiScale, columnHeight * uiScale);
+            float touchPadding = mobileControls ? 6f : 0f;
+            WeaponSelectorScreenRect = new Rect((startX - touchPadding) * uiScale,
+                (startY - touchPadding) * uiScale,
+                (iconSize + touchPadding * 2f) * uiScale,
+                (columnHeight + touchPadding * 2f) * uiScale);
 
             for (int i = 0; i < WeaponSelectorSlots.Length; i++)
             {
@@ -693,8 +713,12 @@ namespace AnimalBattleRoyale
                 bool selected = unlocked && LocalPlayer.CurrentWeaponAmmo == weapon;
                 float y = startY + i * (rowHeight + spacing);
                 Rect slot = new Rect(startX, y, iconSize, iconSize);
+                Rect touchSlot = mobileControls
+                    ? new Rect(slot.x - touchPadding, slot.y - touchPadding,
+                        slot.width + touchPadding * 2f, slot.height + touchPadding * 2f)
+                    : slot;
 
-                if (unlocked && !selected && GUI.Button(slot, GUIContent.none, GUIStyle.none))
+                if (unlocked && !selected && GUI.Button(touchSlot, GUIContent.none, GUIStyle.none))
                 {
                     SelectWeaponFromHud(weapon);
                 }

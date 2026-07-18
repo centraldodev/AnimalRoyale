@@ -1,247 +1,444 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace AnimalBattleRoyale
 {
+    /// <summary>Main lobby, character wardrobe and settings panel shown before a match.</summary>
     public sealed class CharacterSelectionMenu : MonoBehaviour
     {
+        private const float ReferenceWidth = 1672f;
+        private const float ReferenceHeight = 941f;
+        private const float SettingsPanelWidth = 458f;
+
         private GameBootstrap bootstrap;
         private AnimalType selected;
+        private MenuAnimalPreview animalPreview;
+        private Texture2D menuBackground;
+        private Vector2 settingsScroll;
+        private bool animalDropdownOpen;
+        private GameInputAction? waitingForBinding;
+        private string bindingMessage = string.Empty;
+        private float bindingMessageUntil;
+
         private GUIStyle logoStyle;
         private GUIStyle titleStyle;
-        private GUIStyle subtitleStyle;
-        private GUIStyle selectedStyle;
+        private GUIStyle sectionTitleStyle;
+        private GUIStyle labelStyle;
+        private GUIStyle smallStyle;
+        private GUIStyle centeredStyle;
         private GUIStyle buttonStyle;
         private GUIStyle playButtonStyle;
-        private GUIStyle cardTitleStyle;
-        private GUIStyle footerStyle;
         private GUIStyle roomStyle;
-        private GUIStyle onlineTitleStyle;
-        private GUIStyle onlineButtonStyle;
-        private GUIStyle onlineFieldStyle;
-        private readonly Texture2D[] portraitArt = new Texture2D[AnimalRoster.Count];
-        private readonly RenderTexture[] fallbackArt = new RenderTexture[AnimalRoster.Count];
+        private GUIStyle keyStyle;
 
         public void Initialize(GameBootstrap gameBootstrap, AnimalType initialSelection)
         {
             bootstrap = gameBootstrap;
             selected = initialSelection;
+            menuBackground = Resources.Load<Texture2D>("UI/MainMenu/MenuBackground");
+            animalPreview = gameObject.AddComponent<MenuAnimalPreview>();
+            animalPreview.Initialize(selected, 640, 960, false);
             ThirdPersonCamera.SetCursorLocked(false);
-
-            for (int i = 0; i < AnimalRoster.Count; i++)
-            {
-                AnimalType type = (AnimalType)i;
-                portraitArt[i] = Resources.Load<Texture2D>($"UI/CharacterPortraits/{type}");
-                if (portraitArt[i] == null) fallbackArt[i] = AnimalPreviewRenderer.Create(type, 256);
-            }
+            OnlineMultiplayerManager.Instance?.SetLocalSelection(selected);
+            OnlineMultiplayerManager.Instance?.RefreshLanFriends();
         }
 
         private void Update()
         {
             if (Cursor.lockState != CursorLockMode.None || !Cursor.visible)
-            {
                 ThirdPersonCamera.SetCursorLocked(false);
-            }
 
-            if (GameMenuController.Instance != null && GameMenuController.Instance.IsBlockingGameplayInput) return;
+            if (waitingForBinding.HasValue) return;
 
             int index = GameInput.ReadAnimalSelection();
-            if (index >= 0 && index < AnimalRoster.Count) selected = (AnimalType)index;
-            OnlineMultiplayerManager.Instance?.SetLocalSelection(selected);
-            if (GameInput.ConfirmPressed()) StartMatch();
+            if (index >= 0 && index < AnimalRoster.Count) SelectAnimal((AnimalType)index);
+            if (GameInput.ConfirmPressed() && !animalDropdownOpen) StartMatch();
         }
 
         private void OnGUI()
         {
+            GUI.depth = -900;
             EnsureStyles();
-            float uiScale = Mathf.Clamp(Mathf.Min(Screen.width / 1280f, Screen.height / 720f), 0.72f, 1.18f);
+            CaptureBindingEvent(Event.current);
+
+            float uiScale = Mathf.Max(0.52f,
+                Mathf.Min(Screen.width / ReferenceWidth, Screen.height / ReferenceHeight));
             float viewWidth = Screen.width / uiScale;
             float viewHeight = Screen.height / uiScale;
             Matrix4x4 previousMatrix = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(uiScale, uiScale, 1f));
 
-            DrawBackdrop(viewWidth, viewHeight);
-            DrawHeader(viewWidth);
+            DrawBackground(viewWidth, viewHeight);
+            float settingsX = viewWidth - SettingsPanelWidth;
+            float stageWidth = settingsX;
+            DrawStage(stageWidth, viewHeight);
+            DrawSettingsPanel(new Rect(settingsX, 0f, SettingsPanelWidth, viewHeight));
+            DrawBottomNavigation(stageWidth, viewHeight);
 
-            float contentWidth = Mathf.Min(1360f, viewWidth - 44f);
-            float contentX = (viewWidth - contentWidth) * 0.5f;
-            const float gap = 14f;
-            const float cardY = 124f;
-            float cardHeight = Mathf.Clamp(viewHeight * 0.42f, 300f, 360f);
-            float cardWidth = (contentWidth - gap * (AnimalRoster.Count - 1f)) / AnimalRoster.Count;
-
-            for (int i = 0; i < AnimalRoster.Count; i++)
-            {
-                Rect baseRect = new Rect(contentX + i * (cardWidth + gap), cardY, cardWidth, cardHeight);
-                bool hovered = baseRect.Contains(Event.current.mousePosition);
-                DrawAnimalCard((AnimalType)i, baseRect, hovered);
-            }
-
-            DrawFooter(contentX, contentWidth, cardY + cardHeight + 12f, viewHeight);
             GUI.matrix = previousMatrix;
         }
 
-        private void DrawBackdrop(float viewWidth, float viewHeight)
+        private void DrawBackground(float viewWidth, float viewHeight)
         {
-            Color previous = GUI.color;
-            GUI.color = new Color(0.005f, 0.035f, 0.024f, 0.38f);
+            if (menuBackground != null)
+            {
+                GUI.DrawTexture(new Rect(0f, 0f, viewWidth, viewHeight), menuBackground,
+                    ScaleMode.ScaleAndCrop, false);
+            }
+            else
+            {
+                Color previous = GUI.color;
+                GUI.color = new Color(0.04f, 0.25f, 0.18f, 1f);
+                GUI.DrawTexture(new Rect(0f, 0f, viewWidth, viewHeight), Texture2D.whiteTexture);
+                GUI.color = previous;
+            }
+
+            Color oldColor = GUI.color;
+            GUI.color = new Color(0.01f, 0.04f, 0.035f, 0.1f);
             GUI.DrawTexture(new Rect(0f, 0f, viewWidth, viewHeight), Texture2D.whiteTexture);
-            GUI.color = new Color(0f, 0.018f, 0.012f, 0.28f);
-            GUI.DrawTexture(new Rect(0f, 0f, viewWidth, 118f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(0f, viewHeight - 105f, viewWidth, 105f), Texture2D.whiteTexture);
-            GUI.color = previous;
+            GUI.color = oldColor;
         }
 
-        private void DrawHeader(float viewWidth)
+        private void DrawStage(float stageWidth, float viewHeight)
         {
+            float logoCenter = Mathf.Clamp(stageWidth * 0.64f, 610f, stageWidth - 260f);
+            GUI.Label(new Rect(logoCenter - 230f, 12f, 460f, 86f),
+                "<color=#FFB719>ANIMAL</color>\nROYALE", logoStyle);
+
+            Rect subtitle = new Rect(logoCenter - 160f, 102f, 320f, 34f);
+            DrawPanel(subtitle, new Color(0.015f, 0.06f, 0.045f, 0.94f),
+                new Color(0.62f, 0.82f, 0.24f, 1f), 1.5f);
+            GUI.Label(subtitle, "ESCOLHA SEU ANIMAL", centeredStyle);
+
+            float previewWidth = Mathf.Min(580f, stageWidth * 0.49f);
+            Rect previewRect = new Rect(Mathf.Max(16f, stageWidth * 0.06f), 122f,
+                previewWidth, Mathf.Max(520f, viewHeight - 190f));
+            if (animalPreview != null && animalPreview.Texture != null)
+                GUI.DrawTexture(previewRect, animalPreview.Texture, ScaleMode.ScaleToFit, true);
+
+            float controlsX = Mathf.Clamp(stageWidth * 0.57f, 620f, stageWidth - 440f);
+            Rect wardrobeRect = new Rect(controlsX, 280f,
+                Mathf.Min(330f, stageWidth - controlsX - 28f), 88f);
+
+            float startWidth = Mathf.Min(430f, previewRect.width - 40f);
+            Rect startButton = new Rect(previewRect.center.x - startWidth * 0.5f,
+                viewHeight - 150f, startWidth, 68f);
             OnlineMultiplayerManager online = OnlineMultiplayerManager.Instance;
-            string participants = online != null && online.IsConnected
-                ? $"{online.HumanPlayerCount} HUMANOS + {online.PlannedBotCount} BOTS"
-                : "10/10 PARTICIPANTES";
-            Rect roomPanel = new Rect(22f, 20f, 188f, 68f);
-            DrawCartoonPanel(roomPanel, new Color(0.025f, 0.055f, 0.045f, 0.94f),
-                new Color(0.66f, 0.72f, 0.42f, 0.95f), 1f);
-            GUI.Label(new Rect(roomPanel.x + 12f, roomPanel.y + 7f, roomPanel.width - 24f, 29f),
-                "SALA:  <color=#55FF72>001</color>", roomStyle);
-            GUI.Label(new Rect(roomPanel.x + 12f, roomPanel.y + 38f, roomPanel.width - 24f, 20f),
-                participants, selectedStyle);
+            bool waitingForFriend = online != null && online.IsWaitingForLanFriend;
+            string startLabel = waitingForFriend
+                ? $"AGUARDANDO AMIGO — {online.LanInviteWaitSeconds}s"
+                : online != null && online.IsClientOnly
+                    ? "PRONTO — AGUARDAR LÍDER"
+                    : "INICIAR PARTIDA";
+            bool hovered = startButton.Contains(Event.current.mousePosition);
+            DrawPanel(startButton,
+                waitingForFriend
+                    ? new Color(0.29f, 0.31f, 0.18f, 1f)
+                    : hovered ? new Color(1f, 0.57f, 0.025f, 1f) : new Color(0.94f, 0.43f, 0.015f, 1f),
+                waitingForFriend
+                    ? new Color(0.54f, 0.58f, 0.3f, 1f)
+                    : hovered ? new Color(1f, 0.95f, 0.52f, 1f) : new Color(1f, 0.68f, 0.08f, 1f),
+                !waitingForFriend && hovered ? 3f : 2f);
+            GUI.Label(startButton, startLabel, playButtonStyle);
+            if (!animalDropdownOpen && !waitingForFriend
+                                    && GUI.Button(startButton, GUIContent.none, GUIStyle.none)) StartMatch();
 
-            GUI.Label(new Rect(viewWidth * 0.5f - 260f, 3f, 520f, 78f),
-                "<color=#FFB20F>ANIMAL</color>\nROYALE", logoStyle);
-
-            Rect subtitlePanel = new Rect(viewWidth * 0.5f - 154f, 82f, 308f, 32f);
-            DrawCartoonPanel(subtitlePanel, new Color(0.04f, 0.09f, 0.06f, 0.96f),
-                new Color(0.3f, 0.52f, 0.3f, 1f), 1f);
-            GUI.Label(subtitlePanel, "◆  ESCOLHA SEU ANIMAL  ◆", subtitleStyle);
-
-            Rect settingsButton = new Rect(viewWidth - 214f, 20f, 192f, 48f);
-            bool settingsHovered = settingsButton.Contains(Event.current.mousePosition);
-            DrawCartoonPanel(settingsButton,
-                settingsHovered ? new Color(0.13f, 0.31f, 0.24f, 0.99f) : new Color(0.035f, 0.075f, 0.065f, 0.96f),
-                settingsHovered ? new Color(0.52f, 1f, 0.68f, 1f) : new Color(0.48f, 0.64f, 0.42f, 1f),
-                settingsHovered ? 2f : 1f);
-            GUI.Label(settingsButton, "⚙  CONFIGURAÇÕES", buttonStyle);
-            if (GUI.Button(settingsButton, GUIContent.none, GUIStyle.none))
+            if (online != null && (online.IsConnected || online.IsBusy)
+                               && !string.IsNullOrEmpty(online.Status))
             {
-                GameMenuController.Instance?.OpenSettingsFromMainMenu();
-            }
-        }
-
-        private void DrawAnimalCard(AnimalType type, Rect baseRect, bool hovered)
-        {
-            int index = (int)type;
-            AnimalStats stats = AnimalDefinition.Get(type);
-            bool isSelected = selected == type;
-            Color accent = GetCardAccent(type);
-            float lift = hovered ? 6f : 0f;
-            Rect card = new Rect(baseRect.x - lift * 0.35f, baseRect.y - lift, baseRect.width + lift * 0.7f, baseRect.height + lift);
-
-            float diameter = Mathf.Min(card.width - 20f, card.height * 0.66f);
-            Rect circle = new Rect(card.center.x - diameter * 0.5f, card.y + 6f, diameter, diameter);
-
-            Color ringColor = isSelected
-                ? new Color(0.2f, 1f, 0.45f, 1f)
-                : hovered
-                    ? accent
-                    : new Color(accent.r, accent.g, accent.b, 0.55f);
-
-            RuntimeGuiTheme.DrawCircle(new Rect(circle.x + 2f, circle.y + 4f, circle.width, circle.height),
-                new Color(0f, 0f, 0f, 0.32f));
-            RuntimeGuiTheme.DrawCircle(circle, ringColor, true);
-            Rect inner = new Rect(circle.x + 6f, circle.y + 6f, circle.width - 12f, circle.height - 12f);
-            RuntimeGuiTheme.DrawCircle(inner, new Color(0.94f, 0.925f, 0.89f, 1f));
-            DrawFrontPortrait(index, inner);
-
-            GUI.Label(new Rect(card.x, circle.yMax + 10f, card.width, 32f), stats.DisplayName.ToUpperInvariant(), cardTitleStyle);
-
-            if (GUI.Button(card, GUIContent.none, GUIStyle.none)) selected = type;
-        }
-
-        private void DrawFrontPortrait(int index, Rect inner)
-        {
-            Texture2D texture = portraitArt[index];
-            Texture source = texture != null ? texture : fallbackArt[index];
-            if (source == null) return;
-            Rect drawRect = new Rect(inner.x + 5f, inner.y + 5f, inner.width - 10f, inner.height - 10f);
-            GUI.DrawTexture(drawRect, source, ScaleMode.ScaleToFit, true);
-        }
-
-        private void DrawFooter(float contentX, float contentWidth, float requestedY, float viewHeight)
-        {
-            float playButtonY = Mathf.Min(requestedY, viewHeight - 226f);
-            Rect playButton = new Rect(contentX + contentWidth * 0.5f - 210f, playButtonY, 420f, 58f);
-            bool hovered = playButton.Contains(Event.current.mousePosition);
-            DrawCartoonPanel(playButton,
-                hovered ? new Color(1f, 0.63f, 0.05f, 1f) : new Color(0.94f, 0.47f, 0.025f, 1f),
-                hovered ? new Color(1f, 0.94f, 0.5f, 1f) : new Color(1f, 0.72f, 0.12f, 1f),
-                hovered ? 3f : 2f);
-            GUI.Label(playButton, "INICIAR PARTIDA", playButtonStyle);
-            if (GUI.Button(playButton, GUIContent.none, GUIStyle.none)) StartMatch();
-
-            DrawOnlinePanel(contentX, contentWidth, playButton.yMax + 16f);
-        }
-
-        private void DrawOnlinePanel(float contentX, float contentWidth, float y)
-        {
-            OnlineMultiplayerManager online = OnlineMultiplayerManager.Instance;
-            if (online == null) return;
-
-            bool connected = online.IsConnected;
-            float panelWidth = Mathf.Min(560f, contentWidth - 80f);
-            float panelHeight = connected ? 92f : 134f;
-            Rect panel = new Rect(contentX + contentWidth * 0.5f - panelWidth * 0.5f, y, panelWidth, panelHeight);
-
-            RuntimeGuiTheme.DrawPanel(new Rect(panel.x + 3f, panel.y + 4f, panel.width, panel.height),
-                new Color(0f, 0f, 0f, 0.3f), new Color(0f, 0f, 0f, 0f), 0f, false);
-            DrawCartoonPanel(panel, new Color(0.014f, 0.05f, 0.043f, 0.97f),
-                connected ? new Color(0.22f, 1f, 0.5f, 0.95f) : new Color(0.32f, 0.6f, 0.46f, 0.9f), 1f);
-            RuntimeGuiTheme.DrawRoundedRect(new Rect(panel.x + panel.width * 0.5f - 78f, panel.y - 11f, 156f, 22f),
-                new Color(0.014f, 0.05f, 0.043f, 0.97f));
-            GUI.Label(new Rect(panel.x + panel.width * 0.5f - 78f, panel.y - 11f, 156f, 22f), "◆  JOGO ONLINE  ◆", onlineTitleStyle);
-
-            if (connected)
-            {
-                string role = online.IsHost ? "HOST" : "CLIENTE";
-                GUI.Label(new Rect(panel.x + 18f, panel.y + 16f, panel.width - 36f, 24f),
-                    $"{role}   •   HUMANOS {online.HumanPlayerCount}/{online.ParticipantTarget}   •   BOTS {online.PlannedBotCount}",
-                    footerStyle);
-                string codeLine = string.IsNullOrEmpty(online.JoinCode) ? online.Status : $"CÓDIGO  {online.JoinCode}";
-                GUI.Label(new Rect(panel.x + 18f, panel.y + 44f, panel.width - 36f, 24f), codeLine, footerStyle);
-                GUI.Label(new Rect(panel.x + 18f, panel.y + 68f, panel.width - 36f, 20f), online.Status, footerStyle);
-                return;
+                Rect statusRect = new Rect(controlsX, wardrobeRect.yMax + 14f,
+                    wardrobeRect.width, 46f);
+                DrawPanel(statusRect, new Color(0.01f, 0.055f, 0.04f, 0.86f),
+                    new Color(0.22f, 0.5f, 0.34f, 0.9f), 1f);
+                GUI.Label(new Rect(statusRect.x + 10f, statusRect.y + 3f,
+                    statusRect.width - 20f, statusRect.height - 6f), online.Status, smallStyle);
             }
 
-            const float rowHeight = 32f;
-            const float rowGap = 8f;
-            float row1Y = panel.y + 20f;
-            DrawOnlineButton(new Rect(panel.x + 16f, row1Y, 148f, rowHeight),
-                online.IsBusy ? "AGUARDE..." : "CRIAR ONLINE", online.CreateRelaySession);
-            online.JoinCodeInput = GUI.TextField(new Rect(panel.x + 172f, row1Y, 88f, rowHeight),
-                online.JoinCodeInput, 8, onlineFieldStyle).ToUpperInvariant();
-            DrawOnlineButton(new Rect(panel.x + 268f, row1Y, panel.width - 284f, rowHeight), "ENTRAR", online.JoinRelaySession);
-
-            float row2Y = row1Y + rowHeight + rowGap;
-            DrawOnlineButton(new Rect(panel.x + 16f, row2Y, 148f, rowHeight), "HOST LOCAL", online.StartLocalHost);
-            online.DirectAddress = GUI.TextField(new Rect(panel.x + 172f, row2Y, 108f, rowHeight),
-                online.DirectAddress, 32, onlineFieldStyle);
-            DrawOnlineButton(new Rect(panel.x + 288f, row2Y, panel.width - 304f, rowHeight), "LAN", online.StartLocalClient);
-
-            GUI.Label(new Rect(panel.x + 16f, row2Y + rowHeight + 6f, panel.width - 32f, 18f), online.Status, footerStyle);
+            // Draw last so the opened list stays above the start button.
+            DrawAnimalDropdown(wardrobeRect);
         }
 
-        private void DrawOnlineButton(Rect rect, string label, Action action)
+        private void DrawAnimalDropdown(Rect rect)
         {
+            const float optionHeight = 48f;
+            Rect listRect = new Rect(rect.x, rect.yMax + 6f, rect.width,
+                AnimalRoster.Count * optionHeight + 10f);
+            Event currentEvent = Event.current;
+            if (animalDropdownOpen && currentEvent.type == EventType.MouseDown
+                                   && !rect.Contains(currentEvent.mousePosition)
+                                   && !listRect.Contains(currentEvent.mousePosition))
+            {
+                animalDropdownOpen = false;
+                currentEvent.Use();
+            }
+
             bool hovered = rect.Contains(Event.current.mousePosition);
-            DrawCartoonPanel(rect,
-                hovered ? new Color(0.15f, 0.52f, 0.31f, 1f) : new Color(0.055f, 0.2f, 0.15f, 1f),
-                hovered ? new Color(0.52f, 1f, 0.68f, 1f) : new Color(0.27f, 0.72f, 0.48f, 1f), hovered ? 2f : 1f);
-            GUI.Label(rect, label, onlineButtonStyle);
-            if (GUI.Button(rect, GUIContent.none, GUIStyle.none)) action?.Invoke();
+            DrawPanel(rect,
+                hovered ? new Color(0.045f, 0.39f, 0.72f, 0.98f) : new Color(0.035f, 0.28f, 0.57f, 0.98f),
+                new Color(0.88f, 0.9f, 0.24f, 1f), hovered ? 2.5f : 1.5f);
+            GUI.Label(new Rect(rect.x + 18f, rect.y + 10f, rect.width - 36f, 31f), "VESTUÁRIO", titleStyle);
+            GUI.Label(new Rect(rect.x + 18f, rect.y + 44f, rect.width - 36f, 28f),
+                AnimalDefinition.Get(selected).DisplayName.ToUpperInvariant()
+                + (animalDropdownOpen ? "   ▲" : "   ▼"), centeredStyle);
+            if (GUI.Button(rect, GUIContent.none, GUIStyle.none)) animalDropdownOpen = !animalDropdownOpen;
+
+            if (!animalDropdownOpen) return;
+
+            DrawPanel(listRect, new Color(0.035f, 0.28f, 0.57f, 0.78f),
+                new Color(0.88f, 0.9f, 0.24f, 0.96f), 2f);
+            for (int i = 0; i < AnimalRoster.Count; i++)
+            {
+                AnimalType type = (AnimalType)i;
+                Rect option = new Rect(listRect.x + 5f, listRect.y + 5f + i * optionHeight,
+                    listRect.width - 10f, optionHeight - 2f);
+                bool selectedOption = selected == type;
+                if (selectedOption)
+                    RuntimeGuiTheme.DrawRoundedRect(option, new Color(0.055f, 0.47f, 0.82f, 0.9f));
+                GUI.Label(option, AnimalDefinition.Get(type).DisplayName.ToUpperInvariant(), buttonStyle);
+                if (GUI.Button(option, GUIContent.none, GUIStyle.none))
+                {
+                    SelectAnimal(type);
+                    animalDropdownOpen = false;
+                }
+            }
         }
 
-        private void OnDestroy()
+        private void DrawSettingsPanel(Rect panel)
         {
-            for (int i = 0; i < fallbackArt.Length; i++) AnimalPreviewRenderer.Release(fallbackArt[i]);
+            DrawPanel(panel, new Color(0.004f, 0.045f, 0.035f, 0.82f),
+                new Color(0.24f, 0.48f, 0.27f, 1f), 2f);
+            GUI.Label(new Rect(panel.x + 22f, panel.y + 12f, panel.width - 44f, 40f),
+                "CONFIGURAÇÕES", titleStyle);
+
+            OnlineMultiplayerManager online = OnlineMultiplayerManager.Instance;
+            int humans = online != null && online.IsConnected ? online.HumanPlayerCount : 1;
+            int target = online != null ? online.ParticipantTarget : 15;
+            int friends = Mathf.Max(0, humans - 1);
+            int bots = Mathf.Max(0, target - humans);
+
+            Rect room = new Rect(panel.x + 18f, panel.y + 55f, panel.width - 36f, 72f);
+            DrawPanel(room, new Color(0.02f, 0.085f, 0.06f, 0.7f),
+                new Color(0.44f, 0.78f, 0.3f, 1f), 1f);
+            GUI.Label(new Rect(room.x + 14f, room.y + 5f, room.width - 28f, 28f),
+                online != null && online.IsConnected ? "SALA LOCAL — GRUPO ATIVO" : "SALA ATUAL — SOMENTE VOCÊ",
+                roomStyle);
+            GUI.Label(new Rect(room.x + 14f, room.y + 35f, room.width - 28f, 25f),
+                $"{friends} AMIGO(S)  •  {bots} BOT(S)  •  TOTAL {target}", centeredStyle);
+
+            Rect viewport = new Rect(panel.x + 14f, panel.y + 139f, panel.width - 28f, panel.height - 153f);
+            int peerCount = online != null ? online.LanFriends.Count : 0;
+            float contentHeight = 962f + GameInputBindings.Definitions.Count * 58f
+                                        + Mathf.Max(0, peerCount - 1) * 68f;
+            Rect content = new Rect(0f, 0f, viewport.width - 20f, contentHeight);
+            settingsScroll = GUI.BeginScrollView(viewport, settingsScroll, content);
+
+            float y = 0f;
+            y = DrawLanSection(content.width, y, online);
+            y = DrawSliderSetting(content.width, y, "VOLUME GERAL",
+                GameSettings.MasterVolume, 0f, 1f, value => GameSettings.MasterVolume = value, true);
+            y = DrawSliderSetting(content.width, y, "EFEITOS E AMBIENTE",
+                GameSettings.EffectsAmbientVolume, 0f, 1f,
+                value => GameSettings.EffectsAmbientVolume = value, true);
+            y = DrawSliderSetting(content.width, y, "SENSIBILIDADE DA CÂMERA",
+                GameSettings.MouseSensitivity, GameSettings.MinMouseSensitivity, GameSettings.MaxMouseSensitivity,
+                value => GameSettings.MouseSensitivity = value, false);
+            y = DrawChoiceSetting(content.width, y, "LADO DO PERSONAGEM",
+                "ESQUERDA", GameSettings.CharacterSide == CharacterScreenSide.Left,
+                () => GameSettings.CharacterSide = CharacterScreenSide.Left,
+                "DIREITA", GameSettings.CharacterSide == CharacterScreenSide.Right,
+                () => GameSettings.CharacterSide = CharacterScreenSide.Right);
+            y = DrawChoiceSetting(content.width, y, "CORRIDA AUTOMÁTICA",
+                "DESLIGADA", !GameSettings.AutomaticSprint,
+                () => GameSettings.AutomaticSprint = false,
+                "ATIVADA", GameSettings.AutomaticSprint,
+                () => GameSettings.AutomaticSprint = true);
+            y = DrawChoiceSetting(content.width, y, "MODO DE DISPARO",
+                "CLIQUE ÚNICO", GameSettings.RangedFireMode == RangedFireMode.SingleShot,
+                () => GameSettings.RangedFireMode = RangedFireMode.SingleShot,
+                "AUTOMÁTICO", GameSettings.RangedFireMode == RangedFireMode.Automatic,
+                () => GameSettings.RangedFireMode = RangedFireMode.Automatic);
+
+            GUI.Label(new Rect(8f, y + 4f, content.width - 16f, 28f), "ATALHOS DO TECLADO", sectionTitleStyle);
+            y += 38f;
+            IReadOnlyList<GameInputBindingDefinition> bindings = GameInputBindings.Definitions;
+            for (int i = 0; i < bindings.Count; i++)
+            {
+                DrawBindingRow(new Rect(8f, y, content.width - 16f, 52f), bindings[i]);
+                y += 58f;
+            }
+
+            if (Time.unscaledTime < bindingMessageUntil)
+            {
+                GUI.Label(new Rect(8f, y, content.width - 16f, 38f), bindingMessage, smallStyle);
+                y += 42f;
+            }
+
+            Rect restore = new Rect(8f, y + 4f, content.width - 16f, 44f);
+            if (DrawButton(restore, "RESTAURAR CONFIGURAÇÕES",
+                    new Color(0.31f, 0.22f, 0.1f, 1f)))
+            {
+                GameInputBindings.RestoreDefaults();
+                GameSettings.RestoreDefaults();
+                bindingMessage = "CONFIGURAÇÕES PADRÃO RESTAURADAS";
+                bindingMessageUntil = Time.unscaledTime + 2f;
+            }
+
+            GUI.EndScrollView();
+        }
+
+        private float DrawLanSection(float width, float y, OnlineMultiplayerManager online)
+        {
+            int count = online != null ? online.LanFriends.Count : 0;
+            float rowsHeight = Mathf.Max(54f, count * 68f);
+            bool showNetworkStatus = online != null && (online.IsConnected || online.IsBusy || count > 0);
+            Rect section = new Rect(8f, y, width - 16f,
+                (showNetworkStatus ? 126f : 96f) + rowsHeight);
+            DrawPanel(section, new Color(0.015f, 0.07f, 0.052f, 0.7f),
+                new Color(0.18f, 0.34f, 0.22f, 1f), 1f);
+            GUI.Label(new Rect(section.x + 14f, section.y + 9f, section.width - 132f, 28f),
+                "ACHAR AMIGO NA REDE LOCAL", sectionTitleStyle);
+
+            Rect refresh = new Rect(section.xMax - 112f, section.y + 7f, 98f, 32f);
+            if (DrawButton(refresh, online != null && online.IsLanRefreshing ? "BUSCANDO..." : "ATUALIZAR",
+                    new Color(0.07f, 0.2f, 0.14f, 1f)))
+                online?.RefreshLanFriends();
+
+            GUI.Label(new Rect(section.x + 14f, section.y + 42f, section.width - 28f, 36f),
+                "Mostra jogadores com o jogo aberto na mesma rede Wi-Fi.", smallStyle);
+
+            float rowY = section.y + 82f;
+            if (online == null)
+            {
+                GUI.Label(new Rect(section.x + 14f, rowY, section.width - 28f, 44f),
+                    "REDE LOCAL INDISPONÍVEL", centeredStyle);
+            }
+            else if (count == 0)
+            {
+                GUI.Label(new Rect(section.x + 14f, rowY, section.width - 28f, 48f),
+                    online.IsLanRefreshing ? "PROCURANDO NA REDE..." : "NENHUM AMIGO ENCONTRADO — CLIQUE EM ATUALIZAR",
+                    smallStyle);
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    LanPeerInfo peer = online.LanFriends[i];
+                    Rect row = new Rect(section.x + 10f, rowY + i * 68f, section.width - 20f, 60f);
+                    DrawPanel(row, new Color(0.018f, 0.095f, 0.068f, 0.7f),
+                        new Color(0.2f, 0.42f, 0.27f, 1f), 1f);
+                    GUI.Label(new Rect(row.x + 12f, row.y + 5f, row.width - 130f, 25f),
+                        peer.DisplayName.ToUpperInvariant(), labelStyle);
+                    string peerState = peer.IsInLobby
+                        ? $"GRUPO COM {peer.HumanCount} JOGADOR(ES)"
+                        : "DISPONÍVEL NA REDE";
+                    GUI.Label(new Rect(row.x + 12f, row.y + 30f, row.width - 130f, 20f), peerState, smallStyle);
+
+                    Rect invite = new Rect(row.xMax - 112f, row.y + 12f, 100f, 35f);
+                    bool canInvite = online.CanInviteLanFriends && peer.IsJoinable;
+                    string inviteLabel = canInvite
+                        ? "CONVIDAR"
+                        : online.IsBusy ? "AGUARDE"
+                        : online.IsClientOnly ? "SÓ O LÍDER"
+                        : peer.IsInLobby ? "EM GRUPO" : "INDISPONÍVEL";
+                    if (DrawButton(invite, inviteLabel,
+                            canInvite
+                                ? new Color(0.2f, 0.52f, 0.21f, 1f)
+                                : new Color(0.12f, 0.18f, 0.14f, 1f)) && canInvite)
+                        online.InviteLanFriend(peer.PeerId);
+                }
+            }
+
+            if (showNetworkStatus)
+            {
+                GUI.Label(new Rect(section.x + 14f, section.yMax - 34f, section.width - 28f, 25f),
+                    online.Status, smallStyle);
+            }
+            return section.yMax + 12f;
+        }
+
+        private float DrawSliderSetting(float width, float y, string title, float current,
+            float minimum, float maximum, Action<float> apply, bool percentage)
+        {
+            Rect rect = new Rect(8f, y, width - 16f, 78f);
+            DrawPanel(rect, new Color(0.018f, 0.075f, 0.058f, 0.66f),
+                new Color(0.14f, 0.28f, 0.2f, 1f), 1f);
+            string valueLabel = percentage
+                ? Mathf.RoundToInt(current * 100f) + "%"
+                : current.ToString("0.00") + "x";
+            GUI.Label(new Rect(rect.x + 14f, rect.y + 7f, rect.width - 28f, 24f),
+                title + "   " + valueLabel, labelStyle);
+            float value = GUI.HorizontalSlider(new Rect(rect.x + 17f, rect.y + 43f, rect.width - 34f, 22f),
+                current, minimum, maximum);
+            if (!Mathf.Approximately(value, current)) apply(value);
+            return rect.yMax + 10f;
+        }
+
+        private float DrawChoiceSetting(float width, float y, string title,
+            string leftLabel, bool leftSelected, Action selectLeft,
+            string rightLabel, bool rightSelected, Action selectRight)
+        {
+            Rect rect = new Rect(8f, y, width - 16f, 91f);
+            DrawPanel(rect, new Color(0.018f, 0.075f, 0.058f, 0.66f),
+                new Color(0.14f, 0.28f, 0.2f, 1f), 1f);
+            GUI.Label(new Rect(rect.x + 14f, rect.y + 6f, rect.width - 28f, 25f), title, labelStyle);
+            float buttonWidth = (rect.width - 42f) * 0.5f;
+            Rect left = new Rect(rect.x + 12f, rect.y + 41f, buttonWidth, 36f);
+            Rect right = new Rect(left.xMax + 18f, left.y, buttonWidth, left.height);
+            DrawChoiceButton(left, leftLabel, leftSelected, selectLeft);
+            DrawChoiceButton(right, rightLabel, rightSelected, selectRight);
+            return rect.yMax + 10f;
+        }
+
+        private void DrawChoiceButton(Rect rect, string text, bool isSelected, Action select)
+        {
+            DrawPanel(rect,
+                isSelected ? new Color(0.18f, 0.55f, 0.28f, 1f) : new Color(0.06f, 0.13f, 0.1f, 1f),
+                isSelected ? new Color(0.62f, 1f, 0.68f, 1f) : new Color(0.2f, 0.38f, 0.28f, 1f), 1f);
+            GUI.Label(rect, text, keyStyle);
+            if (GUI.Button(rect, GUIContent.none, GUIStyle.none)) select();
+        }
+
+        private void DrawBindingRow(Rect rect, GameInputBindingDefinition definition)
+        {
+            bool waiting = waitingForBinding == definition.Action;
+            DrawPanel(rect,
+                waiting ? new Color(0.08f, 0.2f, 0.14f, 0.9f) : new Color(0.018f, 0.075f, 0.058f, 0.66f),
+                waiting ? new Color(0.52f, 1f, 0.68f, 1f) : new Color(0.14f, 0.28f, 0.2f, 1f), 1f);
+            GUI.Label(new Rect(rect.x + 12f, rect.y, rect.width * 0.55f, rect.height),
+                definition.Label, labelStyle);
+            Rect key = new Rect(rect.x + rect.width * 0.58f, rect.y + 8f, rect.width * 0.39f, rect.height - 16f);
+            DrawPanel(key,
+                waiting ? new Color(0.2f, 0.62f, 0.39f, 1f) : new Color(0.06f, 0.13f, 0.1f, 1f),
+                waiting ? Color.white : new Color(0.25f, 0.46f, 0.34f, 1f), 1f);
+            GUI.Label(key, waiting ? "PRESSIONE..." : GameInputBindings.GetDisplayName(definition.Action), keyStyle);
+            if (GUI.Button(key, GUIContent.none, GUIStyle.none)) waitingForBinding = definition.Action;
+        }
+
+        private void DrawBottomNavigation(float stageWidth, float viewHeight)
+        {
+            Rect bar = new Rect(0f, viewHeight - 62f, stageWidth, 62f);
+            Color previous = GUI.color;
+            GUI.color = new Color(0.005f, 0.025f, 0.02f, 0.83f);
+            GUI.DrawTexture(bar, Texture2D.whiteTexture);
+            GUI.color = previous;
+
+            float buttonWidth = stageWidth / 3f;
+            Rect news = new Rect(0f, bar.y, buttonWidth, bar.height);
+            Rect credits = new Rect(buttonWidth, bar.y, buttonWidth, bar.height);
+            Rect exit = new Rect(buttonWidth * 2f, bar.y, buttonWidth, bar.height);
+            GUI.Label(news, "NOTÍCIAS  —  EM BREVE", buttonStyle);
+            GUI.Label(credits, "CRÉDITOS  —  EM BREVE", buttonStyle);
+            GUI.Label(exit, "SAIR DO JOGO", buttonStyle);
+            if (GUI.Button(exit, GUIContent.none, GUIStyle.none)) QuitGame();
+        }
+
+        private void SelectAnimal(AnimalType type)
+        {
+            if ((int)type < 0 || (int)type >= AnimalRoster.Count || selected == type) return;
+            selected = type;
+            animalPreview?.SetAnimal(type);
+            OnlineMultiplayerManager.Instance?.SetLocalSelection(type);
         }
 
         private void StartMatch()
@@ -253,46 +450,130 @@ namespace AnimalBattleRoyale
             Destroy(gameObject);
         }
 
+        private void CaptureBindingEvent(Event currentEvent)
+        {
+            if (!waitingForBinding.HasValue || currentEvent == null) return;
+
+            KeyCode captured = KeyCode.None;
+            if (currentEvent.type == EventType.KeyDown)
+            {
+                if (currentEvent.keyCode == KeyCode.Escape)
+                {
+                    waitingForBinding = null;
+                    bindingMessage = "ALTERAÇÃO CANCELADA";
+                    bindingMessageUntil = Time.unscaledTime + 1.5f;
+                    currentEvent.Use();
+                    return;
+                }
+                captured = currentEvent.keyCode;
+            }
+            else if (currentEvent.type == EventType.MouseDown && currentEvent.button is >= 0 and <= 6)
+            {
+                captured = (KeyCode)((int)KeyCode.Mouse0 + currentEvent.button);
+            }
+
+            if (captured == KeyCode.None) return;
+            GameInputAction action = waitingForBinding.Value;
+            if (GameInputBindings.TryRebind(action, captured, out GameInputAction? swapped))
+            {
+                bindingMessage = swapped.HasValue
+                    ? $"{GameInputBindings.GetActionLabel(action)} ALTERADO; "
+                      + $"{GameInputBindings.GetActionLabel(swapped.Value)} RECEBEU A TECLA ANTERIOR"
+                    : $"{GameInputBindings.GetActionLabel(action)}: {GameInputBindings.GetKeyDisplayName(captured)}";
+                bindingMessageUntil = Time.unscaledTime + 3f;
+            }
+            waitingForBinding = null;
+            currentEvent.Use();
+        }
+
+        private bool DrawButton(Rect rect, string text, Color fill)
+        {
+            bool hovered = rect.Contains(Event.current.mousePosition);
+            Color hoveredFill = Color.Lerp(fill, Color.white, 0.12f);
+            DrawPanel(rect, hovered ? hoveredFill : fill,
+                Color.Lerp(fill, Color.white, hovered ? 0.62f : 0.38f), hovered ? 1.8f : 1f);
+            GUI.Label(rect, text, keyStyle);
+            return GUI.Button(rect, GUIContent.none, GUIStyle.none);
+        }
+
+        private static void DrawPanel(Rect rect, Color fill, Color border, float borderSize)
+        {
+            RuntimeGuiTheme.DrawPanel(rect, fill, border, borderSize);
+        }
+
+        private static void QuitGame()
+        {
+            Time.timeScale = 1f;
+            AudioListener.pause = false;
+            Application.Quit();
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#endif
+        }
+
+        private void OnDestroy()
+        {
+            animalPreview?.Dispose();
+        }
+
         private void EnsureStyles()
         {
             if (logoStyle != null) return;
             RuntimeGuiTheme.Ensure();
             logoStyle = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 31,
+                fontSize = 39,
                 fontStyle = FontStyle.Bold,
                 alignment = TextAnchor.MiddleCenter,
                 richText = true,
                 normal = { textColor = Color.white }
             };
-            titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 28, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
-            subtitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(0.92f, 0.95f, 0.77f) } };
-            selectedStyle = new GUIStyle(GUI.skin.label) { fontSize = 10, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Clip, normal = { textColor = new Color(0.72f, 1f, 0.78f) } };
-            buttonStyle = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
-            playButtonStyle = new GUIStyle(buttonStyle) { fontSize = 24 };
-            cardTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white } };
-            footerStyle = new GUIStyle(GUI.skin.label) { fontSize = 11, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Clip, normal = { textColor = new Color(0.94f, 0.95f, 0.82f) } };
-            roomStyle = new GUIStyle(GUI.skin.label) { fontSize = 17, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, richText = true, normal = { textColor = Color.white } };
-            onlineTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = new Color(0.55f, 1f, 0.72f) } };
-            onlineButtonStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, clipping = TextClipping.Clip, normal = { textColor = Color.white } };
-            onlineFieldStyle = new GUIStyle(GUI.skin.textField) { fontSize = 13, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white, background = Texture2D.grayTexture } };
-        }
-
-        private static Color GetCardAccent(AnimalType type)
-        {
-            return type switch
+            titleStyle = new GUIStyle(GUI.skin.label)
             {
-                AnimalType.Tiger => new Color(0.16f, 1f, 0.36f),
-                AnimalType.Ant => new Color(0.38f, 0.86f, 0.18f),
-                AnimalType.Eagle => new Color(0.08f, 0.68f, 1f),
-                AnimalType.Monkey => new Color(1f, 0.58f, 0.08f),
-                _ => new Color(0.3f, 0.9f, 0.6f)
+                fontSize = 24,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = Color.white }
             };
-        }
-
-        private static void DrawCartoonPanel(Rect rect, Color fill, Color border, float borderSize)
-        {
-            RuntimeGuiTheme.DrawPanel(rect, fill, border, borderSize);
+            sectionTitleStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 15,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                normal = { textColor = new Color(0.55f, 0.95f, 0.38f) }
+            };
+            labelStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 13,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+                clipping = TextClipping.Clip,
+                normal = { textColor = new Color(0.94f, 0.96f, 0.91f) }
+            };
+            smallStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 11,
+                alignment = TextAnchor.MiddleCenter,
+                wordWrap = true,
+                clipping = TextClipping.Clip,
+                normal = { textColor = new Color(0.7f, 0.84f, 0.75f) }
+            };
+            centeredStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 13,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                clipping = TextClipping.Clip,
+                normal = { textColor = new Color(0.9f, 0.95f, 0.84f) }
+            };
+            buttonStyle = new GUIStyle(centeredStyle) { fontSize = 15 };
+            playButtonStyle = new GUIStyle(buttonStyle) { fontSize = 24 };
+            roomStyle = new GUIStyle(centeredStyle)
+            {
+                fontSize = 14,
+                normal = { textColor = new Color(0.65f, 1f, 0.46f) }
+            };
+            keyStyle = new GUIStyle(centeredStyle) { fontSize = 11 };
         }
     }
 }

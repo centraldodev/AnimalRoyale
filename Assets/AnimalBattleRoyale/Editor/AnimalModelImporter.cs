@@ -25,7 +25,7 @@ namespace AnimalBattleRoyale.EditorTools
         {
             ImportAll();
             ImportLifeOrb();
-            ImportAmmoAndHole();
+            ImportAmmo();
             ImportCountdown();
             ImportShoulderWeapon();
             AssetDatabase.SaveAssets();
@@ -36,15 +36,12 @@ namespace AnimalBattleRoyale.EditorTools
         [MenuItem("AnimalBattleRoyale/Import All Animal Models")]
         public static void ImportAll()
         {
-            foreach (string animal in Animals)
-            {
-                string riggedFbx = $"{CharBase}/{animal}/Models/{animal}_Rigged.fbx";
-                if (!File.Exists(riggedFbx)) { Debug.Log($"[Import] skip {animal} (no rigged FBX)"); continue; }
-                ImportOne(animal, riggedFbx);
-            }
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            Debug.Log("[Import] Done");
+            // The original generated animals were replaced by the current Tripo
+            // models. Delegate to their dedicated importers so this legacy menu
+            // remains safe after the unused source assets are removed.
+            TripoTigerImporter.Import();
+            TripoAnimalImporter.ImportAll();
+            Debug.Log("[Import] Current Tripo animal models rebuilt");
         }
 
         private static void ImportOne(string animal, string fbxPath)
@@ -257,13 +254,11 @@ namespace AnimalBattleRoyale.EditorTools
             Debug.Log($"[LifeOrb] prefab saved (scale {scale:0.###}) -> {LifePrefabPath}");
         }
 
-        [MenuItem("AnimalBattleRoyale/Import Ammo & Tunnel-Hole Props")]
-        public static void ImportAmmoAndHole()
+        [MenuItem("AnimalBattleRoyale/Import Ammo Prop")]
+        public static void ImportAmmo()
         {
             BuildBasicProp("Assets/AnimalBattleRoyale/Art/Pickups/Ammo", "AmmoBox",
                 "Assets/AnimalBattleRoyale/Resources/Pickups/AmmoBox.prefab", 1.3f, true);
-            BuildBasicProp("Assets/AnimalBattleRoyale/Art/Environment/TunnelHole", "TunnelHole",
-                "Assets/AnimalBattleRoyale/Resources/Environment/TunnelHole.prefab", 3.6f, true);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
         }

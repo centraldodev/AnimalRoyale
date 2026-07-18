@@ -240,14 +240,14 @@ namespace AnimalBattleRoyale
         }
     }
 
-    /// <summary>Shows the launcher that matches the fighter's replicated crystal level.</summary>
+    /// <summary>Shows the launcher that matches the fighter's currently selected weapon.</summary>
     public sealed class ShoulderWeaponVisual : MonoBehaviour
     {
         private ThirdPersonAnimalController owner;
         private GameObject seedLauncher;
         private GameObject tomatoLauncher;
         private GameObject watermelonLauncher;
-        private int displayedLevel = -1;
+        private int displayedWeaponSlot = -1;
 
         public void Initialize(GameObject seed, GameObject tomato, GameObject watermelon)
         {
@@ -262,14 +262,23 @@ namespace AnimalBattleRoyale
 
         private void Refresh(bool force)
         {
-            int weaponLevel = owner != null ? owner.WeaponLevel : 1;
-            if (!force && weaponLevel == displayedLevel) return;
-            displayedLevel = weaponLevel;
-            bool useWatermelonLauncher = weaponLevel >= 3 && watermelonLauncher != null;
-            bool useTomatoLauncher = !useWatermelonLauncher && weaponLevel >= 2 && tomatoLauncher != null;
-            if (seedLauncher != null) seedLauncher.SetActive(!useTomatoLauncher && !useWatermelonLauncher);
-            if (tomatoLauncher != null) tomatoLauncher.SetActive(useTomatoLauncher);
-            if (watermelonLauncher != null) watermelonLauncher.SetActive(useWatermelonLauncher);
+            WeaponAmmoType selectedWeapon = owner != null ? owner.CurrentWeaponAmmo : WeaponAmmoType.Seed;
+            int selectedSlot = (int)selectedWeapon;
+            if (!force && selectedSlot == displayedWeaponSlot) return;
+            displayedWeaponSlot = selectedSlot;
+
+            GameObject selectedLauncher = selectedWeapon switch
+            {
+                WeaponAmmoType.Tomato => tomatoLauncher,
+                WeaponAmmoType.Watermelon => watermelonLauncher,
+                _ => seedLauncher
+            };
+
+            // Keep a launcher visible even if one of the optional imported models is missing.
+            selectedLauncher ??= seedLauncher ?? tomatoLauncher ?? watermelonLauncher;
+            if (seedLauncher != null) seedLauncher.SetActive(seedLauncher == selectedLauncher);
+            if (tomatoLauncher != null) tomatoLauncher.SetActive(tomatoLauncher == selectedLauncher);
+            if (watermelonLauncher != null) watermelonLauncher.SetActive(watermelonLauncher == selectedLauncher);
         }
     }
 }

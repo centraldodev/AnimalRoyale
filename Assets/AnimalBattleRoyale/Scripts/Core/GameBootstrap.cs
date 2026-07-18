@@ -8,7 +8,7 @@ namespace AnimalBattleRoyale
     public sealed class GameBootstrap : MonoBehaviour
     {
         [Header("Prototype")]
-        [SerializeField, Range(0, DiamondObjectiveManager.MaxPlayers - 1)] private int botCount = 15;
+        [SerializeField, Range(0, DiamondObjectiveManager.MaxPlayers - 1)] private int botCount = 14;
         [SerializeField] private AnimalType initialAnimal = AnimalType.Tiger;
         [SerializeField] private bool generateJungleOnStart = true;
         [SerializeField, Range(3f, 12f)] private float openingProtectionDuration = 6f;
@@ -58,6 +58,7 @@ namespace AnimalBattleRoyale
 
         private static void ConfigureRendering()
         {
+            GameSettings.ApplyAudioVolumes();
             bool mobile = Application.isMobilePlatform;
             if (mobile)
             {
@@ -78,12 +79,12 @@ namespace AnimalBattleRoyale
             RenderSettings.fog = true;
             RenderSettings.fogColor = new Color(0.28f, 0.59f, 0.76f);
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = 0.0028f;
+            RenderSettings.fogDensity = 0.0023f;
             RenderSettings.ambientMode = AmbientMode.Trilight;
             RenderSettings.ambientSkyColor = new Color(0.4f, 0.66f, 0.88f);
             RenderSettings.ambientEquatorColor = new Color(0.28f, 0.54f, 0.32f);
             RenderSettings.ambientGroundColor = new Color(0.14f, 0.24f, 0.1f);
-            RenderSettings.reflectionIntensity = 0.82f;
+            RenderSettings.reflectionIntensity = 0.72f;
 
             Shader skyShader = ShaderLibrary.Find("Skybox/Procedural");
             if (skyShader != null)
@@ -104,7 +105,7 @@ namespace AnimalBattleRoyale
                 light = lightObject.AddComponent<Light>();
             }
             light.type = LightType.Directional;
-            light.intensity = 1.85f;
+            light.intensity = 1.55f;
             light.color = new Color(1f, 0.92f, 0.76f);
             light.shadows = mobile ? LightShadows.Hard : LightShadows.Soft;
             light.shadowStrength = 0.68f;
@@ -117,7 +118,7 @@ namespace AnimalBattleRoyale
             Light fillLight = fillObject.GetComponent<Light>();
             if (fillLight == null) fillLight = fillObject.AddComponent<Light>();
             fillLight.type = LightType.Directional;
-            fillLight.intensity = 0.3f;
+            fillLight.intensity = 0.19f;
             fillLight.color = new Color(0.35f, 0.58f, 1f);
             fillLight.shadows = LightShadows.None;
             fillObject.transform.rotation = Quaternion.Euler(32f, 142f, 0f);
@@ -295,8 +296,11 @@ namespace AnimalBattleRoyale
             Vector3 targetGround = jungle.GetGroundPosition(new Vector3(0f, 0f, 38f));
             camera.transform.position = cameraGround + Vector3.up * 16.5f;
             camera.transform.rotation = Quaternion.LookRotation(targetGround + Vector3.up * 4.5f - camera.transform.position, Vector3.up);
-            camera.clearFlags = RenderSettings.skybox != null ? CameraClearFlags.Skybox : CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(0.12f, 0.52f, 0.9f);
+            // The main menu uses a static background and its own isolated 3D preview.
+            // Do not spend GPU time drawing the generated gameplay map behind it.
+            camera.cullingMask = 0;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = Color.black;
             camera.nearClipPlane = 0.12f;
             camera.farClipPlane = 680f;
             camera.fieldOfView = 58f;
@@ -304,10 +308,12 @@ namespace AnimalBattleRoyale
 
         private static void ConfigureCamera(Camera camera, Transform target)
         {
+            camera.cullingMask = ~0;
             camera.clearFlags = RenderSettings.skybox != null ? CameraClearFlags.Skybox : CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.12f, 0.52f, 0.9f);
             camera.farClipPlane = Mathf.Max(camera.farClipPlane, 680f);
             camera.allowHDR = true;
+            CartoonColorGrading.Ensure(camera, 1.24f, 1.05f, 0.95f);
             ThirdPersonCamera thirdPersonCamera = camera.GetComponent<ThirdPersonCamera>();
             if (thirdPersonCamera == null) thirdPersonCamera = camera.gameObject.AddComponent<ThirdPersonCamera>();
             thirdPersonCamera.SetTarget(target);

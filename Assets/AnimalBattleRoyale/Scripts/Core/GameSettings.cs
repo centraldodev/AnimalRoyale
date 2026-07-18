@@ -20,6 +20,8 @@ namespace AnimalBattleRoyale
         private const string CharacterSideKey = "Settings_CharacterScreenSide";
         private const string AutomaticSprintKey = "Settings_AutomaticSprint";
         private const string RangedFireModeKey = "Settings_RangedFireMode";
+        private const string MasterVolumeKey = "Settings_MasterVolume";
+        private const string EffectsAmbientVolumeKey = "Settings_EffectsAmbientVolume";
 
         public const float MinMouseSensitivity = 0.35f;
         public const float MaxMouseSensitivity = 2.5f;
@@ -27,6 +29,38 @@ namespace AnimalBattleRoyale
         public const CharacterScreenSide DefaultCharacterSide = CharacterScreenSide.Left;
         public const bool DefaultAutomaticSprint = false;
         public const RangedFireMode DefaultRangedFireMode = RangedFireMode.SingleShot;
+        public const float DefaultMasterVolume = 0.85f;
+        public const float DefaultEffectsAmbientVolume = 0.9f;
+
+        public static float MasterVolume
+        {
+            get => Mathf.Clamp01(PlayerPrefs.GetFloat(MasterVolumeKey, DefaultMasterVolume));
+            set
+            {
+                PlayerPrefs.SetFloat(MasterVolumeKey, Mathf.Clamp01(value));
+                PlayerPrefs.Save();
+                ApplyAudioVolumes();
+            }
+        }
+
+        public static float EffectsAmbientVolume
+        {
+            get => Mathf.Clamp01(PlayerPrefs.GetFloat(EffectsAmbientVolumeKey, DefaultEffectsAmbientVolume));
+            set
+            {
+                PlayerPrefs.SetFloat(EffectsAmbientVolumeKey, Mathf.Clamp01(value));
+                PlayerPrefs.Save();
+                ApplyAudioVolumes();
+            }
+        }
+
+        public static void ApplyAudioVolumes()
+        {
+            // All audio currently in the game belongs to the effects/ambience bus.
+            // Keeping the second gain here makes the setting immediately effective
+            // for existing and future AudioSources without rewriting their authored mix.
+            AudioListener.volume = MasterVolume * EffectsAmbientVolume;
+        }
 
         public static float MouseSensitivity
         {
@@ -72,6 +106,8 @@ namespace AnimalBattleRoyale
 
         public static void RestoreDefaults()
         {
+            MasterVolume = DefaultMasterVolume;
+            EffectsAmbientVolume = DefaultEffectsAmbientVolume;
             MouseSensitivity = DefaultMouseSensitivity;
             CharacterSide = DefaultCharacterSide;
             AutomaticSprint = DefaultAutomaticSprint;

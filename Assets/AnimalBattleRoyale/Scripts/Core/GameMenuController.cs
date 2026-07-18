@@ -392,7 +392,7 @@ namespace AnimalBattleRoyale
                 GUI.Label(new Rect(touchGuide.x + 16f, touchGuide.y + 8f, touchGuide.width - 32f, 24f),
                     "CONTROLES TOUCHSCREEN", buttonStyle);
                 GUI.Label(new Rect(touchGuide.x + 16f, touchGuide.y + 37f, touchGuide.width - 32f, 42f),
-                    "Joystick: mover  •  Arrastar lado direito: mirar  •  Botões: tiro, golpe, poder, pulo, correr e usar",
+                    "Metade esquerda: movimento WASD  •  Metade direita: câmera  •  Atirar: segure e arraste para atirar e mirar; fora do círculo, apenas câmera",
                     centeredStyle);
                 settingsY = touchGuide.yMax + 12f;
             }

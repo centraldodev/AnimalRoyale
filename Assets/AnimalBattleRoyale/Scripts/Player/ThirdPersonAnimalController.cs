@@ -116,8 +116,9 @@ namespace AnimalBattleRoyale
         public bool IsVineLeaping => vineLeaping;
         public int VinesVisitedInChain => vinesVisitedInChain;
         public bool CanChainToAnotherVine => hangingVine && vinesVisitedInChain < MaxVinesPerChain;
-        public bool IsWading => CentralLake.Instance != null && CentralLake.Instance.Contains(transform.position);
-        public bool IsSwimming => IsWading && transform.position.y < CentralLake.Instance.SurfaceHeight - stats.ControllerHeight * 0.35f;
+        public bool IsWading => CentralLake.TryGetWaterAt(transform.position, out _, out _);
+        public bool IsSwimming => CentralLake.TryGetWaterAt(transform.position, out float surfaceHeight, out _)
+                                  && transform.position.y < surfaceHeight - stats.ControllerHeight * 0.35f;
         public float TunnelSecondsRemaining => AntTunnelEntrance.SecondsRemaining(this);
         public bool UsesMobilityEnergy => false;
         public float MobilityEnergy => 0f;
@@ -592,9 +593,13 @@ namespace AnimalBattleRoyale
             float speed = sprint ? stats.SprintSpeed : stats.MoveSpeed;
             if (Time.time < slowUntil) speed *= slowMultiplier;
             if (gliding) speed *= ServerGameTuning.EagleFlySpeedBonus;
-            if (IsSwimming) speed *= 0.72f;
-            else if (IsWading && !(ForestMissionDirector.Instance != null && ForestMissionDirector.Instance.LakePassageOpen))
-                speed *= CentralLake.Instance.MovementMultiplier;
+            bool wading = CentralLake.TryGetWaterAt(transform.position, out float waterSurfaceHeight,
+                out float waterMovementMultiplier);
+            bool swimming = wading
+                            && transform.position.y < waterSurfaceHeight - stats.ControllerHeight * 0.35f;
+            if (swimming) speed *= 0.72f;
+            else if (wading && !(ForestMissionDirector.Instance != null && ForestMissionDirector.Instance.LakePassageOpen))
+                speed *= waterMovementMultiplier;
 
             Vector3 horizontal = abilityDashing ? dashDirection * abilityDashSpeed
                 : tigerLeaping ? tigerLeapDirection * ServerGameTuning.TigerLeapSpeed
@@ -611,9 +616,9 @@ namespace AnimalBattleRoyale
                 verticalVelocity.y = Mathf.Max(ServerGameTuning.EagleMaximumFallSpeed,
                     verticalVelocity.y + gravity * ServerGameTuning.EagleGlideGravityMultiplier * Time.deltaTime);
             }
-            else if (IsSwimming)
+            else if (swimming)
             {
-                float surfaceTarget = CentralLake.Instance.SurfaceHeight - stats.ControllerHeight * 0.55f;
+                float surfaceTarget = waterSurfaceHeight - stats.ControllerHeight * 0.55f;
                 float lift = Mathf.Clamp((surfaceTarget - transform.position.y) * 4.5f, -3f, 7f);
                 verticalVelocity.y = Mathf.MoveTowards(verticalVelocity.y, lift, 30f * Time.deltaTime);
             }
@@ -722,6 +727,9 @@ namespace AnimalBattleRoyale
             if (rangedReloading || SelectedMagazineAmmo > 0 || SelectedReserveAmmo <= 0) return;
             rangedReloading = true;
             rangedReloadEndsAt = Time.time + ServerGameTuning.RangedReloadSeconds;
+            // The authored clip is two seconds long, matching the default reload time.
+            // Keep it local so simultaneous bot reloads do not clutter the player's mix.
+            if (isLocalPlayer) CombatFeedback.PlayWeaponReload(transform.position);
         }
 
         private void UpdateRangedReload()
