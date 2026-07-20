@@ -30,7 +30,7 @@ namespace AnimalBattleRoyale.EditorTools
             WireCatalog(prefab);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("[Tiger3D] Modelo estático instalado com malha, skin e esqueleto preservados; animações desativadas.");
+            Debug.Log("[Tiger3D] Modelo estático instalado com malha, skin e esqueleto preservados; animação procedural por código.");
         }
 
         private static void TryAutomaticImport()
@@ -48,7 +48,9 @@ namespace AnimalBattleRoyale.EditorTools
         private static bool IsAlreadyInstalled()
         {
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
-            return prefab != null && prefab.transform.Find(TripoModelName) != null;
+            if (prefab == null || prefab.transform.Find(TripoModelName) == null) return false;
+            return AssetImporter.GetAtPath(ModelPath) is ModelImporter importer
+                && importer.animationType == ModelImporterAnimationType.Generic;
         }
 
         private static void ConfigureModelImporter()
@@ -56,6 +58,9 @@ namespace AnimalBattleRoyale.EditorTools
             if (AssetImporter.GetAtPath(ModelPath) is not ModelImporter importer)
                 throw new InvalidOperationException("Tripo Tiger FBX is missing or has not been imported: " + ModelPath);
 
+            // Cross-species Humanoid retargeting distorted non-mapped bones (e.g. tails),
+            // so locomotion is driven procedurally by ThirdPersonAnimalController/
+            // AnimalVisualMotion instead of by imported/retargeted animation clips.
             importer.importAnimation = false;
             importer.animationType = ModelImporterAnimationType.Generic;
             importer.clipAnimations = Array.Empty<ModelImporterClipAnimation>();

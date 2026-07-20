@@ -32,6 +32,10 @@ namespace AnimalBattleRoyale
         private float unstuckUntil;
         private DiamondPickup cachedObjectiveDiamond;
         private RangedAmmoPickup cachedAmmoSupply;
+        private float nextObstacleCheckTime;
+        private bool cachedObstacleHit;
+        private Vector3 cachedObstacleNormal;
+        private const float ObstacleCheckInterval = 1f / 15f;
 
         private void Awake()
         {
@@ -41,6 +45,7 @@ namespace AnimalBattleRoyale
             nextProgressCheck = Time.time + 1.25f;
             nextThinkTime = Time.time + Random.Range(0f, thinkInterval);
             nextInteractionCheck = Time.time + Random.Range(0f, 0.2f);
+            nextObstacleCheckTime = Time.time + Random.Range(0f, ObstacleCheckInterval);
         }
 
         private void Update()
@@ -242,15 +247,27 @@ namespace AnimalBattleRoyale
         {
             if (desired.sqrMagnitude < 0.01f) return desired;
 
-            Vector3 origin = transform.position + Vector3.up * 0.6f;
-            if (Physics.SphereCast(origin, 0.35f, desired, out RaycastHit hit, 2.2f, ~0, QueryTriggerInteraction.Ignore))
+            if (Time.time >= nextObstacleCheckTime)
             {
-                if (hit.transform != transform && !hit.transform.IsChildOf(transform))
+                nextObstacleCheckTime = Time.time + ObstacleCheckInterval;
+                Vector3 origin = transform.position + Vector3.up * 0.6f;
+                if (Physics.SphereCast(origin, 0.35f, desired, out RaycastHit hit, 2.2f, ~0, QueryTriggerInteraction.Ignore)
+                    && hit.transform != transform && !hit.transform.IsChildOf(transform))
                 {
-                    Vector3 side = Vector3.Cross(Vector3.up, hit.normal).normalized;
-                    if (Vector3.Dot(side, desired) < 0f) side = -side;
-                    desired = (desired + side * 1.4f).normalized;
+                    cachedObstacleHit = true;
+                    cachedObstacleNormal = hit.normal;
                 }
+                else
+                {
+                    cachedObstacleHit = false;
+                }
+            }
+
+            if (cachedObstacleHit)
+            {
+                Vector3 side = Vector3.Cross(Vector3.up, cachedObstacleNormal).normalized;
+                if (Vector3.Dot(side, desired) < 0f) side = -side;
+                desired = (desired + side * 1.4f).normalized;
             }
             return desired;
         }

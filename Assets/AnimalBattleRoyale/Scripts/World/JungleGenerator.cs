@@ -30,10 +30,13 @@ namespace AnimalBattleRoyale
         [SerializeField, Range(0, 220)] private int rockCount = 96;
         [SerializeField, Range(0, 100)] private int anthillCount = 40;
         [SerializeField, Range(12f, 48f)] private float anthillMinimumSpacing = 26f;
+        [SerializeField, Range(0, 150)] private int antTunnelEntranceCount = 60;
+        [SerializeField, Range(8f, 40f)] private float antTunnelEntranceMinimumSpacing = 16f;
         [SerializeField, Range(0, 48)] private int mountainCount = 26;
         [SerializeField, Range(0, 100)] private int lifePickupCount = 24;
         [SerializeField, Range(0, 90)] private int rangedSupplyCount = 45;
         [SerializeField, Range(0, 100)] private int weaponCrystalCount = 40;
+        [SerializeField, Range(0, 100)] private int foodPickupCount = 30;
         [SerializeField, Range(4f, 30f)] private float pickupMinimumSpacing = 12f;
         [SerializeField, Range(0, 40)] private int houseCount = 16;
         [SerializeField, Range(12f, 40f)] private float houseMinimumSpacing = 22f;
@@ -111,19 +114,10 @@ namespace AnimalBattleRoyale
 
             if (groundCollider != null)
             {
-                RaycastHit[] hits = Physics.RaycastAll(
-                    new Vector3(planarPosition.x, 100f, planarPosition.z),
-                    Vector3.down,
-                    220f,
-                    ~0,
-                    QueryTriggerInteraction.Ignore);
-
-                foreach (RaycastHit hit in hits)
+                Ray ray = new Ray(new Vector3(planarPosition.x, 100f, planarPosition.z), Vector3.down);
+                if (groundCollider.Raycast(ray, out RaycastHit hit, 220f))
                 {
-                    if (hit.collider == groundCollider)
-                    {
-                        return hit.point + Vector3.up * clearance;
-                    }
+                    return hit.point + Vector3.up * clearance;
                 }
             }
 
@@ -276,6 +270,18 @@ namespace AnimalBattleRoyale
             foreach (Vector3 position in anthillPlanarPositions)
                 CreateAnthill(anthillsRoot, position, moundMaterial, moundDarkMaterial);
 
+            // Standalone tunnel entrances (not tied to an anthill mound) so the ant has
+            // plenty of burrow-network mobility across the whole map, not just near anthills.
+            Transform standaloneEntrancesRoot = new GameObject("AntTunnelEntrances").transform;
+            standaloneEntrancesRoot.SetParent(generated.transform, false);
+            List<Vector3> standaloneEntrancePositions = new List<Vector3>(antTunnelEntranceCount);
+            for (int i = 0; i < antTunnelEntranceCount; i++)
+            {
+                Vector3 position = RandomSpacedMapPosition(15f, antTunnelEntranceMinimumSpacing, standaloneEntrancePositions);
+                standaloneEntrancePositions.Add(position);
+                AntTunnelEntrance.Create(position, moundMaterial, moundDarkMaterial).transform.SetParent(standaloneEntrancesRoot, true);
+            }
+
             Transform mountainsRoot = new GameObject("RockFormations").transform;
             mountainsRoot.SetParent(generated.transform, false);
             for (int i = 0; i < mountainCount; i++)
@@ -319,7 +325,7 @@ namespace AnimalBattleRoyale
             // Scattered life orbs: each fully restores (100%) the animal's health.
             // Life, ammo and weapon-crystal pickups share one spacing list so none of the
             // three kinds spawns right next to another, regardless of type.
-            List<Vector3> pickupPositions = new List<Vector3>(lifePickupCount + rangedSupplyCount + weaponCrystalCount);
+            List<Vector3> pickupPositions = new List<Vector3>(lifePickupCount + rangedSupplyCount + weaponCrystalCount + foodPickupCount);
             Transform lifeRoot = new GameObject("LifePickups").transform;
             lifeRoot.SetParent(generated.transform, false);
             Vector3 playerShoreSpawn = GetShoreSpawnPosition();
@@ -367,6 +373,19 @@ namespace AnimalBattleRoyale
                 pickupPositions.Add(position);
                 WeaponUpgradeCrystal.Create(position).transform.SetParent(weaponCrystalsRoot, true);
             }
+
+            Transform foodPickupsRoot = new GameObject("FoodPickups").transform;
+            foodPickupsRoot.SetParent(generated.transform, false);
+            for (int i = 0; i < foodPickupCount; i++)
+            {
+                Vector3 position = RandomSpacedMapPosition(9f, pickupMinimumSpacing, pickupPositions);
+                pickupPositions.Add(position);
+                FoodPickup.Create(position, RandomFoodKind()).transform.SetParent(foodPickupsRoot, true);
+            }
+
+            Debug.Log($"[Jungle] Pickups no mapa: {WeaponUpgradeCrystal.ActivePickups.Count} diamantes, " +
+                      $"{RangedAmmoPickup.ActivePickups.Count} municoes, {foodPickupsRoot.childCount} curas, " +
+                      $"{FindObjectsByType<AntTunnelEntrance>(FindObjectsSortMode.None).Length} buracos de formiga.");
 
             Transform flowersRoot = new GameObject("FlowerPatches").transform;
             flowersRoot.SetParent(generated.transform, false);
@@ -1296,6 +1315,27 @@ namespace AnimalBattleRoyale
         }
 
         private static GameObject cachedTunnelHolePrefab;
+        private static Material cachedTunnelHoleMaterial;
+
+        private static Material GetTunnelHoleMaterial()
+        {
+            if (cachedTunnelHoleMaterial != null) return cachedTunnelHoleMaterial;
+            Texture2D albedo = Resources.Load<Texture2D>("Environment/TunnelHole_basecolor");
+            if (albedo == null) return null;
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = "TunnelHole_RuntimePBR",
+                color = Color.white,
+                enableInstancing = true
+            };
+            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", albedo);
+            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", albedo);
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.15f);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.15f);
+            cachedTunnelHoleMaterial = material;
+            return cachedTunnelHoleMaterial;
+        }
 
         private static void CreateAnthill(Transform parent, Vector3 position, Material moundMaterial, Material entranceMaterial)
         {
@@ -1313,6 +1353,14 @@ namespace AnimalBattleRoyale
             {
                 GameObject hole = Object.Instantiate(cachedTunnelHolePrefab, anthill.transform, false);
                 hole.name = "TunnelHoleVisual";
+                Material holeVisualMaterial = GetTunnelHoleMaterial();
+                if (holeVisualMaterial != null)
+                {
+                    foreach (Renderer r in hole.GetComponentsInChildren<Renderer>(true)) r.sharedMaterial = holeVisualMaterial;
+                }
+                // The source FBX's authored scale isn't guaranteed, so rescale to a known
+                // footprint before embedding it, instead of trusting it as-is.
+                ImportedPropVisual.NormalizeScale(hole, 1.4f, out _);
                 hole.transform.localPosition = Vector3.down * AntTunnelEntrance.VisualEmbedDepth;
                 foreach (Collider c in hole.GetComponentsInChildren<Collider>(true)) if (c != null) c.enabled = false;
             }
@@ -2114,6 +2162,17 @@ namespace AnimalBattleRoyale
             Vector2 direction = distance > 0.01f ? planar / distance : Vector2.right;
             Vector2 safePoint = direction * minDistance;
             return new Vector3(safePoint.x, position.y, safePoint.y);
+        }
+
+        // Weighted so the common kinds dominate and GoldenFruit stays a rare, better find.
+        private static FoodKind RandomFoodKind()
+        {
+            float roll = Random.value;
+            if (roll < 0.05f) return FoodKind.GoldenFruit;
+            if (roll < 0.35f) return FoodKind.Fruit;
+            if (roll < 0.62f) return FoodKind.Nectar;
+            if (roll < 0.84f) return FoodKind.Fish;
+            return FoodKind.Meat;
         }
 
         private Vector3 RandomSpacedMapPosition(float centerClearRadius, float minimumSpacing,

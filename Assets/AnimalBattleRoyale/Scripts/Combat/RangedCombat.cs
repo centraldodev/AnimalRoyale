@@ -24,11 +24,17 @@ namespace AnimalBattleRoyale
         private static Material sharedTrailMaterial;
         private static readonly Dictionary<AnimalType, Material> sharedSeedMaterials = new Dictionary<AnimalType, Material>();
         private static readonly Dictionary<string, Material> sharedFruitMaterials = new Dictionary<string, Material>();
+        // Pooled by (animal, ammo) since that pair fully determines the projectile's
+        // geometry/scale — reusing one avoids rebuilding primitives and materials per shot.
+        private static readonly Dictionary<int, Stack<RangedProjectile>> pool = new Dictionary<int, Stack<RangedProjectile>>();
         private readonly RaycastHit[] hitBuffer = new RaycastHit[20];
         private readonly Collider[] areaHitBuffer = new Collider[64];
         private readonly HashSet<Health> areaHitTargets = new HashSet<Health>();
         private ThirdPersonAnimalController owner;
         private Transform visual;
+        private TrailRenderer trailRenderer;
+        private bool visualBuilt;
+        private int poolKey;
         private Vector3 velocity;
         private float gravity;
         private float damage;
@@ -37,12 +43,48 @@ namespace AnimalBattleRoyale
         private Color impactColor;
         private WeaponAmmoType ammoType;
 
+        private static int PoolKey(AnimalType animalType, WeaponAmmoType ammoType) => ((int)animalType << 8) | (int)ammoType;
+
         public static void Fire(ThirdPersonAnimalController source, Vector3 direction)
         {
             if (source == null) return;
-            GameObject projectileObject = new GameObject("RangedProjectile_" + source.AnimalType);
-            RangedProjectile projectile = projectileObject.AddComponent<RangedProjectile>();
+            int key = PoolKey(source.AnimalType, source.CurrentWeaponAmmo);
+            RangedProjectile projectile = null;
+            if (pool.TryGetValue(key, out Stack<RangedProjectile> stack))
+            {
+                while (stack.Count > 0)
+                {
+                    RangedProjectile candidate = stack.Pop();
+                    if (candidate != null)
+                    {
+                        projectile = candidate;
+                        break;
+                    }
+                }
+            }
+
+            if (projectile == null)
+            {
+                GameObject projectileObject = new GameObject("RangedProjectile_" + source.AnimalType);
+                projectile = projectileObject.AddComponent<RangedProjectile>();
+                projectile.poolKey = key;
+            }
+            else
+            {
+                projectile.gameObject.SetActive(true);
+            }
             projectile.Configure(source, direction);
+        }
+
+        private void ReturnToPool()
+        {
+            gameObject.SetActive(false);
+            if (!pool.TryGetValue(poolKey, out Stack<RangedProjectile> stack))
+            {
+                stack = new Stack<RangedProjectile>();
+                pool[poolKey] = stack;
+            }
+            stack.Push(this);
         }
 
         private static Color SeedColorForAnimal(AnimalType type) => type switch
@@ -123,10 +165,23 @@ namespace AnimalBattleRoyale
             }
 
             transform.position = GetLaunchPosition(source, direction);
+            transform.rotation = Quaternion.identity;
             velocity = direction * speed + Vector3.up * lift;
             expiresAt = Time.time + ServerGameTuning.ProjectileRangeSeconds;
-            BuildVisual(source.AnimalType, visualScale);
-            BuildTrail();
+            poolKey = PoolKey(source.AnimalType, ammoType);
+            if (!visualBuilt)
+            {
+                BuildVisual(source.AnimalType, visualScale);
+                BuildTrail();
+                visualBuilt = true;
+            }
+            else if (trailRenderer != null)
+            {
+                trailRenderer.Clear();
+                trailRenderer.startWidth = radius * 0.42f;
+                trailRenderer.startColor = new Color(impactColor.r, impactColor.g, impactColor.b, 0.7f);
+                trailRenderer.endColor = new Color(impactColor.r, impactColor.g, impactColor.b, 0f);
+            }
             AttackVfx.CreateBurst(transform.position, impactColor, 0.5f);
             CombatFeedback.PlayProjectileLaunch(transform.position, ammoType);
         }
@@ -135,7 +190,7 @@ namespace AnimalBattleRoyale
         {
             if (owner == null || Time.time >= expiresAt)
             {
-                Destroy(gameObject);
+                ReturnToPool();
                 return;
             }
 
@@ -194,7 +249,7 @@ namespace AnimalBattleRoyale
                 else
                     AttackVfx.CreateBurst(hit.point + hit.normal * 0.08f, impactColor, 0.9f);
             }
-            Destroy(gameObject);
+            ReturnToPool();
         }
 
         private void DamageDirectTarget(Health target, Vector3 hitPoint)
@@ -372,6 +427,7 @@ namespace AnimalBattleRoyale
                 }
             }
             if (sharedTrailMaterial != null) trail.sharedMaterial = sharedTrailMaterial;
+            trailRenderer = trail;
         }
     }
 
@@ -489,12 +545,13 @@ namespace AnimalBattleRoyale
 
         private static GameObject cachedAmmoPrefab;
         private static bool ammoPrefabLookedUp;
+        private static Material cachedAmmoMaterial;
 
         private void BuildVisual()
         {
             if (!ammoPrefabLookedUp)
             {
-                cachedAmmoPrefab = Resources.Load<GameObject>("Pickups/AmmoBox");
+                cachedAmmoPrefab = Resources.Load<GameObject>("Pickups/Municao/municao");
                 ammoPrefabLookedUp = true;
             }
 
@@ -503,6 +560,11 @@ namespace AnimalBattleRoyale
             {
                 instance = Instantiate(cachedAmmoPrefab, transform, false);
                 foreach (Collider c in instance.GetComponentsInChildren<Collider>(true)) if (c != null) c.enabled = false;
+                Material material = GetAmmoMaterial();
+                if (material != null)
+                {
+                    foreach (Renderer r in instance.GetComponentsInChildren<Renderer>(true)) r.sharedMaterial = material;
+                }
             }
             else
             {
@@ -514,8 +576,6 @@ namespace AnimalBattleRoyale
                 if (renderer != null) renderer.sharedMaterial = MissionNode.CreateMaterial(SupplyColor(), true);
             }
             instance.name = "SupplyVisual";
-            instance.transform.localScale = Vector3.one * SupplyScale();
-            instance.transform.localPosition = Vector3.up * 0.08f;
             PrepareImportedVisual(instance);
             visualBasePosition = instance.transform.localPosition;
             visual = instance.transform;
@@ -536,25 +596,41 @@ namespace AnimalBattleRoyale
             labelObject.AddComponent<PickupLabel>();
         }
 
+        private static Material GetAmmoMaterial()
+        {
+            if (cachedAmmoMaterial != null) return cachedAmmoMaterial;
+            Texture2D albedo = Resources.Load<Texture2D>("Pickups/Municao/municao_basecolor");
+            if (albedo == null) return null;
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = "Municao_RuntimePBR",
+                color = Color.white,
+                enableInstancing = true
+            };
+            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", albedo);
+            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", albedo);
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0.1f);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.35f);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.35f);
+            cachedAmmoMaterial = material;
+            return cachedAmmoMaterial;
+        }
+
         private void PrepareImportedVisual(GameObject instance)
         {
             foreach (Transform child in instance.GetComponentsInChildren<Transform>(true))
                 child.gameObject.SetActive(true);
             foreach (LODGroup lodGroup in instance.GetComponentsInChildren<LODGroup>(true))
                 lodGroup.enabled = false;
-
-            Renderer[] renderers = instance.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0) return;
-            Bounds bounds = renderers[0].bounds;
-            foreach (Renderer renderer in renderers)
+            foreach (Renderer renderer in instance.GetComponentsInChildren<Renderer>(true))
             {
                 renderer.enabled = true;
                 renderer.forceRenderingOff = false;
-                bounds.Encapsulate(renderer.bounds);
             }
 
-            float desiredBottom = transform.position.y + 0.08f;
-            instance.transform.position += Vector3.up * (desiredBottom - bounds.min.y);
+            // The source FBX's authored scale isn't guaranteed, so rescale to a known
+            // footprint and re-anchor on the ground rather than trust it as-is.
+            ImportedPropVisual.NormalizeToGround(instance, 0.5f, transform.position.y, 0.08f);
         }
 
         private string SupplyLabel()
@@ -570,11 +646,6 @@ namespace AnimalBattleRoyale
         private Color SupplyColor()
         {
             return new Color(0.36f, 0.86f, 0.62f);
-        }
-
-        private float SupplyScale()
-        {
-            return 0.88f;
         }
     }
 }

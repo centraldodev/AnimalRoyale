@@ -1,6 +1,8 @@
 {
   "dependencies": {
     "com.coplaydev.unity-mcp": "https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#v10.1.0",
+    "com.unity.ai.assistant": "2.15.0-pre.2",
+    "com.unity.ai.inference": "2.6.1",
     "com.unity.multiplayer.center": "1.0.1",
     "com.unity.netcode.gameobjects": "2.13.0",
     "com.unity.postprocessing": "3.5.4",

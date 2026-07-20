@@ -19,6 +19,9 @@ namespace AnimalBattleRoyale
         private static readonly Dictionary<int, Material> sharedMaterials = new Dictionary<int, Material>();
         private static JungleGenerator cachedJungle;
         private static int nextMotionGroup;
+        private static GameObject cachedCuraPrefab;
+        private static bool curaPrefabLookedUp;
+        private static Material cachedCuraMaterial;
         private FoodKind foodKind;
         private float amount;
         private Color effectColor;
@@ -117,16 +120,72 @@ namespace AnimalBattleRoyale
             GameObject displayObject = new GameObject("CartoonPickupDisplay");
             displayObject.transform.SetParent(transform, false);
             display = displayObject.transform;
-            switch (foodKind)
+
+            if (!TryBuildCuraModel(display))
             {
-                case FoodKind.Fruit: BuildFruitBundle(display); break;
-                case FoodKind.Nectar: BuildNectarFlower(display); break;
-                case FoodKind.Fish: BuildFish(display); break;
-                case FoodKind.Meat: BuildMeat(display); break;
-                case FoodKind.GoldenFruit: BuildFruitBundle(display); break;
+                switch (foodKind)
+                {
+                    case FoodKind.Fruit: BuildFruitBundle(display); break;
+                    case FoodKind.Nectar: BuildNectarFlower(display); break;
+                    case FoodKind.Fish: BuildFish(display); break;
+                    case FoodKind.Meat: BuildMeat(display); break;
+                    case FoodKind.GoldenFruit: BuildFruitBundle(display); break;
+                }
             }
             CollectibleHighlight.Attach(transform, effectColor, foodKind == FoodKind.GoldenFruit ? 1.15f : 0.92f, -0.28f);
             CreateLabel();
+        }
+
+        // A single imported model ("cura") is shared by every FoodKind; only the healing
+        // amount and label text vary by kind. Falls back to the procedural shapes below
+        // if the model resource is missing.
+        private static bool TryBuildCuraModel(Transform parent)
+        {
+            if (!curaPrefabLookedUp)
+            {
+                cachedCuraPrefab = Resources.Load<GameObject>("Pickups/Cura/cura");
+                curaPrefabLookedUp = true;
+            }
+            if (cachedCuraPrefab == null) return false;
+
+            GameObject instance = Instantiate(cachedCuraPrefab, parent, false);
+            instance.name = "CuraVisual";
+            instance.transform.localPosition = Vector3.zero;
+            foreach (Collider collider in instance.GetComponentsInChildren<Collider>(true))
+                if (collider != null) collider.enabled = false;
+
+            Material material = GetCuraMaterial();
+            if (material != null)
+            {
+                foreach (Renderer renderer in instance.GetComponentsInChildren<Renderer>(true))
+                    renderer.sharedMaterial = material;
+            }
+
+            // The source FBX's authored scale isn't guaranteed; rescale to a known
+            // footprint here so SnapVisualToGround (called by Create right after) has
+            // sane bounds to work with instead of whatever raw size the import came in at.
+            ImportedPropVisual.NormalizeScale(instance, 0.5f, out _);
+            return true;
+        }
+
+        private static Material GetCuraMaterial()
+        {
+            if (cachedCuraMaterial != null) return cachedCuraMaterial;
+            Texture2D albedo = Resources.Load<Texture2D>("Pickups/Cura/cura_basecolor");
+            if (albedo == null) return null;
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = "Cura_RuntimePBR",
+                color = Color.white,
+                enableInstancing = true
+            };
+            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", albedo);
+            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", albedo);
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.3f);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.3f);
+            cachedCuraMaterial = material;
+            return cachedCuraMaterial;
         }
 
         private void SnapVisualToGround(float groundHeight)

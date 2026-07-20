@@ -33,6 +33,7 @@ namespace AnimalBattleRoyale
         private Transform cameraTransform;
         private AnimalVisualMotion visualMotion;
         private JungleGenerator jungle;
+        private float nextGroundCheckTime;
         private Vector3 verticalVelocity;
         private Vector3 extraVelocity;
         private Vector3 aiMoveDirection;
@@ -83,6 +84,9 @@ namespace AnimalBattleRoyale
         private Vector3 vineLeapStart;
         private Vector3 vineLeapEnd;
         private bool burrowed;
+        private bool burrowEntering;
+        private float burrowEntryUntil;
+        private const float BurrowJumpDuration = 0.35f;
         private bool networkProxy;
         private Vector3 networkTargetPosition;
         private Quaternion networkTargetRotation;
@@ -291,6 +295,11 @@ namespace AnimalBattleRoyale
                 visualMotion?.SetLocomotion(false, false, false);
                 return;
             }
+            if (burrowEntering)
+            {
+                if (Time.time >= burrowEntryUntil) FinishBurrowEntry();
+                return;
+            }
             if (burrowed) { HandleBurrowed(); return; }
             RecoverIfBelowTerrain();
             if (isLocalPlayer) HandleLocalInput();
@@ -307,10 +316,20 @@ namespace AnimalBattleRoyale
 
         private void EnterBurrow()
         {
-            burrowed = true;
+            // Plays the jump-into-hole pose first; the character actually vanishes only
+            // once that hop has had time to play (see FinishBurrowEntry).
+            burrowEntering = true;
+            burrowEntryUntil = Time.time + BurrowJumpDuration;
             verticalVelocity = Vector3.zero;
             extraVelocity = Vector3.zero;
             if (characterController != null) characterController.enabled = false;
+            visualMotion?.SetLocomotion(false, false, true);
+        }
+
+        private void FinishBurrowEntry()
+        {
+            burrowEntering = false;
+            burrowed = true;
             Transform visual = transform.Find("VisualRoot");
             if (visual != null) visual.gameObject.SetActive(false);
             AttackVfx.CreateBurst(transform.position, new Color(0.65f, 0.28f, 0.06f), 1.8f);
@@ -484,6 +503,14 @@ namespace AnimalBattleRoyale
         private void RecoverIfBelowTerrain()
         {
             if (jungle == null) return;
+            if (Time.time < nextGroundCheckTime) return;
+            nextGroundCheckTime = Time.time + 0.1f;
+
+            // Cheap procedural height check first; only pay for the raycast-accurate
+            // GetGroundPosition when the character is actually near/under the terrain.
+            float approxGroundHeight = jungle.GroundHeightAt(transform.position);
+            if (transform.position.y >= approxGroundHeight - 1f) return;
+
             Vector3 safePosition = jungle.GetGroundPosition(transform.position);
             if (transform.position.y < safePosition.y - 0.5f) SnapToTerrain(jungle);
         }
@@ -633,6 +660,7 @@ namespace AnimalBattleRoyale
         {
             if (heldVine == null) { hangingVine = false; return; }
             visualMotion?.SetLocomotion(false, false, true);
+            visualMotion?.SetHandAimTarget(heldVine.position);
             verticalVelocity = Vector3.zero;
             extraVelocity = Vector3.zero;
 
@@ -977,6 +1005,7 @@ namespace AnimalBattleRoyale
             heldVine = null;
             targetVine = null;
             vinesVisitedInChain = 0;
+            visualMotion?.SetVineHanging(false);
             if (characterController != null) characterController.enabled = true;
             verticalVelocity.y = Mathf.Max(verticalVelocity.y, upwardSpeed);
             extraVelocity = flatDirection * horizontalSpeed;
@@ -1086,6 +1115,14 @@ namespace AnimalBattleRoyale
             hangingVine = true;
             if (characterController != null) characterController.enabled = true;
             AttackVfx.CreateBurst(heldVine.position, new Color(0.55f, 0.85f, 0.3f), 1.1f);
+            visualMotion?.SetVineHanging(true, ShouldGrabWithLeftHand(heldVine));
+        }
+
+        // Which hand visually grips the vine depends on which side it's on relative to
+        // the monkey at the moment of the grab — cheap and good enough without IK.
+        private bool ShouldGrabWithLeftHand(Transform vine)
+        {
+            return vine == null || transform.InverseTransformPoint(vine.position).x <= 0f;
         }
 
         public bool TryLaunchFromVine(Vector3 direction)
@@ -1097,6 +1134,7 @@ namespace AnimalBattleRoyale
             heldVine = null;
             targetVine = null;
             vinesVisitedInChain = 0;
+            visualMotion?.SetVineHanging(false);
             Vector3 flat = new Vector3(direction.x, 0f, direction.z);
             Vector3 forward = flat.sqrMagnitude > 0.01f ? flat.normalized : transform.forward;
             verticalVelocity.y = VineLaunchUp + Mathf.Max(0f, carriedSwingVelocity.y * 0.35f);
@@ -1156,8 +1194,10 @@ namespace AnimalBattleRoyale
             heldVine = null;
             targetVine = null;
             vinesVisitedInChain = 0;
+            visualMotion?.SetVineHanging(false);
             if (characterController != null) characterController.enabled = true;
             burrowed = false;
+            burrowEntering = false;
             AntTunnelEntrance.CancelTravel(this);
             verticalVelocity = Vector3.zero;
             extraVelocity = Vector3.zero;

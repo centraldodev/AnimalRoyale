@@ -26,6 +26,9 @@ namespace AnimalBattleRoyale
         private Vector3 finalCenter;
         private float boundaryEmissionAccumulator;
         private readonly HashSet<ThirdPersonAnimalController> fightersOutsideWildfire = new HashSet<ThirdPersonAnimalController>();
+        private Vector2[] circleUnitOffsets;
+        private float nextCircleDrawTime;
+        private const float CircleDrawInterval = 1f / 10f;
 
         public Vector3 Center => transform.position;
         public float CurrentRadius { get; private set; }
@@ -41,6 +44,12 @@ namespace AnimalBattleRoyale
             jungle = FindAnyObjectByType<JungleGenerator>();
             startCenter = transform.position;
             finalCenter = startCenter;
+            circleUnitOffsets = new Vector2[circleSegments];
+            for (int i = 0; i < circleSegments; i++)
+            {
+                float angle = i * Mathf.PI * 2f / circleSegments;
+                circleUnitOffsets[i] = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+            }
             CreateLineRenderer();
             CreateBoundaryFire();
             CreateFireAudio();
@@ -313,10 +322,13 @@ namespace AnimalBattleRoyale
         private void DrawCircle()
         {
             if (lineRenderer == null) return;
+            if (Time.time < nextCircleDrawTime) return;
+            nextCircleDrawTime = Time.time + CircleDrawInterval;
+
             for (int i = 0; i < circleSegments; i++)
             {
-                float angle = i * Mathf.PI * 2f / circleSegments;
-                Vector3 position = Center + new Vector3(Mathf.Cos(angle) * CurrentRadius, 0f, Mathf.Sin(angle) * CurrentRadius);
+                Vector2 offset = circleUnitOffsets[i];
+                Vector3 position = Center + new Vector3(offset.x * CurrentRadius, 0f, offset.y * CurrentRadius);
                 position.y = (jungle != null ? jungle.GroundHeightAt(position) : 0f) + 0.22f;
                 lineRenderer.SetPosition(i, position);
             }

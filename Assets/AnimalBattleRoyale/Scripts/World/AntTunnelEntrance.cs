@@ -30,6 +30,9 @@ namespace AnimalBattleRoyale
 
         private static readonly List<AntTunnelEntrance> entrances = new List<AntTunnelEntrance>();
         private static readonly Dictionary<ThirdPersonAnimalController, TunnelSession> sessions = new Dictionary<ThirdPersonAnimalController, TunnelSession>();
+        private static GameObject cachedHolePrefab;
+        private static bool holePrefabLookedUp;
+        private static Material cachedHoleMaterial;
 
         private LineRenderer exitRing;
         private LineRenderer exitOuterRing;
@@ -96,25 +99,50 @@ namespace AnimalBattleRoyale
         {
             GameObject root = new GameObject("AntTunnelEntrance");
             root.transform.position = position;
+            root.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
             AntTunnelEntrance entrance = root.AddComponent<AntTunnelEntrance>();
 
-            GameObject rim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            rim.name = "TunnelRim";
-            rim.transform.SetParent(root.transform, false);
-            rim.transform.localPosition = Vector3.down * 0.06f;
-            rim.transform.localScale = new Vector3(1.3f, 0.11f, 1.3f);
-            rim.GetComponent<Renderer>().sharedMaterial = rimMaterial;
-            Collider rimCollider = rim.GetComponent<Collider>();
-            if (rimCollider != null) rimCollider.enabled = false;
+            if (!holePrefabLookedUp)
+            {
+                cachedHolePrefab = Resources.Load<GameObject>("Environment/TunnelHole");
+                holePrefabLookedUp = true;
+            }
 
-            GameObject hole = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            hole.name = "TunnelHole";
-            hole.transform.SetParent(root.transform, false);
-            hole.transform.localPosition = Vector3.down * VisualEmbedDepth;
-            hole.transform.localScale = new Vector3(1.45f, 0.08f, 1.45f);
-            hole.GetComponent<Renderer>().sharedMaterial = holeMaterial;
-            Collider holeCollider = hole.GetComponent<Collider>();
-            if (holeCollider != null) holeCollider.enabled = false;
+            if (cachedHolePrefab != null)
+            {
+                GameObject hole = Instantiate(cachedHolePrefab, root.transform, false);
+                hole.name = "TunnelHoleVisual";
+                Material material = GetHoleMaterial();
+                if (material != null)
+                {
+                    foreach (Renderer r in hole.GetComponentsInChildren<Renderer>(true)) r.sharedMaterial = material;
+                }
+                // The source FBX's authored scale isn't guaranteed, so rescale to a known
+                // footprint before embedding it, instead of trusting it as-is.
+                ImportedPropVisual.NormalizeScale(hole, 1.4f, out _);
+                hole.transform.localPosition = Vector3.down * VisualEmbedDepth;
+                foreach (Collider c in hole.GetComponentsInChildren<Collider>(true)) if (c != null) c.enabled = false;
+            }
+            else
+            {
+                GameObject rim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                rim.name = "TunnelRim";
+                rim.transform.SetParent(root.transform, false);
+                rim.transform.localPosition = Vector3.down * 0.06f;
+                rim.transform.localScale = new Vector3(1.3f, 0.11f, 1.3f);
+                rim.GetComponent<Renderer>().sharedMaterial = rimMaterial;
+                Collider rimCollider = rim.GetComponent<Collider>();
+                if (rimCollider != null) rimCollider.enabled = false;
+
+                GameObject hole = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                hole.name = "TunnelHole";
+                hole.transform.SetParent(root.transform, false);
+                hole.transform.localPosition = Vector3.down * VisualEmbedDepth;
+                hole.transform.localScale = new Vector3(1.45f, 0.08f, 1.45f);
+                hole.GetComponent<Renderer>().sharedMaterial = holeMaterial;
+                Collider holeCollider = hole.GetComponent<Collider>();
+                if (holeCollider != null) holeCollider.enabled = false;
+            }
 
             GameObject label = new GameObject("TunnelLabel");
             label.transform.SetParent(root.transform, false);
@@ -128,6 +156,26 @@ namespace AnimalBattleRoyale
             text.color = new Color(0.9f, 0.62f, 0.2f);
             label.AddComponent<PickupLabel>();
             return entrance;
+        }
+
+        private static Material GetHoleMaterial()
+        {
+            if (cachedHoleMaterial != null) return cachedHoleMaterial;
+            Texture2D albedo = Resources.Load<Texture2D>("Environment/TunnelHole_basecolor");
+            if (albedo == null) return null;
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = "TunnelHole_RuntimePBR",
+                color = Color.white,
+                enableInstancing = true
+            };
+            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", albedo);
+            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", albedo);
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.15f);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.15f);
+            cachedHoleMaterial = material;
+            return cachedHoleMaterial;
         }
 
         public static bool IsTraveling(ThirdPersonAnimalController ant)

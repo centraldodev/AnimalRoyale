@@ -6,6 +6,7 @@ using UnityEngine;
 namespace AnimalBattleRoyale.EditorTools
 {
     /// <summary>Installs the user-supplied Tripo monkey, eagle and ant as gameplay prefabs.</summary>
+    [InitializeOnLoad]
     public static class TripoAnimalImporter
     {
         private const string CharacterBase = "Assets/AnimalBattleRoyale/Art/Characters";
@@ -37,13 +38,44 @@ namespace AnimalBattleRoyale.EditorTools
             new CharacterDefinition("Ant")
         };
 
+        static TripoAnimalImporter()
+        {
+            EditorApplication.delayCall += TryAutomaticImport;
+        }
+
         [MenuItem("AnimalBattleRoyale/Import Macaco, Aguia e Formiga 3D")]
         public static void ImportAll()
         {
             foreach (CharacterDefinition character in Characters) ImportOne(character);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("[Tripo Animals] Macaco, aguia e formiga instalados nos prefabs de gameplay.");
+            Debug.Log("[Tripo Animals] Macaco, aguia e formiga instalados nos prefabs de gameplay; animação procedural por código.");
+        }
+
+        private static void TryAutomaticImport()
+        {
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+            {
+                EditorApplication.delayCall += TryAutomaticImport;
+                return;
+            }
+
+            foreach (CharacterDefinition character in Characters)
+            {
+                if (NeedsImport(character))
+                {
+                    ImportAll();
+                    return;
+                }
+            }
+        }
+
+        private static bool NeedsImport(CharacterDefinition character)
+        {
+            if (!File.Exists(character.ModelPath)) return false;
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(character.PrefabPath) == null) return true;
+            return AssetImporter.GetAtPath(character.ModelPath) is not ModelImporter importer
+                || importer.animationType != ModelImporterAnimationType.Generic;
         }
 
         private static void ImportOne(CharacterDefinition character)
@@ -64,8 +96,9 @@ namespace AnimalBattleRoyale.EditorTools
             if (AssetImporter.GetAtPath(modelPath) is not ModelImporter importer)
                 throw new InvalidOperationException("FBX ainda nao foi reconhecido pelo Unity: " + modelPath);
 
-            // The ant contains only run/jump clips and the other two contain none.
-            // Gameplay therefore drives all three UniRig skeletons procedurally.
+            // Cross-species Humanoid retargeting (Tiger/Ant clips reused on Monkey/Eagle)
+            // distorted non-mapped bones like tails, so locomotion is now driven
+            // procedurally by ThirdPersonAnimalController/AnimalVisualMotion instead.
             importer.importAnimation = false;
             importer.animationType = ModelImporterAnimationType.Generic;
             importer.importCameras = false;

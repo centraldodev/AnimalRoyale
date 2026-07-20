@@ -96,7 +96,7 @@ namespace AnimalBattleRoyale
         {
             if (!prefabLookedUp)
             {
-                cachedPrefab = Resources.Load<GameObject>("Pickups/WeaponCrystal/WeaponCrystal");
+                cachedPrefab = Resources.Load<GameObject>("Pickups/Diamante/diamante3D");
                 prefabLookedUp = true;
             }
 
@@ -104,10 +104,12 @@ namespace AnimalBattleRoyale
             if (cachedPrefab != null)
             {
                 instance = Instantiate(cachedPrefab, transform, false);
-                instance.name = "WeaponCrystalVisual";
+                instance.name = "DiamanteVisual";
                 instance.transform.localPosition = Vector3.zero;
-                ConfigureLods(instance);
                 ApplyCrystalMaterial(instance);
+                // The source FBX's authored scale/pivot isn't guaranteed, so rescale to a
+                // known footprint and re-anchor on the ground rather than trust it as-is.
+                ImportedPropVisual.NormalizeToGround(instance, 0.55f, transform.position.y, 0.05f);
                 foreach (Collider collider in instance.GetComponentsInChildren<Collider>(true))
                 {
                     if (collider != null) collider.enabled = false;
@@ -116,7 +118,7 @@ namespace AnimalBattleRoyale
             else
             {
                 instance = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                instance.name = "WeaponCrystalFallback";
+                instance.name = "DiamanteFallback";
                 instance.transform.SetParent(transform, false);
                 instance.transform.localScale = new Vector3(0.65f, 1.25f, 0.65f);
                 Collider collider = instance.GetComponent<Collider>();
@@ -129,11 +131,11 @@ namespace AnimalBattleRoyale
             CollectibleHighlight highlight = CollectibleHighlight.Attach(transform, CrystalColor, 1.05f, 0.03f);
             highlightObject = highlight != null ? highlight.gameObject : null;
 
-            labelObject = new GameObject("WeaponCrystalLabel");
+            labelObject = new GameObject("DiamanteLabel");
             labelObject.transform.SetParent(transform, false);
             labelObject.transform.localPosition = Vector3.up * 1.9f;
             TextMesh text = labelObject.AddComponent<TextMesh>();
-            text.text = $"F  CRISTAL DE ARMA\n{ThirdPersonAnimalController.CrystalsPerWeaponLevel} = UPGRADE";
+            text.text = $"F  DIAMANTE\n{ThirdPersonAnimalController.CrystalsPerWeaponLevel} = UPGRADE";
             text.anchor = TextAnchor.MiddleCenter;
             text.alignment = TextAlignment.Center;
             text.characterSize = 0.042f;
@@ -142,53 +144,24 @@ namespace AnimalBattleRoyale
             labelObject.AddComponent<PickupLabel>();
         }
 
-        private static void ConfigureLods(GameObject instance)
-        {
-            List<Renderer> near = new List<Renderer>();
-            List<Renderer> middle = new List<Renderer>();
-            List<Renderer> far = new List<Renderer>();
-            foreach (Renderer renderer in instance.GetComponentsInChildren<Renderer>(true))
-            {
-                if (renderer.name.Contains("_LOD2")) far.Add(renderer);
-                else if (renderer.name.Contains("_LOD1")) middle.Add(renderer);
-                else near.Add(renderer);
-                renderer.shadowCastingMode = ShadowCastingMode.On;
-                renderer.receiveShadows = true;
-            }
-            if (near.Count == 0) return;
-            if (middle.Count == 0) middle.AddRange(near);
-            if (far.Count == 0) far.AddRange(middle);
-
-            LODGroup group = instance.GetComponentInChildren<LODGroup>(true);
-            if (group == null) group = instance.AddComponent<LODGroup>();
-            group.fadeMode = LODFadeMode.CrossFade;
-            group.animateCrossFading = true;
-            group.SetLODs(new[]
-            {
-                new LOD(0.34f, near.ToArray()),
-                new LOD(0.13f, middle.ToArray()),
-                new LOD(0.018f, far.ToArray())
-            });
-            group.RecalculateBounds();
-        }
-
         private static void ApplyCrystalMaterial(GameObject instance)
         {
             Material material = GetCrystalMaterial();
-            if (material == null) return;
             foreach (Renderer renderer in instance.GetComponentsInChildren<Renderer>(true))
             {
-                renderer.sharedMaterial = material;
+                if (material != null) renderer.sharedMaterial = material;
+                renderer.shadowCastingMode = ShadowCastingMode.On;
+                renderer.receiveShadows = true;
             }
         }
 
         private static Material GetCrystalMaterial()
         {
             if (cachedMaterial != null) return cachedMaterial;
-            Texture2D albedo = Resources.Load<Texture2D>("Pickups/WeaponCrystal/texture_diffuse");
+            Texture2D albedo = Resources.Load<Texture2D>("Pickups/Diamante/diamante3D_basecolor");
             Material material = new Material(ShaderLibrary.Lit)
             {
-                name = "WeaponCrystal_RuntimePBR",
+                name = "Diamante_RuntimePBR",
                 color = Color.white,
                 enableInstancing = true
             };
@@ -198,24 +171,16 @@ namespace AnimalBattleRoyale
                 if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", albedo);
             }
 
-            Texture2D normal = Resources.Load<Texture2D>("Pickups/WeaponCrystal/texture_normal");
-            if (normal != null && material.HasProperty("_BumpMap"))
+            // No dedicated emission map for this asset — a faint tint of the base color
+            // keeps the sparkle without needing a texture.
+            if (material.HasProperty("_EmissionColor"))
             {
-                material.SetTexture("_BumpMap", normal);
-                material.SetFloat("_BumpScale", 0.82f);
-                material.EnableKeyword("_NORMALMAP");
-            }
-
-            Texture2D emission = Resources.Load<Texture2D>("Pickups/WeaponCrystal/texture_emissive");
-            if (emission != null)
-            {
-                if (material.HasProperty("_EmissionMap")) material.SetTexture("_EmissionMap", emission);
-                if (material.HasProperty("_EmissionColor")) material.SetColor("_EmissionColor", CrystalColor * 1.8f);
+                material.SetColor("_EmissionColor", CrystalColor * 0.5f);
                 material.EnableKeyword("_EMISSION");
             }
-            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0.08f);
-            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.58f);
-            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.58f);
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0.12f);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.72f);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.72f);
             cachedMaterial = material;
             return cachedMaterial;
         }
