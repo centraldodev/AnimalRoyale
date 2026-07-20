@@ -175,6 +175,14 @@ namespace AnimalBattleRoyale
                 CreateNewSwampEnvironment(generated.transform);
                 RuntimeNavMeshSurface cleanNavigation = generated.AddComponent<RuntimeNavMeshSurface>();
                 cleanNavigation.Configure(mapSize);
+
+                // The rebuild-only path still needs the ant burrow network and all
+                // collectible pickups (diamante, municao, cura) placed in the world —
+                // it only skips the legacy tree/bush/rock/house generation above.
+                Material rebuildMoundMaterial = CreateMaterial(new Color(0.48f, 0.19f, 0.055f));
+                Material rebuildMoundDarkMaterial = CreateMaterial(new Color(0.12f, 0.045f, 0.012f));
+                SpawnPickupsAndTunnels(generated.transform, rebuildMoundMaterial, rebuildMoundDarkMaterial);
+
                 Debug.Log("[Jungle] Modo de reconstrucao ativo: terreno, lago, rochas e natureza gerados.");
                 return;
             }
@@ -270,17 +278,7 @@ namespace AnimalBattleRoyale
             foreach (Vector3 position in anthillPlanarPositions)
                 CreateAnthill(anthillsRoot, position, moundMaterial, moundDarkMaterial);
 
-            // Standalone tunnel entrances (not tied to an anthill mound) so the ant has
-            // plenty of burrow-network mobility across the whole map, not just near anthills.
-            Transform standaloneEntrancesRoot = new GameObject("AntTunnelEntrances").transform;
-            standaloneEntrancesRoot.SetParent(generated.transform, false);
-            List<Vector3> standaloneEntrancePositions = new List<Vector3>(antTunnelEntranceCount);
-            for (int i = 0; i < antTunnelEntranceCount; i++)
-            {
-                Vector3 position = RandomSpacedMapPosition(15f, antTunnelEntranceMinimumSpacing, standaloneEntrancePositions);
-                standaloneEntrancePositions.Add(position);
-                AntTunnelEntrance.Create(position, moundMaterial, moundDarkMaterial).transform.SetParent(standaloneEntrancesRoot, true);
-            }
+            SpawnPickupsAndTunnels(generated.transform, moundMaterial, moundDarkMaterial);
 
             Transform mountainsRoot = new GameObject("RockFormations").transform;
             mountainsRoot.SetParent(generated.transform, false);
@@ -321,71 +319,6 @@ namespace AnimalBattleRoyale
                     CreateHouse(housesRoot, position, houseWallMaterial, houseRoofMaterial);
                 }
             }
-
-            // Scattered life orbs: each fully restores (100%) the animal's health.
-            // Life, ammo and weapon-crystal pickups share one spacing list so none of the
-            // three kinds spawns right next to another, regardless of type.
-            List<Vector3> pickupPositions = new List<Vector3>(lifePickupCount + rangedSupplyCount + weaponCrystalCount + foodPickupCount);
-            Transform lifeRoot = new GameObject("LifePickups").transform;
-            lifeRoot.SetParent(generated.transform, false);
-            Vector3 playerShoreSpawn = GetShoreSpawnPosition();
-            Vector3 pickupInward = new Vector3(-playerShoreSpawn.x, 0f, -playerShoreSpawn.z).normalized;
-            Vector3 pickupRight = Vector3.Cross(Vector3.up, pickupInward).normalized;
-            for (int i = 0; i < lifePickupCount; i++)
-            {
-                Vector3 position = i switch
-                {
-                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 9f - pickupRight * 4f)),
-                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 17f + pickupRight * 5f)),
-                    _ => RandomSpacedMapPosition(9f, pickupMinimumSpacing, pickupPositions)
-                };
-                pickupPositions.Add(position);
-                LifePickup.Create(position).transform.SetParent(lifeRoot, true);
-            }
-
-            Transform rangedSuppliesRoot = new GameObject("RangedAmmoSupplies").transform;
-            rangedSuppliesRoot.SetParent(generated.transform, false);
-            for (int i = 0; i < rangedSupplyCount; i++)
-            {
-                RangedSupplyKind kind = RangedSupplyKind.NaturalAmmo;
-                Vector3 position = i switch
-                {
-                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 7f + pickupRight * 4f)),
-                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 14f - pickupRight * 5f)),
-                    2 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 22f + pickupRight * 2f)),
-                    _ => RandomSpacedMapPosition(12f, pickupMinimumSpacing, pickupPositions)
-                };
-                pickupPositions.Add(position);
-                RangedAmmoPickup.Create(position, kind).transform.SetParent(rangedSuppliesRoot, true);
-            }
-
-            Transform weaponCrystalsRoot = new GameObject("WeaponUpgradeCrystals").transform;
-            weaponCrystalsRoot.SetParent(generated.transform, false);
-            for (int i = 0; i < weaponCrystalCount; i++)
-            {
-                Vector3 position = i switch
-                {
-                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 12f + pickupRight * 7f)),
-                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 19f - pickupRight * 6f)),
-                    2 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 28f + pickupRight * 3f)),
-                    _ => RandomSpacedMapPosition(13f, pickupMinimumSpacing, pickupPositions)
-                };
-                pickupPositions.Add(position);
-                WeaponUpgradeCrystal.Create(position).transform.SetParent(weaponCrystalsRoot, true);
-            }
-
-            Transform foodPickupsRoot = new GameObject("FoodPickups").transform;
-            foodPickupsRoot.SetParent(generated.transform, false);
-            for (int i = 0; i < foodPickupCount; i++)
-            {
-                Vector3 position = RandomSpacedMapPosition(9f, pickupMinimumSpacing, pickupPositions);
-                pickupPositions.Add(position);
-                FoodPickup.Create(position, RandomFoodKind()).transform.SetParent(foodPickupsRoot, true);
-            }
-
-            Debug.Log($"[Jungle] Pickups no mapa: {WeaponUpgradeCrystal.ActivePickups.Count} diamantes, " +
-                      $"{RangedAmmoPickup.ActivePickups.Count} municoes, {foodPickupsRoot.childCount} curas, " +
-                      $"{FindObjectsByType<AntTunnelEntrance>(FindObjectsSortMode.None).Length} buracos de formiga.");
 
             Transform flowersRoot = new GameObject("FlowerPatches").transform;
             flowersRoot.SetParent(generated.transform, false);
@@ -431,6 +364,89 @@ namespace AnimalBattleRoyale
 
             RuntimeNavMeshSurface navigation = generated.AddComponent<RuntimeNavMeshSurface>();
             navigation.Configure(mapSize);
+        }
+
+        // Shared by both generation modes (full legacy world-gen and rebuild-environment-only)
+        // so the ant burrow network and every collectible (life, ammo, weapon crystal, food)
+        // always end up in the world regardless of which terrain path built the ground/lake/rocks.
+        private void SpawnPickupsAndTunnels(Transform parent, Material moundMaterial, Material moundDarkMaterial)
+        {
+            // Standalone tunnel entrances (not tied to an anthill mound) so the ant has
+            // plenty of burrow-network mobility across the whole map, not just near anthills.
+            Transform standaloneEntrancesRoot = new GameObject("AntTunnelEntrances").transform;
+            standaloneEntrancesRoot.SetParent(parent, false);
+            List<Vector3> standaloneEntrancePositions = new List<Vector3>(antTunnelEntranceCount);
+            for (int i = 0; i < antTunnelEntranceCount; i++)
+            {
+                Vector3 position = RandomSpacedMapPosition(15f, antTunnelEntranceMinimumSpacing, standaloneEntrancePositions);
+                standaloneEntrancePositions.Add(position);
+                AntTunnelEntrance.Create(position, moundMaterial, moundDarkMaterial).transform.SetParent(standaloneEntrancesRoot, true);
+            }
+
+            // Scattered life orbs: each fully restores (100%) the animal's health.
+            // Life, ammo and weapon-crystal pickups share one spacing list so none of the
+            // three kinds spawns right next to another, regardless of type.
+            List<Vector3> pickupPositions = new List<Vector3>(lifePickupCount + rangedSupplyCount + weaponCrystalCount + foodPickupCount);
+            Transform lifeRoot = new GameObject("LifePickups").transform;
+            lifeRoot.SetParent(parent, false);
+            Vector3 playerShoreSpawn = GetShoreSpawnPosition();
+            Vector3 pickupInward = new Vector3(-playerShoreSpawn.x, 0f, -playerShoreSpawn.z).normalized;
+            Vector3 pickupRight = Vector3.Cross(Vector3.up, pickupInward).normalized;
+            for (int i = 0; i < lifePickupCount; i++)
+            {
+                Vector3 position = i switch
+                {
+                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 9f - pickupRight * 4f)),
+                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 17f + pickupRight * 5f)),
+                    _ => RandomSpacedMapPosition(9f, pickupMinimumSpacing, pickupPositions)
+                };
+                pickupPositions.Add(position);
+                LifePickup.Create(position).transform.SetParent(lifeRoot, true);
+            }
+
+            Transform rangedSuppliesRoot = new GameObject("RangedAmmoSupplies").transform;
+            rangedSuppliesRoot.SetParent(parent, false);
+            for (int i = 0; i < rangedSupplyCount; i++)
+            {
+                RangedSupplyKind kind = RangedSupplyKind.NaturalAmmo;
+                Vector3 position = i switch
+                {
+                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 7f + pickupRight * 4f)),
+                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 14f - pickupRight * 5f)),
+                    2 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 22f + pickupRight * 2f)),
+                    _ => RandomSpacedMapPosition(12f, pickupMinimumSpacing, pickupPositions)
+                };
+                pickupPositions.Add(position);
+                RangedAmmoPickup.Create(position, kind).transform.SetParent(rangedSuppliesRoot, true);
+            }
+
+            Transform weaponCrystalsRoot = new GameObject("WeaponUpgradeCrystals").transform;
+            weaponCrystalsRoot.SetParent(parent, false);
+            for (int i = 0; i < weaponCrystalCount; i++)
+            {
+                Vector3 position = i switch
+                {
+                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 12f + pickupRight * 7f)),
+                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 19f - pickupRight * 6f)),
+                    2 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 28f + pickupRight * 3f)),
+                    _ => RandomSpacedMapPosition(13f, pickupMinimumSpacing, pickupPositions)
+                };
+                pickupPositions.Add(position);
+                WeaponUpgradeCrystal.Create(position).transform.SetParent(weaponCrystalsRoot, true);
+            }
+
+            Transform foodPickupsRoot = new GameObject("FoodPickups").transform;
+            foodPickupsRoot.SetParent(parent, false);
+            for (int i = 0; i < foodPickupCount; i++)
+            {
+                Vector3 position = RandomSpacedMapPosition(9f, pickupMinimumSpacing, pickupPositions);
+                pickupPositions.Add(position);
+                FoodPickup.Create(position, RandomFoodKind()).transform.SetParent(foodPickupsRoot, true);
+            }
+
+            Debug.Log($"[Jungle] Pickups no mapa: {WeaponUpgradeCrystal.ActivePickups.Count} diamantes, " +
+                      $"{RangedAmmoPickup.ActivePickups.Count} municoes, {foodPickupsRoot.childCount} curas, " +
+                      $"{FindObjectsByType<AntTunnelEntrance>(FindObjectsSortMode.None).Length} buracos de formiga.");
         }
 
         private void CreateGround(Transform parent, Material material)
