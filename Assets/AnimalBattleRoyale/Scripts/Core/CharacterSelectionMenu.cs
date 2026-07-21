@@ -228,13 +228,14 @@ namespace AnimalBattleRoyale
 
             Rect viewport = new Rect(panel.x + 14f, panel.y + 139f, panel.width - 28f, panel.height - 153f);
             int peerCount = online != null ? online.LanFriends.Count : 0;
-            float contentHeight = 962f + GameInputBindings.Definitions.Count * 58f
+            float contentHeight = 962f + 210f + GameInputBindings.Definitions.Count * 58f
                                         + Mathf.Max(0, peerCount - 1) * 68f;
             Rect content = new Rect(0f, 0f, viewport.width - 20f, contentHeight);
             settingsScroll = GUI.BeginScrollView(viewport, settingsScroll, content);
 
             float y = 0f;
             y = DrawLanSection(content.width, y, online);
+            y = DrawOnlineSection(content.width, y, online);
             y = DrawSliderSetting(content.width, y, "VOLUME GERAL",
                 GameSettings.MasterVolume, 0f, 1f, value => GameSettings.MasterVolume = value, true);
             y = DrawSliderSetting(content.width, y, "EFEITOS E AMBIENTE",
@@ -352,6 +353,59 @@ namespace AnimalBattleRoyale
             if (showNetworkStatus)
             {
                 GUI.Label(new Rect(section.x + 14f, section.yMax - 34f, section.width - 28f, 25f),
+                    online.Status, smallStyle);
+            }
+            return section.yMax + 12f;
+        }
+
+        private float DrawOnlineSection(float width, float y, OnlineMultiplayerManager online)
+        {
+            bool canStart = online != null && !online.IsBusy && !online.MatchStarted && !online.IsConnected;
+            bool relayActive = online != null && online.IsRelaySession;
+            float bodyHeight = relayActive ? 118f : 150f;
+            Rect section = new Rect(8f, y, width - 16f, 46f + bodyHeight);
+            DrawPanel(section, new Color(0.015f, 0.07f, 0.052f, 0.7f),
+                new Color(0.18f, 0.34f, 0.22f, 1f), 1f);
+            GUI.Label(new Rect(section.x + 14f, section.y + 9f, section.width - 28f, 28f),
+                "JOGAR PELA INTERNET", sectionTitleStyle);
+            GUI.Label(new Rect(section.x + 14f, section.y + 36f, section.width - 28f, 34f),
+                "Funciona com amigos em qualquer rede, sem precisar estar no mesmo Wi-Fi.", smallStyle);
+
+            if (online == null)
+            {
+                GUI.Label(new Rect(section.x + 14f, section.y + 78f, section.width - 28f, 40f),
+                    "SERVIÇO ONLINE INDISPONÍVEL", centeredStyle);
+                return section.yMax + 12f;
+            }
+
+            if (relayActive)
+            {
+                GUI.Label(new Rect(section.x + 14f, section.y + 78f, section.width - 28f, 20f),
+                    "CÓDIGO DA SALA — COMPARTILHE COM SEUS AMIGOS", smallStyle);
+                Rect codeField = new Rect(section.x + 14f, section.y + 100f, section.width - 28f, 34f);
+                DrawPanel(codeField, new Color(0.06f, 0.13f, 0.1f, 1f), new Color(0.25f, 0.46f, 0.34f, 1f), 1f);
+                GUI.TextField(codeField, online.JoinCode, keyStyle);
+            }
+            else
+            {
+                Rect createButton = new Rect(section.x + 14f, section.y + 78f, section.width - 28f, 38f);
+                if (DrawButton(createButton, online.IsBusy ? "AGUARDE..." : "CRIAR SALA ONLINE",
+                        canStart ? new Color(0.07f, 0.24f, 0.4f, 1f) : new Color(0.12f, 0.18f, 0.14f, 1f)) && canStart)
+                    online.CreateRelaySession();
+
+                Rect joinRow = new Rect(section.x + 14f, createButton.yMax + 10f, section.width - 28f, 38f);
+                Rect codeInput = new Rect(joinRow.x, joinRow.y, joinRow.width * 0.6f, joinRow.height);
+                Rect joinButton = new Rect(codeInput.xMax + 8f, joinRow.y, joinRow.width - codeInput.width - 8f, joinRow.height);
+                DrawPanel(codeInput, new Color(0.06f, 0.13f, 0.1f, 1f), new Color(0.25f, 0.46f, 0.34f, 1f), 1f);
+                online.JoinCodeInput = GUI.TextField(codeInput, online.JoinCodeInput, 8, keyStyle);
+                if (DrawButton(joinButton, "ENTRAR",
+                        canStart ? new Color(0.2f, 0.52f, 0.21f, 1f) : new Color(0.12f, 0.18f, 0.14f, 1f)) && canStart)
+                    online.JoinRelaySession();
+            }
+
+            if (online.IsBusy || relayActive)
+            {
+                GUI.Label(new Rect(section.x + 14f, section.yMax - 26f, section.width - 28f, 20f),
                     online.Status, smallStyle);
             }
             return section.yMax + 12f;

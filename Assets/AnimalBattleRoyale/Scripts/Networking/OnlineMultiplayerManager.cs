@@ -88,6 +88,7 @@ namespace AnimalBattleRoyale
         public bool IsConnected => connected && networkManager != null && networkManager.IsListening;
         public bool IsHost => IsConnected && networkManager.IsHost;
         public bool IsClientOnly => IsConnected && networkManager.IsClient && !networkManager.IsHost;
+        public bool IsRelaySession => connected && session != null;
         public bool MatchStarted => matchStarted;
         public bool UsesRemoteAuthority => matchStarted && IsClientOnly;
         public bool IsBusy => busy;
