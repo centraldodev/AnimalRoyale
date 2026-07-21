@@ -519,7 +519,7 @@ namespace AnimalBattleRoyale
             if (labelObject != null) labelObject.SetActive(false);
             if (highlightObject != null) highlightObject.SetActive(false);
             CombatFeedback.PlayAmmoPickup(transform.position);
-            Countdown.Spawn(transform.position, RespawnSeconds, SupplyColor());
+            Countdown.Spawn(transform.position, RespawnSeconds, SupplyColor(), "MUNIÇÃO");
             return true;
         }
 

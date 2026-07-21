@@ -48,6 +48,7 @@ namespace AnimalBattleRoyale
                 CombatFeedback.PlayPlayerDeath(transform.position);
                 Die(attacker);
             }
+            else if (attacker != null) CombatFeedback.PlayAnimalHit(transform.position);
             else CombatFeedback.PlayPlayerHit(transform.position);
         }
 

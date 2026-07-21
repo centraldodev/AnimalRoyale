@@ -33,10 +33,10 @@ namespace AnimalBattleRoyale
         [SerializeField, Range(0, 150)] private int antTunnelEntranceCount = 100;
         [SerializeField, Range(8f, 40f)] private float antTunnelEntranceMinimumSpacing = 16f;
         [SerializeField, Range(0, 48)] private int mountainCount = 26;
-        [SerializeField, Range(0, 90)] private int rangedSupplyCount = 45;
-        [SerializeField, Range(0, 100)] private int weaponCrystalCount = 40;
-        [SerializeField, Range(0, 100)] private int foodPickupCount = 60;
-        [SerializeField, Range(4f, 30f)] private float pickupMinimumSpacing = 12f;
+        [SerializeField, Range(0, 90)] private int rangedSupplyCount = 10;
+        [SerializeField, Range(0, 100)] private int weaponCrystalCount = 9;
+        [SerializeField, Range(0, 100)] private int foodPickupCount = 13;
+        [SerializeField, Range(4f, 80f)] private float pickupMinimumSpacing = 50f;
         [SerializeField, Range(0, 40)] private int houseCount = 16;
         [SerializeField, Range(12f, 40f)] private float houseMinimumSpacing = 22f;
         [SerializeField, Range(0, 16)] private int eagleMountainCount = 8;
@@ -383,39 +383,23 @@ namespace AnimalBattleRoyale
             }
 
             // Ammo, weapon-crystal and food pickups share one spacing list so none of the
-            // three kinds spawns right next to another, regardless of type.
+            // three kinds spawns within pickupMinimumSpacing of another, regardless of type.
             List<Vector3> pickupPositions = new List<Vector3>(rangedSupplyCount + weaponCrystalCount + foodPickupCount);
-            Vector3 playerShoreSpawn = GetShoreSpawnPosition();
-            Vector3 pickupInward = new Vector3(-playerShoreSpawn.x, 0f, -playerShoreSpawn.z).normalized;
-            Vector3 pickupRight = Vector3.Cross(Vector3.up, pickupInward).normalized;
 
             Transform rangedSuppliesRoot = new GameObject("RangedAmmoSupplies").transform;
             rangedSuppliesRoot.SetParent(parent, false);
             for (int i = 0; i < rangedSupplyCount; i++)
             {
-                RangedSupplyKind kind = RangedSupplyKind.NaturalAmmo;
-                Vector3 position = i switch
-                {
-                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 7f + pickupRight * 4f)),
-                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 14f - pickupRight * 5f)),
-                    2 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 22f + pickupRight * 2f)),
-                    _ => RandomSpacedMapPosition(12f, pickupMinimumSpacing, pickupPositions)
-                };
+                Vector3 position = RandomSpacedMapPosition(12f, pickupMinimumSpacing, pickupPositions);
                 pickupPositions.Add(position);
-                RangedAmmoPickup.Create(position, kind).transform.SetParent(rangedSuppliesRoot, true);
+                RangedAmmoPickup.Create(position, RangedSupplyKind.NaturalAmmo).transform.SetParent(rangedSuppliesRoot, true);
             }
 
             Transform weaponCrystalsRoot = new GameObject("WeaponUpgradeCrystals").transform;
             weaponCrystalsRoot.SetParent(parent, false);
             for (int i = 0; i < weaponCrystalCount; i++)
             {
-                Vector3 position = i switch
-                {
-                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 12f + pickupRight * 7f)),
-                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 19f - pickupRight * 6f)),
-                    2 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 28f + pickupRight * 3f)),
-                    _ => RandomSpacedMapPosition(13f, pickupMinimumSpacing, pickupPositions)
-                };
+                Vector3 position = RandomSpacedMapPosition(13f, pickupMinimumSpacing, pickupPositions);
                 pickupPositions.Add(position);
                 WeaponUpgradeCrystal.Create(position).transform.SetParent(weaponCrystalsRoot, true);
             }
@@ -2150,19 +2134,6 @@ namespace AnimalBattleRoyale
             } while ((point.magnitude < requiredClearRadius || IsNearTrail(point, trailClearance)) && attempts < 50);
 
             return new Vector3(point.x, CalculateGroundHeight(point.x, point.y), point.y);
-        }
-
-        // Shore-relative pickup spots are placed by fixed offsets and can land inside the
-        // lake; push them back out to dry ground along the same radial direction.
-        private Vector3 ClampAwayFromLake(Vector3 position)
-        {
-            float minDistance = lakeRadius + 4f;
-            Vector2 planar = new Vector2(position.x, position.z);
-            float distance = planar.magnitude;
-            if (distance >= minDistance) return position;
-            Vector2 direction = distance > 0.01f ? planar / distance : Vector2.right;
-            Vector2 safePoint = direction * minDistance;
-            return new Vector3(safePoint.x, position.y, safePoint.y);
         }
 
         // Weighted so the common kinds dominate and GoldenFruit stays a rare, better find.

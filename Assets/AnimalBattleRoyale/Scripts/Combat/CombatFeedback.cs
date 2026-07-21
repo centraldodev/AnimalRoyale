@@ -89,6 +89,9 @@ namespace AnimalBattleRoyale
         public static void PlayPlayerHit(Vector3 position) =>
             PlaySfx(position, "PlayerHit", 0.38f, 0.95f, 1.05f, 32f, 0.9f, 0.075f, 5);
 
+        public static void PlayAnimalHit(Vector3 position) =>
+            PlaySfx(position, "AnimalHit", 0.38f, 0.95f, 1.05f, 32f, 0.9f, 0.075f, 5);
+
         public static void PlayPlayerDeath(Vector3 position) =>
             PlaySfx(position, "PlayerDeath", 0.52f, 0.98f, 1.02f, 44f, 0.85f, 0.12f, 3);
 

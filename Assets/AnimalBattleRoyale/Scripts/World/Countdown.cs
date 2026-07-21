@@ -9,14 +9,14 @@ namespace AnimalBattleRoyale
     /// </summary>
     public sealed class Countdown : MonoBehaviour
     {
-        public const float DurationSeconds = 10f;
+        public const float DurationSeconds = 20f;
 
         private float endTime;
         private float totalSeconds;
         private Vector3 basePosition;
         private TextMesh text;
 
-        public static Countdown Spawn(Vector3 position, float seconds, Color color)
+        public static Countdown Spawn(Vector3 position, float seconds, Color color, string label = null)
         {
             GameObject obj = new GameObject("Countdown");
             obj.transform.position = position;
@@ -24,13 +24,29 @@ namespace AnimalBattleRoyale
             countdown.basePosition = position;
             countdown.totalSeconds = Mathf.Max(1f, seconds);
             countdown.endTime = Time.time + countdown.totalSeconds;
-            countdown.BuildVisual(color);
+            countdown.BuildVisual(color, label);
             return countdown;
         }
 
-        private void BuildVisual(Color color)
+        private void BuildVisual(Color color, string label)
         {
             CollectibleHighlight.Attach(transform, color, 0.55f, 0.03f);
+
+            if (!string.IsNullOrEmpty(label))
+            {
+                GameObject nameObject = new GameObject("CountdownLabel");
+                nameObject.transform.SetParent(transform, false);
+                nameObject.transform.localPosition = Vector3.up * 1.55f;
+                TextMesh nameText = nameObject.AddComponent<TextMesh>();
+                nameText.anchor = TextAnchor.MiddleCenter;
+                nameText.alignment = TextAlignment.Center;
+                nameText.characterSize = 0.05f;
+                nameText.fontSize = 48;
+                nameText.fontStyle = FontStyle.Bold;
+                nameText.color = color;
+                nameText.text = label;
+                nameObject.AddComponent<PickupLabel>();
+            }
 
             GameObject numberObject = new GameObject("CountdownNumber");
             numberObject.transform.SetParent(transform, false);

@@ -15,6 +15,7 @@ namespace AnimalBattleRoyale
     /// <summary>Food fully restores (100%) the animal's health, regardless of kind.</summary>
     public sealed class FoodPickup : MonoBehaviour
     {
+        private const float RespawnSeconds = Countdown.DurationSeconds;
         private static readonly List<FoodPickup> activePickups = new List<FoodPickup>();
         private static readonly Dictionary<int, Material> sharedMaterials = new Dictionary<int, Material>();
         private static JungleGenerator cachedJungle;
@@ -24,9 +25,12 @@ namespace AnimalBattleRoyale
         private static Material cachedCuraMaterial;
         private FoodKind foodKind;
         private Color effectColor;
-        private bool collected;
+        private bool available = true;
+        private float respawnAt;
         private int motionGroup;
         private Transform display;
+        private GameObject labelObject;
+        private GameObject highlightObject;
 
         private void Awake()
         {
@@ -61,6 +65,14 @@ namespace AnimalBattleRoyale
         private void Update()
         {
             if ((Time.frameCount & 1) != motionGroup) return;
+            if (!available)
+            {
+                if (Time.time < respawnAt) return;
+                available = true;
+                SetVisualsActive(true);
+                AttackVfx.CreateBurst(transform.position, effectColor, 1.25f);
+                return;
+            }
             transform.Rotate(0f, 24f * Time.deltaTime, 0f, Space.World);
         }
 
@@ -71,7 +83,7 @@ namespace AnimalBattleRoyale
             float nearestSqrDistance = 1.8f * 1.8f;
             foreach (FoodPickup pickup in activePickups)
             {
-                if (pickup == null || pickup.collected || !pickup.CanBenefit(animal)) continue;
+                if (pickup == null || !pickup.available || !pickup.CanBenefit(animal)) continue;
                 float sqrDistance = (pickup.transform.position - animal.transform.position).sqrMagnitude;
                 if (sqrDistance < nearestSqrDistance)
                 {
@@ -91,12 +103,21 @@ namespace AnimalBattleRoyale
 
         private void Collect(ThirdPersonAnimalController animal)
         {
-            collected = true;
+            available = false;
+            respawnAt = Time.time + RespawnSeconds;
             animal.Health.Heal(animal.Health.MaxHealth); // clamps to max -> full 100% heal
             ForestMissionDirector.Instance?.RecordFoodConsumed(animal, foodKind);
             AttackVfx.CreateBurst(transform.position, effectColor, 1.7f);
             CombatFeedback.PlayAmmoPickup(transform.position);
-            Destroy(gameObject);
+            SetVisualsActive(false);
+            Countdown.Spawn(transform.position, RespawnSeconds, effectColor, "CURA");
+        }
+
+        private void SetVisualsActive(bool value)
+        {
+            if (display != null) display.gameObject.SetActive(value);
+            if (labelObject != null) labelObject.SetActive(value);
+            if (highlightObject != null) highlightObject.SetActive(value);
         }
 
         private void BuildVisual()
@@ -116,7 +137,9 @@ namespace AnimalBattleRoyale
                     case FoodKind.GoldenFruit: BuildFruitBundle(display); break;
                 }
             }
-            CollectibleHighlight.Attach(transform, effectColor, foodKind == FoodKind.GoldenFruit ? 1.15f : 0.92f, -0.28f);
+            CollectibleHighlight highlight = CollectibleHighlight.Attach(transform, effectColor,
+                foodKind == FoodKind.GoldenFruit ? 1.15f : 0.92f, -0.28f);
+            highlightObject = highlight != null ? highlight.gameObject : null;
             CreateLabel();
         }
 
@@ -313,6 +336,7 @@ namespace AnimalBattleRoyale
             text.fontSize = 48;
             text.color = effectColor;
             label.AddComponent<PickupLabel>();
+            labelObject = label;
         }
 
         private static string FoodLabel(FoodKind kind)
