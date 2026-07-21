@@ -95,7 +95,7 @@ namespace AnimalBattleRoyale
             animal.Health.Heal(animal.Health.MaxHealth); // clamps to max -> full 100% heal
             ForestMissionDirector.Instance?.RecordFoodConsumed(animal, foodKind);
             AttackVfx.CreateBurst(transform.position, effectColor, 1.7f);
-            CombatFeedback.PlayFoodPickup(transform.position);
+            CombatFeedback.PlayAmmoPickup(transform.position);
             Destroy(gameObject);
         }
 

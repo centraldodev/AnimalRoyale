@@ -99,7 +99,6 @@ namespace AnimalBattleRoyale
             PlaySfx(position, "WeaponReload", 0.36f, 1f, 1f, 12f, 0.05f, 1.5f, 1);
 
         // There are no replacement sounds for these events in the new bank.
-        public static void PlayFoodPickup(Vector3 position) { }
         public static void PlayDiamond(Vector3 position) { }
         public static void PlayPortal(Vector3 position) { }
 
