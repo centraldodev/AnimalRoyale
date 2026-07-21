@@ -16,3 +16,4 @@ MonoBehaviour:
   ant: {fileID: 5779083193301636701, guid: beb0e54e0dc464d058dd15c63ec51f76, type: 3}
   eagle: {fileID: 6005788248434690991, guid: ef6fee0ecbab344e08ea9639cc2189c6, type: 3}
   monkey: {fileID: 3294534954092695469, guid: 70cad72a57b2c4512ab841f7bf5691a3, type: 3}
+  cow: {fileID: 4831614388719795977, guid: 4a9376c87a8fe4a7e9c12c0cc4210e88, type: 3}

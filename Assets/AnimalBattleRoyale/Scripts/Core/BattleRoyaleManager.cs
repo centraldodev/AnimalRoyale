@@ -675,7 +675,7 @@ namespace AnimalBattleRoyale
             float iconSize = mobileControls ? 78f : 64f;
             const float textHeight = 16f;
             const float textGap = 4f;
-            const float spacing = 8f;
+            const float spacing = 14f;
 
             float rowHeight = iconSize + textGap + textHeight;
             float columnHeight = rowHeight * WeaponSelectorSlots.Length + spacing * (WeaponSelectorSlots.Length - 1);
@@ -726,7 +726,7 @@ namespace AnimalBattleRoyale
                 Texture icon = GetWeaponIcon(weapon, unlocked);
                 if (icon != null)
                 {
-                    Rect iconRect = selected ? new Rect(slot.x - 3f, slot.y - 3f, slot.width + 6f, slot.height + 6f) : slot;
+                    Rect iconRect = selected ? new Rect(slot.x - 10f, slot.y - 10f, slot.width + 20f, slot.height + 20f) : slot;
                     GUI.DrawTexture(iconRect, icon, ScaleMode.ScaleToFit, true);
                 }
                 else

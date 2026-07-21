@@ -21,6 +21,10 @@ namespace AnimalBattleRoyale
         public const float SeedDamage = 6f;
         public const float TomatoDamage = 12f;
         public const float WatermelonDamage = 15f;
+        // Cow keeps the same seed/tomato/watermelon damage tiers under the hood — only the
+        // projectile's look is swapped to milk, regardless of weapon level.
+        public static readonly Color MilkColor = new Color(0.96f, 0.95f, 0.9f);
+        private static Material sharedMilkMaterial;
         private static Material sharedTrailMaterial;
         private static readonly Dictionary<AnimalType, Material> sharedSeedMaterials = new Dictionary<AnimalType, Material>();
         private static readonly Dictionary<string, Material> sharedFruitMaterials = new Dictionary<string, Material>();
@@ -132,6 +136,10 @@ namespace AnimalBattleRoyale
                 case AnimalType.Monkey:
                     lift = 0.35f; gravity = 2.3f; radius = 0.16f; visualScale = 0.3f;
                     break;
+                case AnimalType.Cow:
+                    // Heavier jet of milk: bigger and falls a bit faster than the others.
+                    lift = 0.3f; gravity = 2.6f; radius = 0.2f; visualScale = 0.38f;
+                    break;
                 default:
                     lift = 0.35f; gravity = 2.3f; radius = 0.17f; visualScale = 0.3f;
                     break;
@@ -163,6 +171,8 @@ namespace AnimalBattleRoyale
                     visualScale *= 1.62f;
                     break;
             }
+            // Cow's shots always read as milk, regardless of the tier's usual color.
+            if (source.AnimalType == AnimalType.Cow) impactColor = MilkColor;
 
             transform.position = GetLaunchPosition(source, direction);
             transform.rotation = Quaternion.identity;
@@ -303,6 +313,8 @@ namespace AnimalBattleRoyale
         private static Transform BuildProjectileVisual(WeaponAmmoType ammoType, AnimalType animalType, Transform parent,
             float scale, Color seedColor)
         {
+            if (animalType == AnimalType.Cow) return BuildMilkVisual(parent, scale);
+
             switch (ammoType)
             {
                 case WeaponAmmoType.Tomato:
@@ -319,6 +331,16 @@ namespace AnimalBattleRoyale
             GameObject seed = AddPrimitive(parent, PrimitiveType.Sphere, "SeedProjectileVisual",
                 Vector3.zero, new Vector3(0.62f, 0.62f, 1f) * scale, Quaternion.identity, seedMaterial);
             return seed.transform;
+        }
+
+        private static Transform BuildMilkVisual(Transform parent, float scale)
+        {
+            if (sharedMilkMaterial == null)
+                sharedMilkMaterial = CreateSharedMaterial("Milk_ProjectileMaterial", MilkColor, 0.55f);
+            // Slightly squashed sphere so it reads as a splash blob rather than a solid ball.
+            GameObject milk = AddPrimitive(parent, PrimitiveType.Sphere, "MilkProjectileVisual",
+                Vector3.zero, new Vector3(0.9f, 0.75f, 0.9f) * scale, Quaternion.identity, sharedMilkMaterial);
+            return milk.transform;
         }
 
         private static Transform BuildTomatoVisual(Transform parent, float scale)

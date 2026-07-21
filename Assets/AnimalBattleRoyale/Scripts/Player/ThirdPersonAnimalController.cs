@@ -83,6 +83,7 @@ namespace AnimalBattleRoyale
         private Transform targetVine;
         private bool hangingVine;
         private bool vineLeaping;
+        private bool cowCharging;
         private int vinesVisitedInChain;
         private float vineLeapStartedAt;
         private float vineLeapEndsAt;
@@ -117,6 +118,17 @@ namespace AnimalBattleRoyale
         private const float VineLaunchForward = 15f;
         private const float VineLaunchUp = 9f;
 
+        private const float CowChargeDistance = 30f;
+        // Speed set so the 30m charge takes exactly 3s, matching the CowCharge.wav clip length.
+        private const float CowChargeSpeed = CowChargeDistance / 3f;
+        private const float CowChargeMaxDuration = CowChargeDistance / CowChargeSpeed;
+        private const float CowChargeDamage = 26f;
+        private const float CowChargeKnockback = 12f;
+        private const float CowChargeRadius = 1.8f;
+        private const float CowChargeTurnRateDegreesPerSecond = 220f;
+        private static readonly Color CowChargeColor = new Color(0.75f, 0.55f, 0.32f);
+        private const float EagleGlideTurnRateDegreesPerSecond = 260f;
+
         public AnimalType AnimalType => animalType;
         public AnimalStats Stats { get { EnsureRuntimeReferences(); return stats; } }
         public Health Health => health;
@@ -132,6 +144,7 @@ namespace AnimalBattleRoyale
         public bool IsInAntTunnel => burrowed;
         public bool IsHangingVine => hangingVine;
         public bool IsVineLeaping => vineLeaping;
+        public bool IsCowCharging => cowCharging;
         public int VinesVisitedInChain => vinesVisitedInChain;
         public bool CanChainToAnotherVine => hangingVine && vinesVisitedInChain < MaxVinesPerChain;
         public bool IsWading => CentralLake.TryGetWaterAt(transform.position, out _, out _);
@@ -223,8 +236,8 @@ namespace AnimalBattleRoyale
             _ => new Color(0.82f, 0.7f, 0.42f)
         };
 
-        public string WeaponAmmoDisplayName => DisplayNameForWeapon(CurrentWeaponAmmo);
-        public Color WeaponAmmoColor => ColorForWeapon(CurrentWeaponAmmo);
+        public string WeaponAmmoDisplayName => animalType == AnimalType.Cow ? "LEITE" : DisplayNameForWeapon(CurrentWeaponAmmo);
+        public Color WeaponAmmoColor => animalType == AnimalType.Cow ? RangedProjectile.MilkColor : ColorForWeapon(CurrentWeaponAmmo);
         public int LastPowerSlot => lastPowerSlot;
 
         public Vector3 ViewAimDirection
@@ -240,7 +253,7 @@ namespace AnimalBattleRoyale
 
         public string RangedAmmoName => WeaponAmmoDisplayName;
 
-        public string RangedAttackName => CurrentWeaponAmmo switch
+        public string RangedAttackName => animalType == AnimalType.Cow ? "JATO DE LEITE" : CurrentWeaponAmmo switch
         {
             WeaponAmmoType.Tomato => "RAJADA DE TOMATES",
             WeaponAmmoType.Watermelon => "MELANCIA EXPLOSIVA",
@@ -256,6 +269,7 @@ namespace AnimalBattleRoyale
             AnimalType.Ant => "Mordida de Mandíbula",
             AnimalType.Eagle => "Bicada",
             AnimalType.Monkey => "Tapa Selvagem",
+            AnimalType.Cow => "Chifrada",
             _ => "Ataque"
         };
 
@@ -677,6 +691,7 @@ namespace AnimalBattleRoyale
             if (grounded && IsFlying && verticalVelocity.y < 0f) flyingUntil = 0f;
             bool gliding = IsFlying;
             bool abilityDashing = Time.time < abilityDashUntil;
+            if (cowCharging && !abilityDashing) cowCharging = false;
             visualMotion?.SetLocomotion(direction.sqrMagnitude > 0.01f || abilityDashing,
                 sprint || abilityDashing, !grounded, verticalVelocity.y, gliding);
             if (grounded && verticalVelocity.y < 0f && !gliding) verticalVelocity.y = -2f;
@@ -709,12 +724,37 @@ namespace AnimalBattleRoyale
             }
 
             Vector3 movementDirection = direction;
-            if (gliding && movementDirection.sqrMagnitude <= 0.01f) movementDirection = eagleGlideDirection;
+            if (gliding)
+            {
+                // Glide direction follows the camera aim continuously (like the cow's
+                // charge) instead of only turning while a WASD key is held, so looking
+                // around alone is enough to steer instead of flying dead straight.
+                Vector3 aimFlat = new Vector3(ViewAimDirection.x, 0f, ViewAimDirection.z);
+                if (aimFlat.sqrMagnitude > 0.01f)
+                {
+                    float maxRadians = EagleGlideTurnRateDegreesPerSecond * Mathf.Deg2Rad * Time.deltaTime;
+                    eagleGlideDirection = Vector3.RotateTowards(eagleGlideDirection, aimFlat.normalized, maxRadians, 0f).normalized;
+                }
+                movementDirection = eagleGlideDirection;
+            }
 
             if (movementDirection.sqrMagnitude > 0.01f && !abilityDashing && hasForwardInput)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(movementDirection, Vector3.up);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            }
+
+            // Cow's charge steers toward wherever the camera is aiming instead of holding
+            // the direction it was started in, so it isn't a rigid straight line.
+            if (abilityDashing && cowCharging)
+            {
+                Vector3 aimFlat = new Vector3(ViewAimDirection.x, 0f, ViewAimDirection.z);
+                if (aimFlat.sqrMagnitude > 0.01f)
+                {
+                    float maxRadians = CowChargeTurnRateDegreesPerSecond * Mathf.Deg2Rad * Time.deltaTime;
+                    dashDirection = Vector3.RotateTowards(dashDirection, aimFlat.normalized, maxRadians, 0f).normalized;
+                    transform.rotation = Quaternion.LookRotation(dashDirection, Vector3.up);
+                }
             }
 
             float speed = sprint ? stats.SprintSpeed : stats.MoveSpeed;
@@ -892,6 +932,7 @@ namespace AnimalBattleRoyale
         private float MeleeKnockback() => animalType switch
         {
             AnimalType.Tiger => 11f,
+            AnimalType.Cow => 10f,
             AnimalType.Monkey => 9f,
             AnimalType.Eagle => 8f,
             AnimalType.Ant => 6f,
@@ -902,6 +943,15 @@ namespace AnimalBattleRoyale
         {
             if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return;
             if (slot != 0 || vineLeaping) return;
+
+            // A second Q while charging ends the run early instead of queuing a new charge.
+            if (animalType == AnimalType.Cow && cowCharging)
+            {
+                cowCharging = false;
+                abilityDashUntil = Time.time;
+                return;
+            }
+
             bool chainingVine = animalType == AnimalType.Monkey && hangingVine;
             if (chainingVine && !CanChainToAnotherVine) return;
             if (!chainingVine && Time.time < nextPowerTimes[0]) return;
@@ -945,6 +995,13 @@ namespace AnimalBattleRoyale
                         verticalVelocity.y = 9f;
                         extraVelocity += new Vector3(direction.x, 0f, direction.z).normalized * 9f;
                     }
+                    break;
+                case AnimalType.Cow:
+                    // Investida: straight-line charge that shoves anything in its path;
+                    // a second Q (handled in TryUsePower) ends it before the max distance.
+                    cowCharging = true;
+                    BeginDash(direction, CowChargeMaxDuration, CowChargeSpeed, CowChargeDamage,
+                        CowChargeKnockback, CowChargeRadius, 1f, CowChargeColor);
                     break;
             }
         }
@@ -1137,6 +1194,7 @@ namespace AnimalBattleRoyale
                 abilityHitTargets.Add(other);
                 other.TakeDamage(damage, this);
                 CombatFeedback.NotifyHit(animalType, other.transform.position, damage);
+                if (animalType == AnimalType.Cow) CombatFeedback.PlayCowImpact(other.transform.position);
                 Vector3 push = other.transform.position - transform.position;
                 push.y = 0.15f;
                 if (other.Owner != null)
@@ -1164,6 +1222,7 @@ namespace AnimalBattleRoyale
             tigerPouncing = false;
             flyingUntil = 0f;
             abilityDashUntil = 0f;
+            cowCharging = false;
             vineLeaping = false;
             hangingVine = false;
             heldVine = null;
@@ -1368,6 +1427,7 @@ namespace AnimalBattleRoyale
             verticalVelocity = Vector3.zero;
             extraVelocity = Vector3.zero;
             abilityDashUntil = 0f;
+            cowCharging = false;
             slowUntil = 0f;
             slowMultiplier = 1f;
 

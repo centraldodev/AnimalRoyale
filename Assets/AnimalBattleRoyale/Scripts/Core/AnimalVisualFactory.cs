@@ -42,7 +42,9 @@ namespace AnimalBattleRoyale
                 instance.transform.localScale = Vector3.one;
                 DisablePackageGameplayComponents(instance);
                 ConfigureRenderers(instance);
-                AttachShoulderWeapon(instance.transform, type);
+                // The new Cow model already comes holding milk guns in both hands, so it
+                // doesn't need the procedural hand props or the shoulder-slung launcher.
+                if (type != AnimalType.Cow) AttachShoulderWeapon(instance.transform, type);
             }
 
             visualRootObject.AddComponent<AnimalVisualMotion>().Initialize(type);

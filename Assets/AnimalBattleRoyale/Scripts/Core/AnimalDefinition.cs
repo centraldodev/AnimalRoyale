@@ -78,6 +78,11 @@ namespace AnimalBattleRoyale
                     100f, 6.5f, 9.2f, 8.0f, 19f, 1.75f, 0.76f, new[] { 8f, 0f, 0f }, 0.46f, 1.2f,
                     Vector3.one * 0.76f, new Color(0.55f, 0.36f, 0.2f)),
 
+                AnimalType.Cow => new AnimalStats(
+                    "Vaca", new[] { "Investida", "DESATIVADO", "DESATIVADO" },
+                    100f, 5.8f, 8.4f, 5.8f, 24f, 2.1f, 0.95f, new[] { 12f, 0f, 0f }, 0.68f, 1.55f,
+                    Vector3.one * 0.85f, new Color(0.68f, 0.5f, 0.32f)),
+
                 _ => throw new System.ArgumentOutOfRangeException(nameof(type), type, null)
             };
         }

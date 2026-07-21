@@ -22,6 +22,7 @@ namespace AnimalBattleRoyale
         {
             if (type == AnimalType.Tiger) PlayTigerPounce(position);
             else if (type == AnimalType.Eagle) PlayEagleFlight(position);
+            else if (type == AnimalType.Cow) PlayCowCharge(position);
         }
 
         public static void NotifyHit(AnimalType attacker, Vector3 position, float damage)
@@ -32,6 +33,7 @@ namespace AnimalBattleRoyale
                 AnimalType.Ant => new Color(0.86f, 0.36f, 0.14f),
                 AnimalType.Eagle => new Color(0.9f, 0.82f, 0.6f),
                 AnimalType.Monkey => new Color(0.6f, 0.4f, 0.22f),
+                AnimalType.Cow => RangedProjectile.MilkColor,
                 _ => Color.white
             };
             AttackVfx.CreateHitSpark(position + Vector3.up * 0.8f, color);
@@ -52,6 +54,12 @@ namespace AnimalBattleRoyale
 
         public static void PlayEagleFlight(Vector3 position) =>
             PlaySfx(position, "EagleFlight", 0.48f, 0.97f, 1.03f, 40f, 0.9f, 0.4f, 2);
+
+        public static void PlayCowCharge(Vector3 position) =>
+            PlaySfx(position, "CowCharge", 0.5f, 0.97f, 1.03f, 40f, 0.9f, 1.5f, 2);
+
+        public static void PlayCowImpact(Vector3 position) =>
+            PlaySfx(position, "CowImpact", 0.55f, 0.95f, 1.05f, 34f, 0.9f, 0.08f, 4);
 
         public static void PlayProjectileLaunch(Vector3 position, WeaponAmmoType ammoType)
         {
@@ -166,7 +174,23 @@ namespace AnimalBattleRoyale
 
             if (voices.Count >= MaxVoices)
             {
-                AudioSource reused = voices[nextVoiceToReuse++ % voices.Count];
+                // Steal whichever voice is closest to finishing anyway, instead of a blind
+                // round-robin — otherwise a long clip (e.g. an ability's 3s charge sound)
+                // that just started can get cut off by an unrelated one-shot like a footstep.
+                int bestIndex = -1;
+                float leastRemaining = float.MaxValue;
+                for (int i = 0; i < voices.Count; i++)
+                {
+                    AudioSource candidate = voices[i];
+                    if (candidate == null) continue;
+                    float remaining = candidate.isPlaying && candidate.clip != null
+                        ? candidate.clip.length - candidate.time
+                        : 0f;
+                    if (remaining >= leastRemaining) continue;
+                    leastRemaining = remaining;
+                    bestIndex = i;
+                }
+                AudioSource reused = bestIndex >= 0 ? voices[bestIndex] : voices[nextVoiceToReuse++ % voices.Count];
                 reused.Stop();
                 return reused;
             }

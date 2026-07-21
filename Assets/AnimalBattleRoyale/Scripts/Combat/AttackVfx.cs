@@ -80,6 +80,11 @@ namespace AnimalBattleRoyale
                     // Subir no Cipó - leafy leap burst.
                     CreateBurst(position + Vector3.up * 0.5f, new Color(0.5f, 0.72f, 0.28f), 3f);
                     break;
+                case AnimalType.Cow:
+                    // Investida - dusty forward-facing charge burst.
+                    CreateBurst(position, new Color(0.75f, 0.55f, 0.32f), 2.6f);
+                    CreateSlash(position + Vector3.up * 0.3f, direction, new Color(0.75f, 0.55f, 0.32f), 2.4f);
+                    break;
             }
         }
 

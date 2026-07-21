@@ -8,6 +8,7 @@ namespace AnimalBattleRoyale
         [SerializeField] private GameObject ant;
         [SerializeField] private GameObject eagle;
         [SerializeField] private GameObject monkey;
+        [SerializeField] private GameObject cow;
 
         public GameObject GetPrefab(AnimalType type) => type switch
         {
@@ -15,6 +16,7 @@ namespace AnimalBattleRoyale
             AnimalType.Ant => ant,
             AnimalType.Eagle => eagle,
             AnimalType.Monkey => monkey,
+            AnimalType.Cow => cow,
             _ => null
         };
     }

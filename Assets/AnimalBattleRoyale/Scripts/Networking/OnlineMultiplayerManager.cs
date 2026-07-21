@@ -146,11 +146,13 @@ namespace AnimalBattleRoyale
             if (networkManager != null)
             {
                 transport = networkManager.GetComponent<UnityTransport>();
+                ConfigureTransportProtocol();
                 return;
             }
 
             GameObject networkObject = new GameObject("AnimalRoyaleNetworkManager");
             transport = networkObject.AddComponent<UnityTransport>();
+            ConfigureTransportProtocol();
             networkManager = networkObject.AddComponent<NetworkManager>();
             networkManager.NetworkConfig = new NetworkConfig
             {
@@ -160,6 +162,17 @@ namespace AnimalBattleRoyale
                 ForceSamePrefabs = false,
                 TickRate = 30
             };
+        }
+
+        // Browsers can't open raw UDP sockets, so WebGL builds must speak WebSocket instead.
+        // Unity.Services.Multiplayer already requests a WSS Relay allocation on WebGL
+        // (RelayProtocol.Default), so the local transport just needs to match that.
+        private void ConfigureTransportProtocol()
+        {
+            if (transport == null) return;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            transport.UseWebSockets = true;
+#endif
         }
 
         private void EnsureLanDiscovery()

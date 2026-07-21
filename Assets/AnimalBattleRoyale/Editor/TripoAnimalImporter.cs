@@ -35,7 +35,8 @@ namespace AnimalBattleRoyale.EditorTools
         {
             new CharacterDefinition("Monkey"),
             new CharacterDefinition("Eagle"),
-            new CharacterDefinition("Ant")
+            new CharacterDefinition("Ant"),
+            new CharacterDefinition("Cow")
         };
 
         static TripoAnimalImporter()
@@ -43,13 +44,13 @@ namespace AnimalBattleRoyale.EditorTools
             EditorApplication.delayCall += TryAutomaticImport;
         }
 
-        [MenuItem("AnimalBattleRoyale/Import Macaco, Aguia e Formiga 3D")]
+        [MenuItem("AnimalBattleRoyale/Import Macaco, Aguia, Formiga e Vaca 3D")]
         public static void ImportAll()
         {
             foreach (CharacterDefinition character in Characters) ImportOne(character);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("[Tripo Animals] Macaco, aguia e formiga instalados nos prefabs de gameplay; animação procedural por código.");
+            Debug.Log("[Tripo Animals] Macaco, aguia, formiga e vaca instalados nos prefabs de gameplay; animação procedural por código.");
         }
 
         private static void TryAutomaticImport()

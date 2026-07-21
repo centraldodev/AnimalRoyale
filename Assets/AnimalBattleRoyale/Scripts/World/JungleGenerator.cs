@@ -198,7 +198,7 @@ namespace AnimalBattleRoyale
             Material moundDarkMaterial = CreateMaterial(new Color(0.12f, 0.045f, 0.012f));
             Material houseWallMaterial = CreateMaterial(new Color(0.82f, 0.55f, 0.28f));
             Material houseRoofMaterial = CreateMaterial(new Color(0.42f, 0.1f, 0.06f));
-            Material vineMaterial = CreateMaterial(new Color(0.12f, 0.28f, 0.045f));
+            Material vineMaterial = CreateMaterial(new Color(0.48f, 0.88f, 0.16f), new Color(0.1f, 0.22f, 0.02f));
             Material fruitRedMaterial = CreateMaterial(new Color(0.95f, 0.12f, 0.06f));
             Material fruitGoldMaterial = CreateMaterial(new Color(1f, 0.58f, 0.06f));
             Material flowerPinkMaterial = CreateMaterial(new Color(1f, 0.16f, 0.52f));
@@ -647,7 +647,9 @@ namespace AnimalBattleRoyale
             tree.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), Random.Range(-2f, 2f));
             float scale = Random.Range(1.0f, 1.75f);
             tree.transform.localScale = Vector3.one * scale;
-            tree.isStatic = true;
+            // Not marked static: TreeWindSway below sways the whole tree by rotating this
+            // root transform, which would have no visual effect on statically batched meshes.
+            tree.AddComponent<TreeWindSway>();
 
             GameObject trunk = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             trunk.name = "Trunk";
@@ -655,7 +657,6 @@ namespace AnimalBattleRoyale
             trunk.transform.localPosition = new Vector3(0f, 2.6f, 0f);
             trunk.transform.localScale = new Vector3(0.42f, 2.6f, 0.42f);
             trunk.GetComponent<Renderer>().sharedMaterial = trunkMaterial;
-            trunk.isStatic = true;
 
             for (int rootIndex = 0; rootIndex < 5; rootIndex++)
             {
@@ -665,12 +666,14 @@ namespace AnimalBattleRoyale
                 CreateWoodLimb(tree.transform, "ButtressRoot", rootStart, rootEnd, Random.Range(0.14f, 0.22f), trunkMaterial);
             }
 
+            Vector3 vineBranchTip = Vector3.zero;
             for (int branchIndex = 0; branchIndex < 3; branchIndex++)
             {
                 float angle = branchIndex * Mathf.PI * 2f / 3f + Random.Range(-0.3f, 0.3f);
                 Vector3 branchStart = new Vector3(0f, Random.Range(3.8f, 4.8f), 0f);
                 Vector3 branchEnd = new Vector3(Mathf.Cos(angle) * Random.Range(1.8f, 2.8f), Random.Range(5.0f, 6.2f), Mathf.Sin(angle) * Random.Range(1.8f, 2.8f));
                 CreateWoodLimb(tree.transform, "Branch", branchStart, branchEnd, Random.Range(0.14f, 0.2f), trunkMaterial);
+                if (branchIndex == 0) vineBranchTip = branchEnd;
             }
 
             for (int i = 0; i < 3; i++)
@@ -685,11 +688,15 @@ namespace AnimalBattleRoyale
                 renderer.shadowCastingMode = ShadowCastingMode.Off;
                 Collider collider = crown.GetComponent<Collider>();
                 if (collider != null) Destroy(collider);
-                crown.isStatic = true;
             }
 
-            Vector3 vineStart = new Vector3(Random.Range(-1.1f, 1.1f), Random.Range(4.8f, 6.6f), Random.Range(-1.1f, 1.1f));
-            Vector3 vineEnd = vineStart + new Vector3(Random.Range(-1.4f, 1.4f), -Random.Range(2.4f, 4.2f), Random.Range(-1.4f, 1.4f));
+            // Hangs from the tip of the first branch (outside the leaf crowns clustered near
+            // the trunk) instead of a point picked independently, which used to land the vine
+            // inside the foliage spheres where it was invisible.
+            Vector3 outward = new Vector3(vineBranchTip.x, 0f, vineBranchTip.z).normalized;
+            Vector3 vineStart = vineBranchTip + outward * 0.25f;
+            Vector3 vineEnd = vineStart + new Vector3(outward.x * Random.Range(0.3f, 0.9f),
+                -Random.Range(2.6f, 4.2f), outward.z * Random.Range(0.3f, 0.9f));
             VineAnchor.Create(tree.transform, vineStart, vineEnd, vineMaterial);
 
             if (Random.value < 0.38f)
@@ -705,7 +712,6 @@ namespace AnimalBattleRoyale
                     fruit.GetComponent<Renderer>().sharedMaterial = Random.value > 0.48f ? fruitRedMaterial : fruitGoldMaterial;
                     Collider fruitCollider = fruit.GetComponent<Collider>();
                     if (fruitCollider != null) Destroy(fruitCollider);
-                    fruit.isStatic = true;
                 }
             }
         }
@@ -733,9 +739,14 @@ namespace AnimalBattleRoyale
             // component remains reserved for imported static meshes so trunks do not bend as one piece.
             if (VineAnchor.RegisterExistingVines(visual.transform) == 0)
             {
-                VineAnchor.Create(visual.transform,
-                    new Vector3(Random.Range(-0.8f, 0.8f), Random.Range(5.6f, 7.4f), Random.Range(-0.5f, 0.5f)),
-                    new Vector3(Random.Range(-1.2f, 1.2f), Random.Range(2.0f, 3.2f), Random.Range(-0.8f, 0.8f)),
+                // Anchored near the canopy edge (not the trunk centre) so it hangs clear of
+                // the foliage instead of starting buried inside it.
+                float vineAngle = Random.Range(0f, Mathf.PI * 2f);
+                Vector3 canopyEdge = new Vector3(Mathf.Cos(vineAngle) * Random.Range(1.6f, 2.4f),
+                    Random.Range(5.6f, 7.4f), Mathf.Sin(vineAngle) * Random.Range(1.6f, 2.4f));
+                VineAnchor.Create(visual.transform, canopyEdge,
+                    canopyEdge + new Vector3(Mathf.Cos(vineAngle) * Random.Range(0.3f, 0.9f),
+                        -Random.Range(2.6f, 4.2f), Mathf.Sin(vineAngle) * Random.Range(0.3f, 0.9f)),
                     vineMaterial);
             }
 
@@ -755,7 +766,6 @@ namespace AnimalBattleRoyale
             limb.transform.localScale = new Vector3(width, direction.magnitude * 0.5f, width);
             limb.transform.up = direction.normalized;
             limb.GetComponent<Renderer>().sharedMaterial = material;
-            limb.isStatic = true;
         }
 
         private static void EnableRendererInstancing(GameObject root)
