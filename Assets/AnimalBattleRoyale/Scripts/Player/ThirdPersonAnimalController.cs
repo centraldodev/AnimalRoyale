@@ -334,9 +334,10 @@ namespace AnimalBattleRoyale
         {
             if (isLocalPlayer)
             {
-                Vector3 movement = GetCameraRelativeDirection(GameInput.ReadMovement());
+                Vector2 rawInput = GameInput.ReadMovement();
+                Vector3 movement = GetCameraRelativeDirection(rawInput);
                 bool sprint = GameSettings.AutomaticSprint || GameInput.SprintHeld();
-                SimulateMovement(movement, sprint, GameInput.JumpPressed());
+                SimulateMovement(movement, sprint, GameInput.JumpPressed(), rawInput, useStrafing: true);
                 if (GameInput.AbilityOnePressed())
                 {
                     Vector3 aimOrigin = cameraTransform != null ? cameraTransform.position : transform.position;
@@ -585,9 +586,10 @@ namespace AnimalBattleRoyale
 
         private void HandleLocalInput()
         {
-            Vector3 movement = GetCameraRelativeDirection(GameInput.ReadMovement());
+            Vector2 rawInput = GameInput.ReadMovement();
+            Vector3 movement = GetCameraRelativeDirection(rawInput);
             bool sprint = GameSettings.AutomaticSprint || GameInput.SprintHeld();
-            SimulateMovement(movement, sprint, GameInput.JumpPressed());
+            SimulateMovement(movement, sprint, GameInput.JumpPressed(), rawInput, useStrafing: true);
             bool rangedAttackRequested = GameSettings.RangedFireMode == RangedFireMode.Automatic
                 ? GameInput.RangedAttackHeld()
                 : GameInput.RangedAttackPressed();
@@ -656,13 +658,19 @@ namespace AnimalBattleRoyale
             aiAbilitySlot = -1;
         }
 
-        private void SimulateMovement(Vector3 direction, bool sprint, bool jumpPressed)
+        private void SimulateMovement(Vector3 direction, bool sprint, bool jumpPressed,
+            Vector2 rawInput = default, bool useStrafing = false)
         {
             if (hangingVine)
             {
                 HandleHangingMovement(direction, jumpPressed);
                 return;
             }
+            // Strafing/backpedaling keeps the current facing and never benefits from sprint —
+            // only genuine forward input (W) turns the body and can run. Flight steers freely.
+            bool hasForwardInput = !useStrafing || IsFlying || rawInput.y > 0.05f;
+            sprint = sprint && hasForwardInput;
+
             bool grounded = characterController.isGrounded;
             if (grounded && !wasGroundedForLandingSfx) CombatFeedback.PlayJump(transform.position);
             wasGroundedForLandingSfx = grounded;
@@ -703,7 +711,7 @@ namespace AnimalBattleRoyale
             Vector3 movementDirection = direction;
             if (gliding && movementDirection.sqrMagnitude <= 0.01f) movementDirection = eagleGlideDirection;
 
-            if (movementDirection.sqrMagnitude > 0.01f && !abilityDashing)
+            if (movementDirection.sqrMagnitude > 0.01f && !abilityDashing && hasForwardInput)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(movementDirection, Vector3.up);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);

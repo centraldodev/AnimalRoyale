@@ -71,6 +71,8 @@ namespace AnimalBattleRoyale
         [SerializeField] private float surfaceHeight;
         [SerializeField] private float movementMultiplier = 0.43f;
 
+        public float HalfLength => halfLength;
+        public float HalfWidth => halfWidth;
         public float SurfaceHeight => surfaceHeight;
         public float MovementMultiplier => movementMultiplier;
 

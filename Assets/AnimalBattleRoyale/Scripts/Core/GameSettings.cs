@@ -27,7 +27,7 @@ namespace AnimalBattleRoyale
         public const float MaxMouseSensitivity = 2.5f;
         public const float DefaultMouseSensitivity = 1f;
         public const CharacterScreenSide DefaultCharacterSide = CharacterScreenSide.Left;
-        public const bool DefaultAutomaticSprint = false;
+        public const bool DefaultAutomaticSprint = true;
         public const RangedFireMode DefaultRangedFireMode = RangedFireMode.SingleShot;
         public const float DefaultMasterVolume = 0.85f;
         public const float DefaultEffectsAmbientVolume = 0.9f;

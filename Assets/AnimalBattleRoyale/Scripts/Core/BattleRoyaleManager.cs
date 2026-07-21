@@ -963,6 +963,19 @@ namespace AnimalBattleRoyale
             GUI.DrawTexture(new Rect(map.center.x - 1f, map.y, 2f, map.height), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(map.x, map.center.y - 1f, map.width, 2f), Texture2D.whiteTexture);
 
+            if (CentralLake.Instance != null)
+            {
+                DrawMinimapLake(CentralLake.Instance.transform.position,
+                    CentralLake.Instance.Radius, CentralLake.Instance.Radius, 0f, map, jungle.MapSize);
+            }
+
+            if (SwampLake.Instance != null)
+            {
+                DrawMinimapLake(SwampLake.Instance.transform.position,
+                    SwampLake.Instance.HalfLength, SwampLake.Instance.HalfWidth,
+                    SwampLake.Instance.transform.eulerAngles.y, map, jungle.MapSize);
+            }
+
             foreach (RangedAmmoPickup pickup in RangedAmmoPickup.ActivePickups)
             {
                 if (pickup == null || !pickup.IsAvailable) continue;
@@ -1189,6 +1202,26 @@ namespace AnimalBattleRoyale
             float normalizedX = Mathf.Clamp(worldPosition.x / worldSize + 0.5f, 0f, 1f);
             float normalizedZ = Mathf.Clamp(worldPosition.z / worldSize + 0.5f, 0f, 1f);
             return new Vector2(map.x + normalizedX * map.width, map.y + (1f - normalizedZ) * map.height);
+        }
+
+        private static void DrawMinimapLake(Vector3 worldCenter, float halfLength, float halfWidth,
+            float rotationDegrees, Rect map, float worldSize)
+        {
+            Vector2 point = WorldToMinimap(worldCenter, map, worldSize);
+            float width = halfLength * 2f / worldSize * map.width;
+            float height = halfWidth * 2f / worldSize * map.width;
+
+            Color previousColor = GUI.color;
+            Matrix4x4 previousMatrix = GUI.matrix;
+            if (Mathf.Abs(rotationDegrees) > 0.01f) GUIUtility.RotateAroundPivot(rotationDegrees, point);
+
+            GUI.color = new Color(0.16f, 0.52f, 0.95f, 0.5f);
+            GUI.DrawTexture(new Rect(point.x - width * 0.5f, point.y - height * 0.5f, width, height), RuntimeGuiTheme.CircleTexture);
+            GUI.color = new Color(0.35f, 0.82f, 1f, 0.85f);
+            GUI.DrawTexture(new Rect(point.x - width * 0.5f, point.y - height * 0.5f, width, height), RuntimeGuiTheme.RingTexture);
+
+            GUI.matrix = previousMatrix;
+            GUI.color = previousColor;
         }
 
         private static Texture2D[] CreateMinimapArrowTextures()
