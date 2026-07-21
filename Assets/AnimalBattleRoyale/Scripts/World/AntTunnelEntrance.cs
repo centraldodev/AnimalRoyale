@@ -5,27 +5,28 @@ using UnityEngine.Rendering;
 namespace AnimalBattleRoyale
 {
     /// <summary>
-    /// Surface entrances for the Ant's hidden tunnel network. The world stays visible while
-    /// the Ant is underground; only its possible exits are drawn for the local player.
+    /// Surface entrances for the Ant's hidden tunnel network. While burrowed the Ant walks
+    /// the map normally (same camera, same movement) but is hidden/untargetable; every other
+    /// entrance glows as a tall beacon so it can be found and walked to, and pressing the
+    /// ability key near one surfaces the Ant there. A time limit forces a surface at the
+    /// nearest entrance to wherever the Ant currently is if none is chosen in time.
     /// </summary>
     public sealed class AntTunnelEntrance : MonoBehaviour
     {
         private const float EnterRange = 3.1f;
-        private const float TunnelDuration = 7f;
-        private const float SelectionTravelDelay = 0.45f;
+        private const float ExitRange = 2.6f;
+        private const float TunnelDuration = 18f;
         private const int RingSegments = 26;
         private const int LaserSpiralSegments = 42;
-        private const float ExitBeamHeight = 12f;
-        private const float RadarSize = 232f;
-        private const float RadarPadding = 28f;
+        private const float ExitBeamHeight = 40f;
+        private const float RadarSize = 288f;
+        private const float RadarPadding = 30f;
         public const float VisualEmbedDepth = 0.14f;
 
         private sealed class TunnelSession
         {
             public AntTunnelEntrance Source;
-            public AntTunnelEntrance SelectedExit;
             public float ExpiresAt;
-            public float SelectionStartedAt;
         }
 
         private static readonly List<AntTunnelEntrance> entrances = new List<AntTunnelEntrance>();
@@ -72,10 +73,10 @@ namespace AnimalBattleRoyale
             ThirdPersonAnimalController localPlayer = BattleRoyaleManager.Instance != null ? BattleRoyaleManager.Instance.LocalPlayer : null;
             bool show = false;
             bool selected = false;
-            if (localPlayer != null && localPlayer.IsLocalPlayer && sessions.TryGetValue(localPlayer, out TunnelSession session))
+            if (localPlayer != null && localPlayer.IsLocalPlayer && sessions.ContainsKey(localPlayer))
             {
-                show = session.Source != this;
-                selected = show && session.SelectedExit == this;
+                show = true;
+                selected = FindNearest(localPlayer.transform.position, float.MaxValue, null) == this;
             }
             SetExitMarkerVisible(show, selected);
         }
@@ -92,7 +93,7 @@ namespace AnimalBattleRoyale
                 return;
             }
 
-            DrawTunnelRadar(session);
+            DrawTunnelRadar(localPlayer, session);
         }
 
         public static AntTunnelEntrance Create(Vector3 position, Material rimMaterial, Material holeMaterial)
@@ -148,7 +149,7 @@ namespace AnimalBattleRoyale
             label.transform.SetParent(root.transform, false);
             label.transform.localPosition = Vector3.up * 0.42f;
             TextMesh text = label.AddComponent<TextMesh>();
-            text.text = "TÚNEL\nE";
+            text.text = "TÚNEL\nQ";
             text.anchor = TextAnchor.MiddleCenter;
             text.alignment = TextAlignment.Center;
             text.characterSize = 0.04f;
@@ -200,48 +201,57 @@ namespace AnimalBattleRoyale
             if (ant == null || sessions.ContainsKey(ant)) return false;
             AntTunnelEntrance nearest = FindNearest(ant.transform.position, EnterRange, null);
             if (nearest == null) return false;
-            sessions[ant] = new TunnelSession
-            {
-                Source = nearest,
-                SelectedExit = null,
-                ExpiresAt = Time.time + TunnelDuration,
-                SelectionStartedAt = -1f
-            };
+            sessions[ant] = new TunnelSession { Source = nearest, ExpiresAt = Time.time + TunnelDuration };
             AttackVfx.CreateBurst(nearest.transform.position, new Color(0.65f, 0.28f, 0.06f), 2.1f);
             return true;
         }
 
-        /// <summary>The configured movement keys choose an exit by direction. Holding them briefly travels to that exit.</summary>
-        public static void Navigate(ThirdPersonAnimalController ant, Vector3 movementDirection)
+        /// <summary>Surfaces at whichever entrance is currently within reach, if any.</summary>
+        public static bool TryExitNearest(ThirdPersonAnimalController ant)
         {
-            if (ant == null || !sessions.TryGetValue(ant, out TunnelSession session)) return;
-            if (movementDirection.sqrMagnitude < 0.01f)
-            {
-                session.SelectionStartedAt = -1f;
-                return;
-            }
-
-            AntTunnelEntrance directionExit = FindExitInDirection(session.Source, movementDirection);
-            if (directionExit == null) return;
-            if (session.SelectedExit != directionExit)
-            {
-                session.SelectedExit = directionExit;
-                session.SelectionStartedAt = Time.time;
-                return;
-            }
-
-            if (session.SelectionStartedAt < 0f) session.SelectionStartedAt = Time.time;
-            if (Time.time >= session.SelectionStartedAt + SelectionTravelDelay) ExitTunnel(ant, session.SelectedExit);
+            if (ant == null || !sessions.ContainsKey(ant)) return false;
+            AntTunnelEntrance nearest = FindNearest(ant.transform.position, ExitRange, null);
+            if (nearest == null) return false;
+            ExitTunnel(ant, nearest);
+            return true;
         }
 
+        /// <summary>Surfaces immediately at whichever entrance the Ant is aiming at, within range,
+        /// without needing to actually walk over to it first.</summary>
+        public static bool TryExitAimed(ThirdPersonAnimalController ant, Vector3 aimOrigin, Vector3 aimDirection, float maxRange)
+        {
+            if (ant == null || !sessions.ContainsKey(ant)) return false;
+            Vector3 flatAim = new Vector3(aimDirection.x, 0f, aimDirection.z);
+            if (flatAim.sqrMagnitude < 0.01f) return false;
+            flatAim.Normalize();
+
+            AntTunnelEntrance best = null;
+            float bestScore = float.NegativeInfinity;
+            foreach (AntTunnelEntrance entrance in entrances)
+            {
+                if (entrance == null) continue;
+                Vector3 offset = entrance.transform.position - aimOrigin;
+                offset.y = 0f;
+                float distance = offset.magnitude;
+                if (distance < 0.01f || distance > maxRange) continue;
+                float alignment = Vector3.Dot(flatAim, offset / distance);
+                if (alignment < 0.8f) continue;
+                float score = alignment * 100f - distance * 0.05f;
+                if (score <= bestScore) continue;
+                bestScore = score;
+                best = entrance;
+            }
+            if (best == null) return false;
+            ExitTunnel(ant, best);
+            return true;
+        }
+
+        /// <summary>Checked every frame while burrowed; forces a surface once the time limit runs out.</summary>
         public static void Tick(ThirdPersonAnimalController ant)
         {
             if (ant == null || !sessions.TryGetValue(ant, out TunnelSession session)) return;
             if (Time.time >= session.ExpiresAt)
-            {
-                // Time expired: surface at the closest valid exit, never at the entrance used.
-                ExitTunnel(ant, FindNearest(session.Source.transform.position, float.MaxValue, session.Source));
-            }
+                ExitTunnel(ant, FindNearest(ant.transform.position, float.MaxValue, null));
         }
 
         private static void ExitTunnel(ThirdPersonAnimalController ant, AntTunnelEntrance destination)
@@ -268,30 +278,6 @@ namespace AnimalBattleRoyale
             return nearest;
         }
 
-        private static AntTunnelEntrance FindExitInDirection(AntTunnelEntrance source, Vector3 direction)
-        {
-            direction.y = 0f;
-            if (direction.sqrMagnitude < 0.01f) return null;
-            direction.Normalize();
-
-            AntTunnelEntrance best = null;
-            float bestScore = float.NegativeInfinity;
-            foreach (AntTunnelEntrance entrance in entrances)
-            {
-                if (entrance == null || entrance == source) continue;
-                Vector3 offset = entrance.transform.position - source.transform.position;
-                offset.y = 0f;
-                float distance = offset.magnitude;
-                if (distance < 0.01f) continue;
-                float alignment = Vector3.Dot(direction, offset / distance);
-                float score = alignment * 100f - distance * 0.12f;
-                if (score <= bestScore) continue;
-                bestScore = score;
-                best = entrance;
-            }
-            return best;
-        }
-
         private void CreateExitMarker()
         {
             GameObject marker = new GameObject("AntTunnelExitMarker");
@@ -316,14 +302,14 @@ namespace AnimalBattleRoyale
             exitRing.receiveShadows = false;
             exitRing.sortingOrder = 120;
             exitRing.sharedMaterial = markerMaterial;
-            ConfigureRing(exitRing, 1.18f, 0f);
+            ConfigureRing(exitRing, 1.4f, 0f);
 
-            exitOuterRing = CreateMarkerRing(marker.transform, "ExitOuterRing", 1.72f, 0.16f);
-            exitTopRing = CreateMarkerRing(marker.transform, "ExitTopRing", 0.72f, ExitBeamHeight);
+            exitOuterRing = CreateMarkerRing(marker.transform, "ExitOuterRing", 2.05f, 0.16f);
+            exitTopRing = CreateMarkerRing(marker.transform, "ExitTopRing", 0.95f, ExitBeamHeight);
 
-            exitBeam = CreateBeamLayer(marker.transform, "ExitLaserGlow", 0.58f, 119);
-            exitBeamBody = CreateBeamLayer(marker.transform, "ExitLaserBody", 0.27f, 120);
-            exitBeamCore = CreateBeamLayer(marker.transform, "ExitLaserCore", 0.075f, 122);
+            exitBeam = CreateBeamLayer(marker.transform, "ExitLaserGlow", 0.82f, 119);
+            exitBeamBody = CreateBeamLayer(marker.transform, "ExitLaserBody", 0.38f, 120);
+            exitBeamCore = CreateBeamLayer(marker.transform, "ExitLaserCore", 0.1f, 122);
 
             GameObject spiral = new GameObject("ExitLaserEnergySpiral");
             spiral.transform.SetParent(marker.transform, false);
@@ -446,7 +432,7 @@ namespace AnimalBattleRoyale
             exitRing.widthMultiplier = (selected ? 0.2f : 0.14f) * laserPulse;
             exitOuterRing.widthMultiplier = (selected ? 0.14f : 0.09f) * laserPulse;
             exitTopRing.widthMultiplier = (selected ? 0.15f : 0.1f) * laserPulse;
-            exitText.text = selected ? "SAÍDA ESCOLHIDA\nCONTINUE SEGURANDO" : "SAÍDA";
+            exitText.text = selected ? "SAÍDA MAIS PRÓXIMA\nAPERTE Q" : "SAÍDA";
             exitText.color = color;
 
             Transform viewer = CameraCache.MainTransform;
@@ -476,7 +462,7 @@ namespace AnimalBattleRoyale
             line.endColor = color;
         }
 
-        private void DrawTunnelRadar(TunnelSession session)
+        private void DrawTunnelRadar(ThirdPersonAnimalController ant, TunnelSession session)
         {
             EnsureRadarStyles();
             int previousDepth = GUI.depth;
@@ -488,10 +474,15 @@ namespace AnimalBattleRoyale
                 new Color(0.02f, 1f, 0.72f, 0.96f));
             DrawSolidRect(panel, new Color(0.012f, 0.035f, 0.04f, 0.94f));
 
+            int exitCount = 0;
+            foreach (AntTunnelEntrance entrance in entrances)
+                if (entrance != null) exitCount++;
+
+            float secondsLeft = Mathf.Max(0f, session.ExpiresAt - Time.time);
             GUI.Label(new Rect(panel.x + 8f, panel.y + 6f, panel.width - 16f, 24f),
-                "REDE DE TÚNEIS", radarTitleStyle);
+                $"REDE DE TÚNEIS  ({exitCount} SAÍDAS)", radarTitleStyle);
             GUI.Label(new Rect(panel.x + 8f, panel.y + 27f, panel.width - 16f, 20f),
-                "WASD / JOYSTICK ESCOLHE", radarHintStyle);
+                $"TEMPO RESTANTE  {secondsLeft:0}s", radarHintStyle);
 
             Camera camera = Camera.main;
             Vector3 forward = camera != null ? camera.transform.forward : Vector3.forward;
@@ -502,26 +493,27 @@ namespace AnimalBattleRoyale
 
             Vector2 center = new Vector2(panel.center.x, panel.center.y + 12f);
             float radarRadius = Mathf.Max(34f, size * 0.5f - RadarPadding);
-            float furthestDistance = 1f;
-            foreach (AntTunnelEntrance entrance in entrances)
-            {
-                if (entrance == null || entrance == session.Source) continue;
-                Vector3 offset = entrance.transform.position - session.Source.transform.position;
-                offset.y = 0f;
-                furthestDistance = Mathf.Max(furthestDistance, offset.magnitude);
-            }
+            // A fixed range (rather than scaling to whichever exit happens to be furthest)
+            // keeps nearby exits spread out and readable instead of clumped at the center.
+            const float radarRange = 110f;
 
             DrawRadarAxes(center, radarRadius);
+            AntTunnelEntrance nearestExit = null;
+            float nearestDistance = float.MaxValue;
+            Vector3 antPosition = ant.transform.position;
             foreach (AntTunnelEntrance entrance in entrances)
             {
-                if (entrance == null || entrance == session.Source) continue;
-                Vector3 offset = entrance.transform.position - session.Source.transform.position;
+                if (entrance == null) continue;
+                Vector3 offset = entrance.transform.position - antPosition;
                 offset.y = 0f;
+                float distance = offset.magnitude;
+                if (distance < nearestDistance) { nearestDistance = distance; nearestExit = entrance; }
+
                 Vector2 radarOffset = new Vector2(Vector3.Dot(offset, right), -Vector3.Dot(offset, forward));
-                radarOffset = Vector2.ClampMagnitude(radarOffset / furthestDistance, 1f) * radarRadius;
-                bool selected = entrance == session.SelectedExit;
-                float dotSize = selected ? 13f : 7f;
-                Color dotColor = selected
+                radarOffset = Vector2.ClampMagnitude(radarOffset / radarRange, 1f) * radarRadius;
+                bool nearest = entrance == nearestExit && distance <= radarRange;
+                float dotSize = nearest ? 14f : 8f;
+                Color dotColor = nearest
                     ? new Color(1f, 0.74f, 0.02f, 1f)
                     : new Color(0.02f, 1f, 0.72f, 1f);
                 DrawSolidRect(new Rect(center.x + radarOffset.x - dotSize * 0.5f,
@@ -529,16 +521,11 @@ namespace AnimalBattleRoyale
             }
 
             DrawSolidRect(new Rect(center.x - 6f, center.y - 6f, 12f, 12f), new Color(1f, 0.28f, 0.06f, 1f));
-            GUI.Label(new Rect(center.x - 15f, panel.y + 45f, 30f, 20f), "W", radarTitleStyle);
-            GUI.Label(new Rect(panel.x + 7f, center.y - 10f, 24f, 20f), "A", radarTitleStyle);
-            GUI.Label(new Rect(panel.xMax - 31f, center.y - 10f, 24f, 20f), "D", radarTitleStyle);
-            GUI.Label(new Rect(center.x - 15f, panel.yMax - 25f, 30f, 20f), "S", radarTitleStyle);
 
-            if (session.SelectedExit != null)
+            if (nearestExit != null)
             {
-                float distance = Vector3.Distance(session.Source.transform.position, session.SelectedExit.transform.position);
                 GUI.Label(new Rect(panel.x + 8f, panel.yMax - 46f, panel.width - 16f, 20f),
-                    $"SAÍDA ESCOLHIDA  {distance:0} m", radarDistanceStyle);
+                    $"MAIS PRÓXIMA  {nearestDistance:0} m — APERTE Q PARA SAIR", radarDistanceStyle);
             }
 
             GUI.depth = previousDepth;

@@ -11,7 +11,7 @@ namespace AnimalBattleRoyale
         [SerializeField] private float sensitivity = 0.16f;
         [SerializeField] private float smoothTime = 0.06f;
         [SerializeField] private float collisionRadius = 0.25f;
-        [SerializeField] private float minPitch = -25f;
+        [SerializeField] private float minPitch = -90f;
         [SerializeField] private float maxPitch = 70f;
 
         private float yaw;

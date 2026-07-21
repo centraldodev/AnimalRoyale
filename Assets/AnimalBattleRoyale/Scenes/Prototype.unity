@@ -195,7 +195,6 @@ MonoBehaviour:
   anthillCount: 40
   anthillMinimumSpacing: 26
   mountainCount: 26
-  lifePickupCount: 24
   rangedSupplyCount: 45
   weaponCrystalCount: 40
   pickupMinimumSpacing: 12

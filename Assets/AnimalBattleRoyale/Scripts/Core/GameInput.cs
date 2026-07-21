@@ -277,6 +277,22 @@ namespace AnimalBattleRoyale
             return -1;
         }
 
+        /// <summary>+1 scrolled up, -1 scrolled down, 0 if no scroll happened this frame.</summary>
+        public static int ReadWeaponScroll()
+        {
+            if (GameplayInputBlocked || MobileInputController.ControlsEnabled) return 0;
+#if ENABLE_INPUT_SYSTEM
+            Mouse mouse = Mouse.current;
+            if (mouse == null) return 0;
+            float scroll = mouse.scroll.ReadValue().y;
+#else
+            float scroll = Input.mouseScrollDelta.y;
+#endif
+            if (scroll > 0.01f) return 1;
+            if (scroll < -0.01f) return -1;
+            return 0;
+        }
+
         public static bool ConfirmPressed()
         {
             if (GameplayInputBlocked) return false;

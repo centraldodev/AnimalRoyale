@@ -12,7 +12,7 @@ namespace AnimalBattleRoyale
         GoldenFruit
     }
 
-    /// <summary>Food restores health and mobility energy. Each kind has a distinct healing value.</summary>
+    /// <summary>Food fully restores (100%) the animal's health, regardless of kind.</summary>
     public sealed class FoodPickup : MonoBehaviour
     {
         private static readonly List<FoodPickup> activePickups = new List<FoodPickup>();
@@ -23,7 +23,6 @@ namespace AnimalBattleRoyale
         private static bool curaPrefabLookedUp;
         private static Material cachedCuraMaterial;
         private FoodKind foodKind;
-        private float amount;
         private Color effectColor;
         private bool collected;
         private int motionGroup;
@@ -53,24 +52,10 @@ namespace AnimalBattleRoyale
             root.transform.position = position;
             FoodPickup pickup = root.AddComponent<FoodPickup>();
             pickup.foodKind = kind;
-            pickup.amount = HealingFor(kind);
             pickup.effectColor = FoodColor(kind);
             pickup.BuildVisual();
             pickup.SnapVisualToGround(position.y);
             return pickup;
-        }
-
-        public static float HealingFor(FoodKind kind)
-        {
-            return kind switch
-            {
-                FoodKind.Fruit => 16f,
-                FoodKind.Nectar => 24f,
-                FoodKind.Fish => 32f,
-                FoodKind.Meat => 45f,
-                FoodKind.GoldenFruit => 70f,
-                _ => 16f
-            };
         }
 
         private void Update()
@@ -107,8 +92,7 @@ namespace AnimalBattleRoyale
         private void Collect(ThirdPersonAnimalController animal)
         {
             collected = true;
-            animal.Health.Heal(amount);
-            animal.RestoreMobilityEnergy(amount * 1.5f);
+            animal.Health.Heal(animal.Health.MaxHealth); // clamps to max -> full 100% heal
             ForestMissionDirector.Instance?.RecordFoodConsumed(animal, foodKind);
             AttackVfx.CreateBurst(transform.position, effectColor, 1.7f);
             CombatFeedback.PlayFoodPickup(transform.position);
@@ -322,7 +306,7 @@ namespace AnimalBattleRoyale
             label.transform.SetParent(transform, false);
             label.transform.localPosition = Vector3.up * 1.05f;
             TextMesh text = label.AddComponent<TextMesh>();
-            text.text = $"F  {FoodLabel(foodKind)}\n+{amount:0} VIDA / ENERGIA";
+            text.text = $"F  {FoodLabel(foodKind)}\n+100% VIDA";
             text.anchor = TextAnchor.MiddleCenter;
             text.alignment = TextAlignment.Center;
             text.characterSize = 0.045f;

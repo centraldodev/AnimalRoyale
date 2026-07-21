@@ -20,7 +20,7 @@ namespace AnimalBattleRoyale
 
         public static void PlayPower(AnimalType type, int slot, Vector3 position)
         {
-            if (type == AnimalType.Tiger) PlayJump(position);
+            if (type == AnimalType.Tiger) PlayTigerPounce(position);
             else if (type == AnimalType.Eagle) PlayEagleFlight(position);
         }
 
@@ -41,8 +41,14 @@ namespace AnimalBattleRoyale
         public static void PlayFootstep(Vector3 position) =>
             PlaySfx(position, "Footstep", 0.22f, 0.94f, 1.06f, 24f, 0.9f, 0.07f, 6);
 
+        public static void PlayLakeFootstep(Vector3 position) =>
+            PlaySfx(position, "LakeFootstep", 0.26f, 0.94f, 1.06f, 24f, 0.9f, 0.07f, 6);
+
         public static void PlayJump(Vector3 position) =>
             PlaySfx(position, "LongJump", 0.42f, 0.96f, 1.04f, 32f, 0.85f, 0.14f, 3);
+
+        public static void PlayTigerPounce(Vector3 position) =>
+            PlaySfx(position, "TigerPounce", 0.48f, 0.96f, 1.04f, 40f, 0.85f, 0.14f, 2);
 
         public static void PlayEagleFlight(Vector3 position) =>
             PlaySfx(position, "EagleFlight", 0.48f, 0.97f, 1.03f, 40f, 0.9f, 0.4f, 2);

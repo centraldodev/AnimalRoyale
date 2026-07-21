@@ -372,7 +372,7 @@ namespace AnimalBattleRoyale
                 : LocalPlayer != null && LocalPlayer.IsFlying
                     ? $"SALTO PLANADO {LocalPlayer.GlideSecondsRemaining:0.0}s — segure {rangedKey} para atirar"
                 : LocalPlayer != null && LocalPlayer.IsInAntTunnel
-                ? $"NO TÚNEL: {movementKeys} escolhe a saída neon no radar • saída forçada: {LocalPlayer.TunnelSecondsRemaining:0.0}s"
+                ? $"NO TÚNEL: invisível — {movementKeys} anda até uma saída neon • {abilityKey} sai • forçado em {LocalPlayer.TunnelSecondsRemaining:0.0}s"
                 : LocalPlayer != null && LocalPlayer.IsSwimming
                     ? $"NADANDO — {jumpKey} dá impulso • suba pela margem"
                 : LocalPlayer != null && LocalPlayer.IsWading
@@ -672,7 +672,7 @@ namespace AnimalBattleRoyale
         {
             if (LocalPlayer == null) return;
             bool mobileControls = MobileInputController.ControlsEnabled;
-            float iconSize = mobileControls ? 58f : 46f;
+            float iconSize = mobileControls ? 78f : 64f;
             const float textHeight = 16f;
             const float textGap = 4f;
             const float spacing = 8f;
@@ -963,13 +963,6 @@ namespace AnimalBattleRoyale
             GUI.DrawTexture(new Rect(map.center.x - 1f, map.y, 2f, map.height), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(map.x, map.center.y - 1f, map.width, 2f), Texture2D.whiteTexture);
 
-            foreach (LifePickup pickup in LifePickup.ActivePickups)
-            {
-                if (pickup == null || !pickup.IsAvailable) continue;
-                Vector2 point = WorldToMinimap(pickup.transform.position, map, jungle.MapSize);
-                DrawMinimapLifeMarker(point, 9f);
-            }
-
             foreach (RangedAmmoPickup pickup in RangedAmmoPickup.ActivePickups)
             {
                 if (pickup == null || !pickup.IsAvailable) continue;
@@ -1052,16 +1045,13 @@ namespace AnimalBattleRoyale
             GUI.Label(new Rect(map.center.x - 12f, map.y + 2f, 24f, 18f), "N", minimapStyle);
 
             float legendY = map.yMax + 4f;
-            float legendColumn = panel.width / 3f;
-            DrawMinimapLifeMarker(new Vector2(panel.x + 12f, legendY + 8f), 7f);
+            float legendColumn = panel.width / 2f;
+            DrawMinimapAmmoMarker(new Vector2(panel.x + 12f, legendY + 8f), 6.5f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(panel.x + 19f, legendY, legendColumn - 19f, 16f), "VIDA", eyebrowStyle);
-            DrawMinimapAmmoMarker(new Vector2(panel.x + legendColumn + 8f, legendY + 8f), 6.5f);
+            GUI.Label(new Rect(panel.x + 19f, legendY, legendColumn - 19f, 16f), "MUNIÇÃO", eyebrowStyle);
+            DrawMinimapCrystalMarker(new Vector2(panel.x + legendColumn + 8f, legendY + 8f), 6.5f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(panel.x + legendColumn + 15f, legendY, legendColumn - 15f, 16f), "MUNIÇÃO", eyebrowStyle);
-            DrawMinimapCrystalMarker(new Vector2(panel.x + legendColumn * 2f + 8f, legendY + 8f), 6.5f);
-            GUI.color = Color.white;
-            GUI.Label(new Rect(panel.x + legendColumn * 2f + 15f, legendY,
+            GUI.Label(new Rect(panel.x + legendColumn + 15f, legendY,
                 legendColumn - 16f, 16f), "CRISTAL", eyebrowStyle);
             GUI.color = previous;
         }
@@ -1078,17 +1068,6 @@ namespace AnimalBattleRoyale
             GUI.color = new Color(1f, 0.88f, 0.12f, 1f);
             GUI.DrawTexture(new Rect(point.x - 7.5f, point.y - 9.5f, 15f, 19f), arrow);
             GUI.color = previous;
-        }
-
-        private void DrawMinimapLifeMarker(Vector2 point, float size)
-        {
-            GUI.color = new Color(0.01f, 0.05f, 0.025f, 0.98f);
-            GUI.DrawTexture(new Rect(point.x - size * 0.62f, point.y - size * 0.62f, size * 1.24f, size * 1.24f), RuntimeGuiTheme.CircleTexture);
-            GUI.color = new Color(0.2f, 1f, 0.42f, 1f);
-            GUI.DrawTexture(new Rect(point.x - size * 0.5f, point.y - size * 0.5f, size, size), RuntimeGuiTheme.CircleTexture);
-            GUI.color = Color.white;
-            GUI.DrawTexture(new Rect(point.x - size * 0.09f, point.y - size * 0.31f, size * 0.18f, size * 0.62f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(point.x - size * 0.31f, point.y - size * 0.09f, size * 0.62f, size * 0.18f), Texture2D.whiteTexture);
         }
 
         private void DrawMinimapAmmoMarker(Vector2 point, float size)

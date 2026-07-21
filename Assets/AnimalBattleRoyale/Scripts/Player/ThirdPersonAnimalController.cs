@@ -33,7 +33,9 @@ namespace AnimalBattleRoyale
         private Transform cameraTransform;
         private AnimalVisualMotion visualMotion;
         private JungleGenerator jungle;
+        private AudioSource undergroundWalkSource;
         private float nextGroundCheckTime;
+        private bool wasGroundedForLandingSfx = true;
         private Vector3 verticalVelocity;
         private Vector3 extraVelocity;
         private Vector3 aiMoveDirection;
@@ -69,8 +71,12 @@ namespace AnimalBattleRoyale
         private bool eliminated;
         private int livesRemaining = MaxLives;
         private float spawnProtectedUntil;
-        private float tigerLeapUntil;
-        private Vector3 tigerLeapDirection;
+        private bool tigerPouncing;
+        private float tigerPounceStartedAt;
+        private float tigerPounceEndsAt;
+        private float tigerPounceArcHeight;
+        private Vector3 tigerPounceStart;
+        private Vector3 tigerPounceTarget;
         private float flyingUntil;
         private Vector3 eagleGlideDirection;
         private Transform heldVine;
@@ -86,7 +92,18 @@ namespace AnimalBattleRoyale
         private bool burrowed;
         private bool burrowEntering;
         private float burrowEntryUntil;
+        private bool climbingTree;
+        private JungleGenerator.ClimbableSpot climbSpot;
+        private float climbHeight;
         private const float BurrowJumpDuration = 0.35f;
+        private const float AntClimbApproachRange = 1.4f;
+        private const float AntClimbSurfaceOffset = 0.45f;
+        private const float AntClimbSpeed = 3.4f;
+        private const float AntClimbJumpOffSpeed = 5f;
+        private const float AntTunnelAimExitRange = 45f;
+        private const float TigerPounceMaxRange = 50f;
+        private const float TigerPounceMinDuration = 0.22f;
+        private const float TigerPounceMaxDuration = 2.1f;
         private bool networkProxy;
         private Vector3 networkTargetPosition;
         private Quaternion networkTargetRotation;
@@ -95,9 +112,6 @@ namespace AnimalBattleRoyale
         public const int MaxLives = 3;
         private const float SpawnProtectionSeconds = 2.5f;
 
-        private const float AntThrowRange = 4.8f;
-        private const float AntThrowHorizontalSpeed = 30f;
-        private const float AntThrowUpSpeed = 9.5f;
         public const int MaxVinesPerChain = 5;
         private const float VineLeapSpeed = 22f;
         private const float VineLaunchForward = 15f;
@@ -290,6 +304,11 @@ namespace AnimalBattleRoyale
                 HandleVineLeap();
                 return;
             }
+            if (tigerPouncing)
+            {
+                HandleTigerPounce();
+                return;
+            }
             if (BattleRoyaleManager.Instance != null && BattleRoyaleManager.Instance.MatchFinished)
             {
                 visualMotion?.SetLocomotion(false, false, false);
@@ -301,15 +320,35 @@ namespace AnimalBattleRoyale
                 return;
             }
             if (burrowed) { HandleBurrowed(); return; }
+            if (climbingTree) { HandleClimbingTree(); return; }
             RecoverIfBelowTerrain();
             if (isLocalPlayer) HandleLocalInput();
             else HandleAIInput();
         }
 
+        // Burrowed: the Ant is hidden/untargetable but otherwise moves and is viewed exactly
+        // like normal (same camera, same physics) so the glowing tunnel-exit beacons stay
+        // visible and usable while walking to one, rather than needing a separate underground
+        // view that risks showing the player what's below the terrain.
         private void HandleBurrowed()
         {
-            Vector3 moveDir = isLocalPlayer ? GetCameraRelativeDirection(GameInput.ReadMovement()) : aiMoveDirection;
-            AntTunnelEntrance.Navigate(this, moveDir);
+            if (isLocalPlayer)
+            {
+                Vector3 movement = GetCameraRelativeDirection(GameInput.ReadMovement());
+                bool sprint = GameSettings.AutomaticSprint || GameInput.SprintHeld();
+                SimulateMovement(movement, sprint, GameInput.JumpPressed());
+                if (GameInput.AbilityOnePressed())
+                {
+                    Vector3 aimOrigin = cameraTransform != null ? cameraTransform.position : transform.position;
+                    if (!AntTunnelEntrance.TryExitAimed(this, aimOrigin, ViewAimDirection, AntTunnelAimExitRange))
+                        AntTunnelEntrance.TryExitNearest(this);
+                }
+            }
+            else
+            {
+                SimulateMovement(aiMoveDirection, aiSprint, false);
+            }
+
             AntTunnelEntrance.Tick(this);
             if (!AntTunnelEntrance.IsTraveling(this)) SurfaceFromBurrow();
         }
@@ -330,6 +369,7 @@ namespace AnimalBattleRoyale
         {
             burrowEntering = false;
             burrowed = true;
+            if (characterController != null) characterController.enabled = true;
             Transform visual = transform.Find("VisualRoot");
             if (visual != null) visual.gameObject.SetActive(false);
             AttackVfx.CreateBurst(transform.position, new Color(0.65f, 0.28f, 0.06f), 1.8f);
@@ -342,6 +382,34 @@ namespace AnimalBattleRoyale
             Transform visual = transform.Find("VisualRoot");
             if (visual != null) visual.gameObject.SetActive(true);
             if (jungle != null) SnapToTerrain(jungle);
+            SetUndergroundWalkLoop(false);
+        }
+
+        // Loops while the Ant is actually moving underground and stops the instant it
+        // stops (or surfaces), at which point normal footsteps take back over.
+        private void SetUndergroundWalkLoop(bool shouldPlay)
+        {
+            if (!shouldPlay)
+            {
+                if (undergroundWalkSource != null && undergroundWalkSource.isPlaying) undergroundWalkSource.Stop();
+                return;
+            }
+            if (undergroundWalkSource == null)
+            {
+                AudioClip clip = Resources.Load<AudioClip>("Audio/SFX/AntUnderground");
+                if (clip == null) return;
+                undergroundWalkSource = gameObject.AddComponent<AudioSource>();
+                undergroundWalkSource.clip = clip;
+                undergroundWalkSource.loop = true;
+                undergroundWalkSource.playOnAwake = false;
+                undergroundWalkSource.volume = 0.55f;
+                undergroundWalkSource.spatialBlend = 0.85f;
+                undergroundWalkSource.dopplerLevel = 0f;
+                undergroundWalkSource.rolloffMode = AudioRolloffMode.Linear;
+                undergroundWalkSource.minDistance = 2f;
+                undergroundWalkSource.maxDistance = 24f;
+            }
+            if (!undergroundWalkSource.isPlaying) undergroundWalkSource.Play();
         }
 
         public void Initialize(AnimalType type, bool localPlayer, Transform cameraReference = null)
@@ -413,8 +481,8 @@ namespace AnimalBattleRoyale
                     TryUsePower(0, actionDirection);
                     break;
                 case OnlineActionType.Consume:
-                    if (!WeaponUpgradeCrystal.TryCollectNearest(this)
-                        && !RangedAmmoPickup.TryCollectNearest(this)) LifePickup.TryConsumeNearest(this);
+                    if (!WeaponUpgradeCrystal.TryCollectNearest(this) && !RangedAmmoPickup.TryCollectNearest(this))
+                        FoodPickup.TryConsumeNearest(this);
                     break;
                 case OnlineActionType.SelectWeapon:
                     TrySelectWeapon((WeaponAmmoType)Mathf.RoundToInt(direction.x));
@@ -547,8 +615,8 @@ namespace AnimalBattleRoyale
                 online?.ReportAction(OnlineActionType.Consume, transform.forward);
                 if (online == null || !online.UsesRemoteAuthority)
                 {
-                    if (!WeaponUpgradeCrystal.TryCollectNearest(this)
-                        && !RangedAmmoPickup.TryCollectNearest(this)) LifePickup.TryConsumeNearest(this);
+                    if (!WeaponUpgradeCrystal.TryCollectNearest(this) && !RangedAmmoPickup.TryCollectNearest(this))
+                        FoodPickup.TryConsumeNearest(this);
                 }
             }
             int weaponSelection = GameInput.ReadWeaponSelection();
@@ -557,6 +625,21 @@ namespace AnimalBattleRoyale
                 OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.SelectWeapon,
                     new Vector3(weaponSelection, 0f, 0f));
             }
+            int weaponScroll = GameInput.ReadWeaponScroll();
+            if (weaponScroll != 0 && TryCycleWeapon(weaponScroll))
+            {
+                OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.SelectWeapon,
+                    new Vector3((int)selectedWeapon, 0f, 0f));
+            }
+        }
+
+        /// <summary>Cycles among the weapons unlocked so far; +1 = next, -1 = previous, wrapping around.</summary>
+        private bool TryCycleWeapon(int direction)
+        {
+            if (weaponLevel <= 1) return false;
+            int current = (int)selectedWeapon;
+            int next = ((current + direction) % weaponLevel + weaponLevel) % weaponLevel;
+            return TrySelectWeapon((WeaponAmmoType)next);
         }
 
         private void HandleAIInput()
@@ -581,37 +664,46 @@ namespace AnimalBattleRoyale
                 return;
             }
             bool grounded = characterController.isGrounded;
-            bool tigerLeaping = Time.time < tigerLeapUntil;
-            if (grounded && tigerLeaping && verticalVelocity.y < 0f)
-            {
-                tigerLeapUntil = 0f;
-                tigerLeaping = false;
-            }
+            if (grounded && !wasGroundedForLandingSfx) CombatFeedback.PlayJump(transform.position);
+            wasGroundedForLandingSfx = grounded;
             if (grounded && IsFlying && verticalVelocity.y < 0f) flyingUntil = 0f;
             bool gliding = IsFlying;
             bool abilityDashing = Time.time < abilityDashUntil;
-            visualMotion?.SetLocomotion(direction.sqrMagnitude > 0.01f || abilityDashing || tigerLeaping,
-                sprint || abilityDashing || tigerLeaping, !grounded, verticalVelocity.y, gliding);
+            visualMotion?.SetLocomotion(direction.sqrMagnitude > 0.01f || abilityDashing,
+                sprint || abilityDashing, !grounded, verticalVelocity.y, gliding);
             if (grounded && verticalVelocity.y < 0f && !gliding) verticalVelocity.y = -2f;
-            bool jumped = jumpPressed && grounded && !gliding && !tigerLeaping;
+            bool jumped = jumpPressed && grounded && !gliding;
             if (jumped)
             {
                 verticalVelocity.y = stats.JumpForce;
-                CombatFeedback.PlayJump(transform.position);
+                wasGroundedForLandingSfx = false;
             }
 
-            bool movingOnGround = grounded && !jumped && !gliding && !tigerLeaping
+            bool wading = CentralLake.TryGetWaterAt(transform.position, out float waterSurfaceHeight,
+                out float waterMovementMultiplier);
+            bool swimming = wading
+                            && transform.position.y < waterSurfaceHeight - stats.ControllerHeight * 0.35f;
+
+            bool movingOnGround = grounded && !jumped && !gliding
                 && (direction.sqrMagnitude > 0.01f || abilityDashing);
-            if (movingOnGround && Time.time >= nextFootstepTime)
+            if (burrowed)
             {
-                nextFootstepTime = Time.time + (sprint || abilityDashing ? 0.3f : 0.43f);
-                CombatFeedback.PlayFootstep(transform.position);
+                SetUndergroundWalkLoop(movingOnGround);
+            }
+            else
+            {
+                if (movingOnGround && Time.time >= nextFootstepTime)
+                {
+                    nextFootstepTime = Time.time + (sprint || abilityDashing ? 0.3f : 0.43f);
+                    if (wading) CombatFeedback.PlayLakeFootstep(transform.position);
+                    else CombatFeedback.PlayFootstep(transform.position);
+                }
             }
 
             Vector3 movementDirection = direction;
             if (gliding && movementDirection.sqrMagnitude <= 0.01f) movementDirection = eagleGlideDirection;
 
-            if (movementDirection.sqrMagnitude > 0.01f && !abilityDashing && !tigerLeaping)
+            if (movementDirection.sqrMagnitude > 0.01f && !abilityDashing)
             {
                 Quaternion targetRotation = Quaternion.LookRotation(movementDirection, Vector3.up);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
@@ -620,16 +712,11 @@ namespace AnimalBattleRoyale
             float speed = sprint ? stats.SprintSpeed : stats.MoveSpeed;
             if (Time.time < slowUntil) speed *= slowMultiplier;
             if (gliding) speed *= ServerGameTuning.EagleFlySpeedBonus;
-            bool wading = CentralLake.TryGetWaterAt(transform.position, out float waterSurfaceHeight,
-                out float waterMovementMultiplier);
-            bool swimming = wading
-                            && transform.position.y < waterSurfaceHeight - stats.ControllerHeight * 0.35f;
             if (swimming) speed *= 0.72f;
             else if (wading && !(ForestMissionDirector.Instance != null && ForestMissionDirector.Instance.LakePassageOpen))
                 speed *= waterMovementMultiplier;
 
             Vector3 horizontal = abilityDashing ? dashDirection * abilityDashSpeed
-                : tigerLeaping ? tigerLeapDirection * ServerGameTuning.TigerLeapSpeed
                 : movementDirection * speed;
             if (abilityDashing && Time.time >= nextAbilityDamage)
             {
@@ -653,7 +740,6 @@ namespace AnimalBattleRoyale
 
             extraVelocity = Vector3.Lerp(extraVelocity, Vector3.zero, 4.5f * Time.deltaTime);
             characterController.Move((horizontal + verticalVelocity + extraVelocity) * Time.deltaTime);
-            if (tigerLeaping) DamageTigerLeapTargets();
         }
 
         private void HandleHangingMovement(Vector3 swingDirection, bool releasePressed)
@@ -827,18 +913,13 @@ namespace AnimalBattleRoyale
             switch (animalType)
             {
                 case AnimalType.Tiger:
-                    // Pulo longo e rápido: arco baixo com forte impulso horizontal.
-                    tigerLeapDirection = new Vector3(direction.x, 0f, direction.z).normalized;
-                    if (tigerLeapDirection.sqrMagnitude < 0.01f) tigerLeapDirection = transform.forward;
-                    transform.rotation = Quaternion.LookRotation(tigerLeapDirection, Vector3.up);
-                    tigerLeapUntil = Time.time + ServerGameTuning.TigerLeapDuration;
-                    verticalVelocity.y = Mathf.Max(verticalVelocity.y, ServerGameTuning.TigerLeapUpSpeed);
-                    AttackVfx.CreateBurst(transform.position + Vector3.up * 0.2f, new Color(1f, 0.5f, 0.12f), 1.4f);
+                    // Bote certeiro: pula exatamente para onde a câmera está mirando
+                    // (inclusive para cima/baixo) em vez de só avançar na direção do movimento.
+                    BeginTigerPounce();
                     break;
                 case AnimalType.Ant:
-                    // Enter a nearby anthill; without one, throw the aimed nearby enemy away.
+                    // Climbing trees/rocks is disabled for now — tunnel entry only.
                     if (AntTunnelEntrance.TryEnter(this)) EnterBurrow();
-                    else TryThrowNearestEnemy(direction);
                     break;
                 case AnimalType.Eagle:
                     // Salto longo com planeio: impulso único e duração máxima de cinco segundos.
@@ -876,47 +957,127 @@ namespace AnimalBattleRoyale
             abilityColor = color;
         }
 
-        private bool TryThrowNearestEnemy(Vector3 direction)
+        /// <summary>Snaps onto the nearest in-range tree/rock trunk so <see cref="HandleClimbingTree"/> takes over.</summary>
+        private bool TryEnterClimbingTree()
         {
-            Vector3 aimDirection = new Vector3(direction.x, 0f, direction.z).normalized;
-            if (aimDirection.sqrMagnitude < 0.01f) aimDirection = transform.forward;
+            if (jungle == null) jungle = FindAnyObjectByType<JungleGenerator>();
+            if (jungle == null || !jungle.TryFindNearestClimbable(transform.position, AntClimbApproachRange, out JungleGenerator.ClimbableSpot spot))
+                return false;
 
-            Health target = null;
-            float bestScore = float.MaxValue;
-            int hitCount = Physics.OverlapSphereNonAlloc(transform.position + Vector3.up * 0.7f,
-                AntThrowRange, combatHits, ~0, QueryTriggerInteraction.Ignore);
-            for (int i = 0; i < hitCount; i++)
-            {
-                Health candidate = combatHits[i].GetComponentInParent<Health>();
-                if (candidate == null || candidate == health || candidate.IsDead || candidate.Owner == null) continue;
-                if (candidate.Owner.IsBurrowed || candidate.Owner.IsSpawnProtected) continue;
+            // Cling to the outside of the trunk (offset out from its center by its own
+            // radius) rather than standing dead-center inside it — otherwise the camera's
+            // own collision-avoidance treats the trunk as an obstacle right on top of the
+            // ant and pulls itself in until it's practically inside the character.
+            Vector3 outward = new Vector3(transform.position.x - spot.BasePosition.x, 0f, transform.position.z - spot.BasePosition.z);
+            if (outward.sqrMagnitude < 0.01f) outward = -transform.forward;
+            outward.Normalize();
+            Vector3 surfaceBase = spot.BasePosition + outward * (spot.Radius + AntClimbSurfaceOffset);
 
-                Vector3 offset = candidate.transform.position - transform.position;
-                offset.y = 0f;
-                float distance = offset.magnitude;
-                if (distance <= 0.01f) continue;
-                float aimDot = Vector3.Dot(aimDirection, offset / distance);
-                if (aimDot < 0.15f) continue;
-                float score = distance - aimDot * 1.6f;
-                if (score >= bestScore) continue;
-                bestScore = score;
-                target = candidate;
-            }
-
-            if (target == null) return false;
-            Vector3 throwDirection = target.transform.position - transform.position;
-            throwDirection.y = 0f;
-            if (throwDirection.sqrMagnitude < 0.01f) throwDirection = aimDirection;
-            else throwDirection.Normalize();
-            transform.rotation = Quaternion.LookRotation(throwDirection, Vector3.up);
-            target.Owner.ReceiveLaunch(throwDirection, AntThrowHorizontalSpeed, AntThrowUpSpeed);
-            AttackVfx.CreateHitSpark(target.transform.position + Vector3.up * 0.7f, new Color(0.86f, 0.36f, 0.14f));
-            CombatFeedback.PlayPlayerHit(target.transform.position);
+            climbingTree = true;
+            climbSpot = new JungleGenerator.ClimbableSpot(surfaceBase, spot.Height, spot.Radius);
+            climbHeight = 0f;
+            verticalVelocity = Vector3.zero;
+            extraVelocity = Vector3.zero;
+            if (characterController != null) characterController.enabled = false;
+            transform.rotation = Quaternion.LookRotation(-outward, Vector3.up);
+            transform.position = surfaceBase;
             return true;
         }
 
-        private void DamageTigerLeapTargets()
+        /// <summary>While climbing, W/S move gradually up/down the trunk; the ant stays pinned to it (no drifting/flying).</summary>
+        private void HandleClimbingTree()
         {
+            if (isLocalPlayer && GameInput.JumpPressed())
+            {
+                ExitClimbingTree(hopOff: true);
+                return;
+            }
+
+            float climbAxis = isLocalPlayer ? GameInput.ReadMovement().y : 0f;
+            climbHeight = Mathf.Clamp(climbHeight + climbAxis * AntClimbSpeed * Time.deltaTime, 0f, climbSpot.Height);
+            transform.position = climbSpot.BasePosition + Vector3.up * climbHeight;
+            visualMotion?.SetLocomotion(false, false, false);
+
+            if (climbHeight <= 0f && climbAxis <= 0f) ExitClimbingTree(hopOff: false);
+        }
+
+        private void ExitClimbingTree(bool hopOff)
+        {
+            climbingTree = false;
+            if (characterController != null) characterController.enabled = true;
+            if (hopOff)
+            {
+                verticalVelocity = Vector3.up * AntClimbJumpOffSpeed;
+                extraVelocity = -transform.forward * 3f;
+            }
+            else
+            {
+                verticalVelocity = Vector3.zero;
+            }
+        }
+
+        /// <summary>Rays out from the camera's aim (now free to point anywhere, including straight
+        /// up) to find exactly where the tiger should land, then leaps there on a fixed arc.</summary>
+        private void BeginTigerPounce()
+        {
+            Vector3 aimOrigin = cameraTransform != null ? cameraTransform.position : transform.position + Vector3.up;
+            Vector3 aimDirection = ViewAimDirection;
+
+            float targetDistance = TigerPounceMaxRange;
+            int hitCount = Physics.RaycastNonAlloc(new Ray(aimOrigin, aimDirection), rangedAimHits,
+                TigerPounceMaxRange, ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < hitCount; i++)
+            {
+                RaycastHit hit = rangedAimHits[i];
+                if (hit.collider == null) continue;
+                Transform hitTransform = hit.collider.transform;
+                if (hitTransform == transform || hitTransform.IsChildOf(transform)) continue;
+                if (hit.distance < targetDistance) targetDistance = hit.distance;
+            }
+
+            Vector3 targetPoint = aimOrigin + aimDirection * targetDistance;
+            if (jungle == null) jungle = FindAnyObjectByType<JungleGenerator>();
+            if (jungle != null) targetPoint = jungle.GetGroundPosition(targetPoint, 0.05f);
+
+            tigerPounceStart = transform.position;
+            tigerPounceTarget = targetPoint;
+            float distance = Vector3.Distance(tigerPounceStart, tigerPounceTarget);
+            float duration = Mathf.Clamp(distance / ServerGameTuning.TigerLeapSpeed, TigerPounceMinDuration, TigerPounceMaxDuration);
+            tigerPounceStartedAt = Time.time;
+            tigerPounceEndsAt = Time.time + duration;
+            tigerPounceArcHeight = Mathf.Clamp(distance * 0.22f, 1.2f, 4.5f);
+            tigerPouncing = true;
+            verticalVelocity = Vector3.zero;
+            extraVelocity = Vector3.zero;
+            if (characterController != null) characterController.enabled = false;
+
+            Vector3 flatDirection = tigerPounceTarget - tigerPounceStart;
+            flatDirection.y = 0f;
+            if (flatDirection.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(flatDirection.normalized, Vector3.up);
+            AttackVfx.CreateBurst(transform.position + Vector3.up * 0.2f, new Color(1f, 0.5f, 0.12f), 1.4f);
+        }
+
+        private void HandleTigerPounce()
+        {
+            float duration = Mathf.Max(0.01f, tigerPounceEndsAt - tigerPounceStartedAt);
+            float progress = Mathf.Clamp01((Time.time - tigerPounceStartedAt) / duration);
+            Vector3 position = Vector3.Lerp(tigerPounceStart, tigerPounceTarget, progress);
+            position += Vector3.up * (Mathf.Sin(progress * Mathf.PI) * tigerPounceArcHeight);
+            transform.position = position;
+            visualMotion?.SetLocomotion(true, true, true);
+            if (progress < 1f) return;
+
+            transform.position = tigerPounceTarget;
+            tigerPouncing = false;
+            if (characterController != null) characterController.enabled = true;
+            DamageTigerPounceImpact();
+        }
+
+        // Low damage on impact only, once, on whatever the tiger actually landed on —
+        // this is a positioning tool first and a knockdown hit second.
+        private void DamageTigerPounceImpact()
+        {
+            AttackVfx.CreateBurst(transform.position + Vector3.up * 0.2f, new Color(1f, 0.5f, 0.12f), 1.6f);
             Vector3 impactCenter = transform.position + Vector3.up * (stats.ControllerHeight * 0.5f);
             int hitCount = Physics.OverlapSphereNonAlloc(impactCenter, ServerGameTuning.TigerLeapHitRadius,
                 combatHits, ~0, QueryTriggerInteraction.Ignore);
@@ -924,22 +1085,16 @@ namespace AnimalBattleRoyale
             {
                 Health target = combatHits[i].GetComponentInParent<Health>();
                 if (target == null || target == health || target.IsDead || target.Owner == null) continue;
-                if (abilityHitTargets.Contains(target) || target.Owner.IsBurrowed || target.Owner.IsSpawnProtected) continue;
-                abilityHitTargets.Add(target);
+                if (target.Owner.IsBurrowed || target.Owner.IsSpawnProtected) continue;
 
-                Vector3 impactPosition = target.transform.position;
-                Vector3 pushDirection = impactPosition - transform.position;
+                Vector3 pushDirection = target.transform.position - transform.position;
                 pushDirection.y = 0f;
-                if (pushDirection.sqrMagnitude < 0.01f) pushDirection = tigerLeapDirection;
+                if (pushDirection.sqrMagnitude < 0.01f) pushDirection = transform.forward;
                 else pushDirection.Normalize();
 
-                float healthBeforeHit = target.CurrentHealth;
                 target.TakeDamage(ServerGameTuning.TigerLeapDamage, this);
-                CombatFeedback.NotifyHit(AnimalType.Tiger, impactPosition, ServerGameTuning.TigerLeapDamage);
-                if (!target.IsDead && target.CurrentHealth <= healthBeforeHit)
-                {
-                    target.Owner.ReceiveKnockback((pushDirection + Vector3.up * 0.18f).normalized * ServerGameTuning.TigerLeapKnockback);
-                }
+                CombatFeedback.NotifyHit(AnimalType.Tiger, target.transform.position, ServerGameTuning.TigerLeapDamage);
+                target.Owner.ReceiveKnockback((pushDirection + Vector3.up * 0.18f).normalized * ServerGameTuning.TigerLeapKnockback);
             }
         }
 
@@ -951,7 +1106,7 @@ namespace AnimalBattleRoyale
             for (int i = 0; i < hitCount; i++)
             {
                 Health other = combatHits[i].GetComponentInParent<Health>();
-                if (other == null || other == health || other.IsDead) continue;
+                if (other == null || other == health || other.IsDead || (other.Owner != null && other.Owner.IsBurrowed)) continue;
                 Vector3 targetDirection = other.transform.position - transform.position;
                 targetDirection.y = 0f;
                 if (targetDirection.sqrMagnitude > 0.01f && Vector3.Dot(direction, targetDirection.normalized) < 0.18f) continue;
@@ -969,7 +1124,8 @@ namespace AnimalBattleRoyale
             for (int i = 0; i < hitCount; i++)
             {
                 Health other = combatHits[i].GetComponentInParent<Health>();
-                if (other == null || other == health || other.IsDead || abilityHitTargets.Contains(other)) continue;
+                if (other == null || other == health || other.IsDead || abilityHitTargets.Contains(other)
+                    || (other.Owner != null && other.Owner.IsBurrowed)) continue;
                 abilityHitTargets.Add(other);
                 other.TakeDamage(damage, this);
                 CombatFeedback.NotifyHit(animalType, other.transform.position, damage);
@@ -997,7 +1153,7 @@ namespace AnimalBattleRoyale
             Vector3 flatDirection = new Vector3(direction.x, 0f, direction.z).normalized;
             if (flatDirection.sqrMagnitude < 0.01f) flatDirection = transform.forward;
 
-            tigerLeapUntil = 0f;
+            tigerPouncing = false;
             flyingUntil = 0f;
             abilityDashUntil = 0f;
             vineLeaping = false;
@@ -1187,7 +1343,7 @@ namespace AnimalBattleRoyale
             if (eliminated) return;
             EnsureRuntimeReferences();
             defeated = false;
-            tigerLeapUntil = 0f;
+            tigerPouncing = false;
             flyingUntil = 0f;
             vineLeaping = false;
             hangingVine = false;
@@ -1198,6 +1354,8 @@ namespace AnimalBattleRoyale
             if (characterController != null) characterController.enabled = true;
             burrowed = false;
             burrowEntering = false;
+            climbingTree = false;
+            SetUndergroundWalkLoop(false);
             AntTunnelEntrance.CancelTravel(this);
             verticalVelocity = Vector3.zero;
             extraVelocity = Vector3.zero;
@@ -1233,6 +1391,7 @@ namespace AnimalBattleRoyale
             eliminated = true;
             verticalVelocity = Vector3.zero;
             extraVelocity = Vector3.zero;
+            SetUndergroundWalkLoop(false);
             if (characterController != null) characterController.enabled = false;
             foreach (Collider collider in GetComponentsInChildren<Collider>()) if (collider != null) collider.enabled = false;
             Transform visual = transform.Find("VisualRoot");

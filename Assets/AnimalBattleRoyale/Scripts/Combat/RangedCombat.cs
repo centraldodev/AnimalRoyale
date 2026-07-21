@@ -433,7 +433,6 @@ namespace AnimalBattleRoyale
 
     public sealed class RangedAmmoPickup : MonoBehaviour
     {
-        private const int RefillAmount = 120; // full magazine reload
         private const float CollectRange = 2.6f;
         private const float SpinDegreesPerSecond = 24f;
         private const float RespawnSeconds = Countdown.DurationSeconds;
@@ -512,14 +511,15 @@ namespace AnimalBattleRoyale
 
         private bool Collect(ThirdPersonAnimalController animal)
         {
-            if (!available || !animal.TryRefillRangedAmmo(supplyKind, RefillAmount)) return false;
+            // Refills to whatever the animal's current weapon can carry, regardless of level.
+            if (!available || !animal.TryRefillRangedAmmo(supplyKind, animal.MaxRangedAmmoValue)) return false;
             available = false;
             respawnAt = Time.time + RespawnSeconds;
             if (visual != null) visual.gameObject.SetActive(false);
             if (labelObject != null) labelObject.SetActive(false);
             if (highlightObject != null) highlightObject.SetActive(false);
             CombatFeedback.PlayAmmoPickup(transform.position);
-            Countdown.Spawn(transform.position, RespawnSeconds);
+            Countdown.Spawn(transform.position, RespawnSeconds, SupplyColor());
             return true;
         }
 
@@ -640,7 +640,7 @@ namespace AnimalBattleRoyale
 
         private string SupplyAmmoLabel()
         {
-            return "120 BALAS";
+            return "100%";
         }
 
         private Color SupplyColor()

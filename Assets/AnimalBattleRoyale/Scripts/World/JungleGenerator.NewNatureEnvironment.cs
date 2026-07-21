@@ -595,7 +595,7 @@ namespace AnimalBattleRoyale
                     float size = giant ? NextNatureFloat(random, 3.6f, 4.8f) : NextNatureFloat(random, 1.35f, 2.8f);
                     Quaternion rotation = Quaternion.Euler(0f, NextNatureFloat(random, 0f, 360f), 0f);
                     SpawnScaledPrefab(mushroomsRoot, prefab, $"{prefabName}_{index + 1:00}",
-                        position, rotation, Vector3.one * size);
+                        position, rotation, Vector3.one * size, climbable: false);
                     created++;
                 }
             }
@@ -630,13 +630,16 @@ namespace AnimalBattleRoyale
             return prefab;
         }
 
-        private static void SpawnScaledPrefab(Transform parent, GameObject prefab, string name,
-            Vector3 position, Quaternion rotation, Vector3 scale)
+        private void SpawnScaledPrefab(Transform parent, GameObject prefab, string name,
+            Vector3 position, Quaternion rotation, Vector3 scale, bool climbable = true)
         {
             if (prefab == null) return;
             GameObject instance = Instantiate(prefab, position, rotation, parent);
             instance.name = name;
             instance.transform.localScale = scale;
+            // scale.y approximates the tree/rock's own height since these prefabs are
+            // normalized to one metre on their largest axis before being scaled up here.
+            if (climbable) RegisterClimbable(position, Mathf.Max(scale.x, scale.z) * 0.3f, scale.y);
         }
 
         private static float NextNatureFloat(System.Random random, float minimum, float maximum)

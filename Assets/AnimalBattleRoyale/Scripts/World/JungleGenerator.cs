@@ -30,13 +30,12 @@ namespace AnimalBattleRoyale
         [SerializeField, Range(0, 220)] private int rockCount = 96;
         [SerializeField, Range(0, 100)] private int anthillCount = 40;
         [SerializeField, Range(12f, 48f)] private float anthillMinimumSpacing = 26f;
-        [SerializeField, Range(0, 150)] private int antTunnelEntranceCount = 60;
+        [SerializeField, Range(0, 150)] private int antTunnelEntranceCount = 100;
         [SerializeField, Range(8f, 40f)] private float antTunnelEntranceMinimumSpacing = 16f;
         [SerializeField, Range(0, 48)] private int mountainCount = 26;
-        [SerializeField, Range(0, 100)] private int lifePickupCount = 24;
         [SerializeField, Range(0, 90)] private int rangedSupplyCount = 45;
         [SerializeField, Range(0, 100)] private int weaponCrystalCount = 40;
-        [SerializeField, Range(0, 100)] private int foodPickupCount = 30;
+        [SerializeField, Range(0, 100)] private int foodPickupCount = 60;
         [SerializeField, Range(4f, 30f)] private float pickupMinimumSpacing = 12f;
         [SerializeField, Range(0, 40)] private int houseCount = 16;
         [SerializeField, Range(12f, 40f)] private float houseMinimumSpacing = 22f;
@@ -383,26 +382,12 @@ namespace AnimalBattleRoyale
                 AntTunnelEntrance.Create(position, moundMaterial, moundDarkMaterial).transform.SetParent(standaloneEntrancesRoot, true);
             }
 
-            // Scattered life orbs: each fully restores (100%) the animal's health.
-            // Life, ammo and weapon-crystal pickups share one spacing list so none of the
+            // Ammo, weapon-crystal and food pickups share one spacing list so none of the
             // three kinds spawns right next to another, regardless of type.
-            List<Vector3> pickupPositions = new List<Vector3>(lifePickupCount + rangedSupplyCount + weaponCrystalCount + foodPickupCount);
-            Transform lifeRoot = new GameObject("LifePickups").transform;
-            lifeRoot.SetParent(parent, false);
+            List<Vector3> pickupPositions = new List<Vector3>(rangedSupplyCount + weaponCrystalCount + foodPickupCount);
             Vector3 playerShoreSpawn = GetShoreSpawnPosition();
             Vector3 pickupInward = new Vector3(-playerShoreSpawn.x, 0f, -playerShoreSpawn.z).normalized;
             Vector3 pickupRight = Vector3.Cross(Vector3.up, pickupInward).normalized;
-            for (int i = 0; i < lifePickupCount; i++)
-            {
-                Vector3 position = i switch
-                {
-                    0 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 9f - pickupRight * 4f)),
-                    1 => GetGroundPosition(ClampAwayFromLake(playerShoreSpawn + pickupInward * 17f + pickupRight * 5f)),
-                    _ => RandomSpacedMapPosition(9f, pickupMinimumSpacing, pickupPositions)
-                };
-                pickupPositions.Add(position);
-                LifePickup.Create(position).transform.SetParent(lifeRoot, true);
-            }
 
             Transform rangedSuppliesRoot = new GameObject("RangedAmmoSupplies").transform;
             rangedSuppliesRoot.SetParent(parent, false);
@@ -2381,10 +2366,52 @@ namespace AnimalBattleRoyale
 
         private void ClearGeneratedWorld()
         {
+            climbableSpots.Clear();
             Transform existing = transform.Find("GeneratedJungle");
             if (existing == null) return;
             if (Application.isPlaying) Destroy(existing.gameObject);
             else DestroyImmediate(existing.gameObject);
+        }
+
+        /// <summary>A tree or rock the ant can climb, straight up along its trunk from ground level.</summary>
+        public readonly struct ClimbableSpot
+        {
+            public readonly Vector3 BasePosition;
+            public readonly float Height;
+            public readonly float Radius;
+
+            public ClimbableSpot(Vector3 basePosition, float height, float radius)
+            {
+                BasePosition = basePosition;
+                Height = height;
+                Radius = radius;
+            }
+        }
+
+        private readonly List<ClimbableSpot> climbableSpots = new List<ClimbableSpot>();
+
+        private void RegisterClimbable(Vector3 basePosition, float radius, float height)
+        {
+            climbableSpots.Add(new ClimbableSpot(basePosition, Mathf.Max(1f, height), Mathf.Max(0.5f, radius)));
+        }
+
+        /// <summary>Finds the nearest climbable tree/rock trunk within range, regardless of facing.</summary>
+        public bool TryFindNearestClimbable(Vector3 fromPosition, float maxRange, out ClimbableSpot spot)
+        {
+            spot = default;
+            bool found = false;
+            float bestDistance = float.MaxValue;
+            for (int i = 0; i < climbableSpots.Count; i++)
+            {
+                ClimbableSpot candidate = climbableSpots[i];
+                Vector3 planarOffset = new Vector3(candidate.BasePosition.x - fromPosition.x, 0f, candidate.BasePosition.z - fromPosition.z);
+                float distance = Mathf.Max(0f, planarOffset.magnitude - candidate.Radius);
+                if (distance > maxRange || distance >= bestDistance) continue;
+                bestDistance = distance;
+                spot = candidate;
+                found = true;
+            }
+            return found;
         }
 
         private readonly struct TrailRoute

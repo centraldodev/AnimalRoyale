@@ -72,7 +72,7 @@ namespace AnimalBattleRoyale
             respawnAt = Time.time + RespawnSeconds;
             SetVisualsActive(false);
             CombatFeedback.PlayAmmoPickup(transform.position);
-            Countdown.Spawn(basePosition, RespawnSeconds);
+            Countdown.Spawn(basePosition, RespawnSeconds, CrystalColor);
             return true;
         }
 

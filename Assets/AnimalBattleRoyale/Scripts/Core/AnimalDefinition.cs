@@ -59,12 +59,12 @@ namespace AnimalBattleRoyale
             return type switch
             {
                 AnimalType.Tiger => new AnimalStats(
-                    "Tigre", new[] { "Pulo Longo", "DESATIVADO", "DESATIVADO" },
+                    "Tigre", new[] { "Bote Certeiro", "DESATIVADO", "DESATIVADO" },
                     100f, 6.1f, 9.0f, 6.2f, 22.5f, 2.0f, 0.9f, new[] { 7f, 0f, 0f }, 0.62f, 1.45f,
                     Vector3.one * 0.78f, new Color(0.95f, 0.42f, 0.08f)),
 
                 AnimalType.Ant => new AnimalStats(
-                    "Formiga", new[] { "Túnel ou Arremesso", "DESATIVADO", "DESATIVADO" },
+                    "Formiga", new[] { "Entrar no Túnel", "DESATIVADO", "DESATIVADO" },
                     100f, 6.7f, 9.4f, 7.4f, 16f, 1.6f, 0.7f, new[] { 8f, 0f, 0f }, 0.42f, 1.0f,
                     Vector3.one * 0.72f, new Color(0.86f, 0.36f, 0.14f)),
 
