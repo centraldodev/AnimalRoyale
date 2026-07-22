@@ -97,11 +97,29 @@ namespace AnimalBattleRoyale
             if (modelRoot == null || (shoulderWeaponPrefab == null && tomatoLauncherPrefab == null
                                       && watermelonLauncherPrefab == null)) return;
 
+            // Prefer attaching to the right hand bone so the weapon follows the arm during
+            // the (now real, Humanoid-animated) run/walk/carry pose instead of staying fixed
+            // to the static model root while the animated skeleton sways beneath it.
+            Transform handBone = FindBone(modelRoot, "R_Hand");
+            Transform socketParent = handBone != null ? handBone : modelRoot;
+
             GameObject socketObject = new GameObject("ShoulderWeaponSocket");
             Transform socket = socketObject.transform;
-            socket.SetParent(modelRoot, false);
-            socket.localPosition = ShoulderWeaponPosition(type);
+            socket.SetParent(socketParent, false);
+            socket.localPosition = handBone != null ? ShoulderWeaponHandOffset(type) : ShoulderWeaponPosition(type);
+            // When following the hand, rotation is pinned every frame by ShoulderWeaponFixedForward
+            // below instead, so this initial value is only ever visible for the fallback case.
             socket.localRotation = Quaternion.identity;
+
+            // The hand's own rotation swings a lot between poses (idle vs. run vs. jump),
+            // which visibly spun the weapon sideways whenever the pose changed. Position
+            // still tracks the hand (via the parenting above) but rotation is pinned to a
+            // constant, always-forward orientation relative to the body instead.
+            if (handBone != null)
+            {
+                socketObject.AddComponent<ShoulderWeaponFixedForward>()
+                    .Initialize(modelRoot, ShoulderWeaponForwardRotation(type));
+            }
 
             GameObject seedWeapon = null;
             if (shoulderWeaponPrefab != null)
@@ -210,6 +228,7 @@ namespace AnimalBattleRoyale
 
         // Prefabs are normalized to two Unity units high. These offsets place the
         // launcher on the animal's left shoulder (viewer-right when facing it).
+        // Fallback only, used if a hand bone can't be found on the rig.
         private static Vector3 ShoulderWeaponPosition(AnimalType type) => type switch
         {
             AnimalType.Tiger => new Vector3(-0.46f, 1.12f, 0.02f),
@@ -218,6 +237,35 @@ namespace AnimalBattleRoyale
             AnimalType.Monkey => new Vector3(-0.42f, 1.05f, 0.03f),
             _ => new Vector3(-0.42f, 1.05f, 0.02f)
         };
+
+        // Local offset/rotation relative to the R_Hand bone, so the weapon rides in the
+        // hand and follows the arm's own animation instead of the static model root.
+        private static Vector3 ShoulderWeaponHandOffset(AnimalType type) => type switch
+        {
+            AnimalType.Tiger => new Vector3(0f, 0.02f, 0.12f),
+            AnimalType.Ant => new Vector3(0f, 0.02f, 0.10f),
+            AnimalType.Eagle => new Vector3(0f, 0.02f, 0.10f),
+            AnimalType.Monkey => new Vector3(0f, 0.02f, 0.11f),
+            _ => new Vector3(0f, 0.02f, 0.11f)
+        };
+
+        // Identity relative to the model root is the orientation that was already confirmed
+        // to point the weapon forward (it's what the original shoulder-mounted socket used,
+        // parented directly to modelRoot). Keeping it identity here — instead of inheriting
+        // the hand bone's own rotation — is what makes the weapon always face forward
+        // regardless of pose (idle/run/jump).
+        private static Quaternion ShoulderWeaponForwardRotation(AnimalType type) => Quaternion.identity;
+
+        private static Transform FindBone(Transform root, string boneName)
+        {
+            if (root.name == boneName) return root;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                Transform found = FindBone(root.GetChild(i), boneName);
+                if (found != null) return found;
+            }
+            return null;
+        }
 
         private static float ShoulderWeaponScale(AnimalType type) => type switch
         {
@@ -239,6 +287,32 @@ namespace AnimalBattleRoyale
             if (renderer == null) return;
             Shader shader = ShaderLibrary.Lit;
             renderer.sharedMaterial = new Material(shader) { color = color };
+        }
+    }
+
+    /// <summary>
+    /// Keeps the weapon socket's rotation locked to a constant orientation relative to the
+    /// model root, so it always faces forward regardless of which pose (idle/run/jump) the
+    /// hand bone it's parented to (for position tracking) happens to be in.
+    /// </summary>
+    public sealed class ShoulderWeaponFixedForward : MonoBehaviour
+    {
+        private Transform reference;
+        private Quaternion localRotation;
+
+        public void Initialize(Transform referenceTransform, Quaternion fixedLocalRotation)
+        {
+            reference = referenceTransform;
+            localRotation = fixedLocalRotation;
+            Apply();
+        }
+
+        private void LateUpdate() => Apply();
+
+        private void Apply()
+        {
+            if (reference == null) return;
+            transform.rotation = reference.rotation * localRotation;
         }
     }
 

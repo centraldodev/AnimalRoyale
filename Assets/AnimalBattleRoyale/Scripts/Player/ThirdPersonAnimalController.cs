@@ -73,10 +73,6 @@ namespace AnimalBattleRoyale
         private float spawnProtectedUntil;
         private bool tigerPouncing;
         private float tigerPounceStartedAt;
-        private float tigerPounceEndsAt;
-        private float tigerPounceArcHeight;
-        private Vector3 tigerPounceStart;
-        private Vector3 tigerPounceTarget;
         private float flyingUntil;
         private Vector3 eagleGlideDirection;
         private Transform heldVine;
@@ -128,6 +124,7 @@ namespace AnimalBattleRoyale
         private const float CowChargeTurnRateDegreesPerSecond = 220f;
         private static readonly Color CowChargeColor = new Color(0.75f, 0.55f, 0.32f);
         private const float EagleGlideTurnRateDegreesPerSecond = 260f;
+        private const float TigerPounceTurnRateDegreesPerSecond = 280f;
 
         public AnimalType AnimalType => animalType;
         public AnimalStats Stats { get { EnsureRuntimeReferences(); return stats; } }
@@ -316,11 +313,6 @@ namespace AnimalBattleRoyale
             if (vineLeaping)
             {
                 HandleVineLeap();
-                return;
-            }
-            if (tigerPouncing)
-            {
-                HandleTigerPounce();
                 return;
             }
             if (BattleRoyaleManager.Instance != null && BattleRoyaleManager.Instance.MatchFinished)
@@ -689,11 +681,18 @@ namespace AnimalBattleRoyale
             if (grounded && !wasGroundedForLandingSfx) CombatFeedback.PlayJump(transform.position);
             wasGroundedForLandingSfx = grounded;
             if (grounded && IsFlying && verticalVelocity.y < 0f) flyingUntil = 0f;
+            // Ends the pounce on actually touching ground again (not on a fixed timer),
+            // so the leap can be cut short by a wall or a shorter-than-planned fall.
+            if (tigerPouncing && grounded && Time.time > tigerPounceStartedAt + 0.15f)
+            {
+                tigerPouncing = false;
+                abilityDashUntil = Time.time;
+                DamageTigerPounceImpact();
+            }
             bool gliding = IsFlying;
             bool abilityDashing = Time.time < abilityDashUntil;
             if (cowCharging && !abilityDashing) cowCharging = false;
-            visualMotion?.SetLocomotion(direction.sqrMagnitude > 0.01f || abilityDashing,
-                sprint || abilityDashing, !grounded, verticalVelocity.y, gliding);
+            if (tigerPouncing && !abilityDashing) tigerPouncing = false;
             if (grounded && verticalVelocity.y < 0f && !gliding) verticalVelocity.y = -2f;
             bool jumped = jumpPressed && grounded && !gliding;
             if (jumped)
@@ -701,6 +700,11 @@ namespace AnimalBattleRoyale
                 verticalVelocity.y = stats.JumpForce;
                 wasGroundedForLandingSfx = false;
             }
+            // Passed explicitly (not inferred from grounded changing next frame) so the jump
+            // animation trigger fires the same frame the jump input is processed, not a frame
+            // late.
+            visualMotion?.SetLocomotion(direction.sqrMagnitude > 0.01f || abilityDashing,
+                sprint || abilityDashing, !grounded, verticalVelocity.y, gliding, jumped);
 
             bool wading = CentralLake.TryGetWaterAt(transform.position, out float waterSurfaceHeight,
                 out float waterMovementMultiplier);
@@ -744,14 +748,16 @@ namespace AnimalBattleRoyale
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
             }
 
-            // Cow's charge steers toward wherever the camera is aiming instead of holding
-            // the direction it was started in, so it isn't a rigid straight line.
-            if (abilityDashing && cowCharging)
+            // Cow's charge and the tiger's pounce steer toward wherever the camera is aiming
+            // instead of holding the direction they were started in, so neither is a rigid
+            // straight line/fixed arc.
+            if (abilityDashing && (cowCharging || tigerPouncing))
             {
                 Vector3 aimFlat = new Vector3(ViewAimDirection.x, 0f, ViewAimDirection.z);
                 if (aimFlat.sqrMagnitude > 0.01f)
                 {
-                    float maxRadians = CowChargeTurnRateDegreesPerSecond * Mathf.Deg2Rad * Time.deltaTime;
+                    float turnRate = tigerPouncing ? TigerPounceTurnRateDegreesPerSecond : CowChargeTurnRateDegreesPerSecond;
+                    float maxRadians = turnRate * Mathf.Deg2Rad * Time.deltaTime;
                     dashDirection = Vector3.RotateTowards(dashDirection, aimFlat.normalized, maxRadians, 0f).normalized;
                     transform.rotation = Quaternion.LookRotation(dashDirection, Vector3.up);
                 }
@@ -1100,42 +1106,30 @@ namespace AnimalBattleRoyale
                 if (hit.distance < targetDistance) targetDistance = hit.distance;
             }
 
-            Vector3 targetPoint = aimOrigin + aimDirection * targetDistance;
-            if (jungle == null) jungle = FindAnyObjectByType<JungleGenerator>();
-            if (jungle != null) targetPoint = jungle.GetGroundPosition(targetPoint, 0.05f);
-
-            tigerPounceStart = transform.position;
-            tigerPounceTarget = targetPoint;
-            float distance = Vector3.Distance(tigerPounceStart, tigerPounceTarget);
+            // Only used to size the initial leap (duration/arc height) — the pounce then
+            // steers toward wherever the camera is aiming and lands wherever gravity and
+            // collision take it, just like the cow's charge and the eagle's glide.
+            float distance = targetDistance;
             float duration = Mathf.Clamp(distance / ServerGameTuning.TigerLeapSpeed, TigerPounceMinDuration, TigerPounceMaxDuration);
+            float arcHeight = Mathf.Clamp(distance * 0.22f, 1.2f, 4.5f);
             tigerPounceStartedAt = Time.time;
-            tigerPounceEndsAt = Time.time + duration;
-            tigerPounceArcHeight = Mathf.Clamp(distance * 0.22f, 1.2f, 4.5f);
             tigerPouncing = true;
-            verticalVelocity = Vector3.zero;
+
+            Vector3 flatDirection = new Vector3(aimDirection.x, 0f, aimDirection.z);
+            if (flatDirection.sqrMagnitude < 0.01f) flatDirection = transform.forward;
+            flatDirection.Normalize();
+
+            // Horizontal motion reuses the same steerable-dash fields as the cow's charge
+            // (radius/damage/knockback zeroed — the pounce only hits on landing, via
+            // DamageTigerPounceImpact); vertical motion reuses normal jump gravity so the
+            // arc rises and falls naturally and can be blocked by terrain mid-flight.
+            BeginDash(flatDirection, duration, ServerGameTuning.TigerLeapSpeed, 0f, 0f, 0f, 1f,
+                new Color(1f, 0.5f, 0.12f));
+            float gravityMagnitude = Mathf.Abs(gravity) * ServerGameTuning.JumpGravityMultiplier;
+            verticalVelocity.y = Mathf.Sqrt(Mathf.Max(0.1f, 2f * gravityMagnitude * arcHeight));
             extraVelocity = Vector3.zero;
-            if (characterController != null) characterController.enabled = false;
 
-            Vector3 flatDirection = tigerPounceTarget - tigerPounceStart;
-            flatDirection.y = 0f;
-            if (flatDirection.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(flatDirection.normalized, Vector3.up);
             AttackVfx.CreateBurst(transform.position + Vector3.up * 0.2f, new Color(1f, 0.5f, 0.12f), 1.4f);
-        }
-
-        private void HandleTigerPounce()
-        {
-            float duration = Mathf.Max(0.01f, tigerPounceEndsAt - tigerPounceStartedAt);
-            float progress = Mathf.Clamp01((Time.time - tigerPounceStartedAt) / duration);
-            Vector3 position = Vector3.Lerp(tigerPounceStart, tigerPounceTarget, progress);
-            position += Vector3.up * (Mathf.Sin(progress * Mathf.PI) * tigerPounceArcHeight);
-            transform.position = position;
-            visualMotion?.SetLocomotion(true, true, true);
-            if (progress < 1f) return;
-
-            transform.position = tigerPounceTarget;
-            tigerPouncing = false;
-            if (characterController != null) characterController.enabled = true;
-            DamageTigerPounceImpact();
         }
 
         // Low damage on impact only, once, on whatever the tiger actually landed on —

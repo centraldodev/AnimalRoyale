@@ -49,8 +49,11 @@ namespace AnimalBattleRoyale.EditorTools
         {
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
             if (prefab == null || prefab.transform.Find(TripoModelName) == null) return false;
+            // Generic (this importer's own default) or Human (manually upgraded for
+            // Mixamo retargeting, see HumanoidRigSetup) both count as "already set up" —
+            // only re-run for a genuinely fresh/untouched import.
             return AssetImporter.GetAtPath(ModelPath) is ModelImporter importer
-                && importer.animationType == ModelImporterAnimationType.Generic;
+                && importer.animationType != ModelImporterAnimationType.None;
         }
 
         private static void ConfigureModelImporter()

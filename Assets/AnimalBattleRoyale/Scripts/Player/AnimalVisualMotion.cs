@@ -23,10 +23,15 @@ namespace AnimalBattleRoyale
 
         public float MeleeImpactDelay => 0f;
 
+        private const string LocomotionControllerPath = "Animation/AnimalLocomotion";
+
         private Transform leftThigh, rightThigh, leftUpperarm, rightUpperarm;
         private Quaternion leftThighRest, rightThighRest, leftUpperarmRest, rightUpperarmRest;
         private Transform leftHandBone, rightHandBone;
         private Transform activeHandBone;
+        private Animator humanoidAnimator;
+        private bool useHumanoidAnimation;
+        private float animatorSpeedVelocity;
 
         private bool isMoving, isSprinting, isAirborne, hanging, frozen;
         private float gaitPhase;
@@ -39,34 +44,65 @@ namespace AnimalBattleRoyale
         {
             transform.localRotation = Quaternion.identity;
 
-            leftThigh = FindBone(transform, "L_Thigh");
-            rightThigh = FindBone(transform, "R_Thigh");
-            leftUpperarm = FindBone(transform, "L_Upperarm");
-            rightUpperarm = FindBone(transform, "R_Upperarm");
             leftHandBone = FindBone(transform, "L_Hand");
             rightHandBone = FindBone(transform, "R_Hand");
 
-            if (leftThigh != null) leftThighRest = leftThigh.localRotation;
-            if (rightThigh != null) rightThighRest = rightThigh.localRotation;
-            if (leftUpperarm != null) leftUpperarmRest = leftUpperarm.localRotation;
-            if (rightUpperarm != null) rightUpperarmRest = rightUpperarm.localRotation;
-
-            // No clip/retargeting involved anymore — keep any imported Animator off so
-            // it can never fight these procedural bone rotations.
-            foreach (Animator animator in GetComponentsInChildren<Animator>(true))
+            // Prefer a properly rigged Humanoid avatar (real walk/run/jump clips retargeted
+            // from Mixamo) when the model has one; otherwise fall back to hand-swung limb
+            // bones so animals without a Humanoid setup still move instead of sliding.
+            Animator animator = GetComponentInChildren<Animator>(true);
+            if (animator != null && animator.avatar != null && animator.avatar.isValid && animator.avatar.isHuman)
             {
-                animator.runtimeAnimatorController = null;
-                animator.applyRootMotion = false;
-                animator.enabled = false;
+                RuntimeAnimatorController controller = Resources.Load<RuntimeAnimatorController>(LocomotionControllerPath);
+                if (controller != null)
+                {
+                    animator.runtimeAnimatorController = controller;
+                    animator.applyRootMotion = false;
+                    animator.enabled = true;
+                    humanoidAnimator = animator;
+                    useHumanoidAnimation = true;
+                }
+            }
+
+            if (!useHumanoidAnimation)
+            {
+                leftThigh = FindBone(transform, "L_Thigh");
+                rightThigh = FindBone(transform, "R_Thigh");
+                leftUpperarm = FindBone(transform, "L_Upperarm");
+                rightUpperarm = FindBone(transform, "R_Upperarm");
+
+                if (leftThigh != null) leftThighRest = leftThigh.localRotation;
+                if (rightThigh != null) rightThighRest = rightThigh.localRotation;
+                if (leftUpperarm != null) leftUpperarmRest = leftUpperarm.localRotation;
+                if (rightUpperarm != null) rightUpperarmRest = rightUpperarm.localRotation;
+
+                // No clip/retargeting involved for this animal — keep any imported Animator
+                // off so it can never fight the procedural bone rotations below.
+                foreach (Animator disabled in GetComponentsInChildren<Animator>(true))
+                {
+                    disabled.runtimeAnimatorController = null;
+                    disabled.applyRootMotion = false;
+                    disabled.enabled = false;
+                }
             }
         }
 
         public void SetLocomotion(bool moving, bool sprinting, bool airborne,
-            float currentVerticalSpeed = 0f, bool isFlying = false)
+            float currentVerticalSpeed = 0f, bool isFlying = false, bool jumped = false)
         {
             isMoving = moving;
             isSprinting = sprinting;
             isAirborne = airborne;
+
+            if (!useHumanoidAnimation || humanoidAnimator == null) return;
+            float targetSpeed = !moving ? 0f : sprinting ? 2f : 1f;
+            float current = humanoidAnimator.GetFloat("Speed");
+            humanoidAnimator.SetFloat("Speed",
+                Mathf.SmoothDamp(current, targetSpeed, ref animatorSpeedVelocity, 0.12f));
+            humanoidAnimator.SetBool("Grounded", !airborne);
+            // Jump has no dedicated animation for now (disabled per request) — the Animator
+            // stays on the Locomotion blend tree through the whole jump, so it's just the
+            // plain physics arc with no clip transition.
         }
 
         public void TriggerAttack(bool meleeAttack = true) { }
@@ -96,6 +132,7 @@ namespace AnimalBattleRoyale
 
         private void UpdateLocomotionPose()
         {
+            if (useHumanoidAnimation) return;
             float dt = Time.deltaTime;
 
             float airborneTarget = !frozen && isAirborne ? 1f : 0f;
