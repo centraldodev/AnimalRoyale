@@ -20,6 +20,9 @@ namespace AnimalBattleRoyale
         private const float ArmSwingDegrees = 6f;
         private const float AirborneTuckDegrees = 14f;
         private const float BlendSpeed = 5f;
+        private const float WingFlapFrequency = 2.4f;
+        private const float WingFlapDegrees = 55f;
+        private const float WingFlapBlendSpeed = 6f;
 
         public float MeleeImpactDelay => 0f;
 
@@ -33,12 +36,19 @@ namespace AnimalBattleRoyale
         private bool useHumanoidAnimation;
         private float animatorSpeedVelocity;
 
-        private bool isMoving, isSprinting, isAirborne, hanging, frozen;
+        private bool isMoving, isSprinting, isAirborne, isFlying, hanging, frozen;
         private float gaitPhase;
         private float locomotionBlend;
         private float airborneBlend;
         private float sprintBlend;
         private Vector3 handAimTarget;
+
+        private Transform leftWing, rightWing;
+        private Quaternion leftWingRest, rightWingRest;
+        private Transform[] leftWingChain, rightWingChain;
+        private Quaternion[] leftWingChainRest, rightWingChainRest;
+        private float wingFlapPhase;
+        private float wingFlapBlend;
 
         public void Initialize(AnimalType type)
         {
@@ -46,6 +56,24 @@ namespace AnimalBattleRoyale
 
             leftHandBone = FindBone(transform, "L_Hand");
             rightHandBone = FindBone(transform, "R_Hand");
+
+            // Eagle's rig doesn't use the shared L_/R_ bone names (see EagleHumanoidRigSetup) —
+            // its wing roots are these generic auto-rig names instead. The whole chain (not
+            // just the root) is mapped to Humanoid arm bones purely so Mixamo clips retarget
+            // at all, so the rest of the chain needs to be pinned to rest too, or the Run
+            // clip's arm-swing visibly drags the wingtip forward even when not flying.
+            if (type == AnimalType.Eagle)
+            {
+                leftWing = FindBone(transform, "bone_5");
+                rightWing = FindBone(transform, "bone_12");
+                if (leftWing != null) leftWingRest = leftWing.localRotation;
+                if (rightWing != null) rightWingRest = rightWing.localRotation;
+
+                leftWingChain = new[] { FindBone(transform, "bone_6"), FindBone(transform, "bone_7") };
+                rightWingChain = new[] { FindBone(transform, "bone_13"), FindBone(transform, "bone_14") };
+                leftWingChainRest = System.Array.ConvertAll(leftWingChain, b => b != null ? b.localRotation : Quaternion.identity);
+                rightWingChainRest = System.Array.ConvertAll(rightWingChain, b => b != null ? b.localRotation : Quaternion.identity);
+            }
 
             // Prefer a properly rigged Humanoid avatar (real walk/run/jump clips retargeted
             // from Mixamo) when the model has one; otherwise fall back to hand-swung limb
@@ -88,14 +116,18 @@ namespace AnimalBattleRoyale
         }
 
         public void SetLocomotion(bool moving, bool sprinting, bool airborne,
-            float currentVerticalSpeed = 0f, bool isFlying = false, bool jumped = false)
+            float currentVerticalSpeed = 0f, bool flying = false, bool jumped = false)
         {
             isMoving = moving;
             isSprinting = sprinting;
             isAirborne = airborne;
+            isFlying = flying;
 
             if (!useHumanoidAnimation || humanoidAnimator == null) return;
-            float targetSpeed = !moving ? 0f : sprinting ? 2f : 1f;
+            // Airborne (flying, pouncing, jumping) never blends toward the ground Walk/Run
+            // poses even while movement input is held — otherwise holding forward mid-air
+            // shows the running-legs pose instead of the wing flap / a neutral airborne pose.
+            float targetSpeed = !moving || airborne ? 0f : sprinting ? 2f : 1f;
             float current = humanoidAnimator.GetFloat("Speed");
             humanoidAnimator.SetFloat("Speed",
                 Mathf.SmoothDamp(current, targetSpeed, ref animatorSpeedVelocity, 0.12f));
@@ -128,6 +160,7 @@ namespace AnimalBattleRoyale
         {
             UpdateLocomotionPose();
             UpdateHandAim();
+            UpdateWingFlap();
         }
 
         private void UpdateLocomotionPose()
@@ -177,6 +210,44 @@ namespace AnimalBattleRoyale
             if (toTarget.sqrMagnitude < 0.0001f) return;
             Quaternion desired = Quaternion.LookRotation(toTarget.normalized, transform.up);
             activeHandBone.rotation = Quaternion.Slerp(activeHandBone.rotation, desired, 0.5f);
+        }
+
+        // Runs after the Humanoid Animator's own pose for this frame (LateUpdate always
+        // follows Animator updates), so it overrides whatever the walk/run/idle clip was
+        // doing with the wing bones — they're mapped as the Humanoid "arms" (see
+        // EagleHumanoidRigSetup) purely so Mixamo clips retarget at all, not because their
+        // arm-swing should drive flight. The flap always starts and ends at the bone's
+        // imported rest rotation ("normal position"), never holding mid-flap, and fades out
+        // via wingFlapBlend when isFlying turns off instead of snapping back.
+        private void UpdateWingFlap()
+        {
+            if (leftWing == null && rightWing == null) return;
+            float dt = Time.deltaTime;
+
+            wingFlapBlend = Mathf.MoveTowards(wingFlapBlend, isFlying ? 1f : 0f, dt * WingFlapBlendSpeed);
+            if (wingFlapBlend > 0.001f)
+                wingFlapPhase += dt * WingFlapFrequency * Mathf.PI * 2f;
+            else
+                wingFlapPhase = 0f;
+
+            // 0 -> max -> 0 each cycle (never negative), so the wing opens away from rest and
+            // always returns to it, instead of swinging past rest to the far side.
+            float flapAngle = WingFlapDegrees * (0.5f - 0.5f * Mathf.Cos(wingFlapPhase)) * wingFlapBlend;
+            ApplyBoneSwing(leftWing, leftWingRest, flapAngle);
+            ApplyBoneSwing(rightWing, rightWingRest, flapAngle);
+
+            // Rest of the chain never animates on its own (no separate elbow/wrist flex) —
+            // just held rigid at rest so the Humanoid arm-swing can never reach it, whether
+            // flying or not.
+            PinChainToRest(leftWingChain, leftWingChainRest);
+            PinChainToRest(rightWingChain, rightWingChainRest);
+        }
+
+        private static void PinChainToRest(Transform[] chain, Quaternion[] restRotations)
+        {
+            if (chain == null) return;
+            for (int i = 0; i < chain.Length; i++)
+                if (chain[i] != null) chain[i].localRotation = restRotations[i];
         }
 
         private static Transform FindBone(Transform root, string boneName)

@@ -75,8 +75,11 @@ namespace AnimalBattleRoyale.EditorTools
         {
             if (!File.Exists(character.ModelPath)) return false;
             if (AssetDatabase.LoadAssetAtPath<GameObject>(character.PrefabPath) == null) return true;
+            // Human means HumanoidRigSetup has since configured this animal for real
+            // Mixamo-retargeted animation — must not be treated as "needs reimport", or this
+            // would silently revert it back to Generic on every recompile.
             return AssetImporter.GetAtPath(character.ModelPath) is not ModelImporter importer
-                || importer.animationType != ModelImporterAnimationType.Generic;
+                || importer.animationType == ModelImporterAnimationType.None;
         }
 
         private static void ImportOne(CharacterDefinition character)

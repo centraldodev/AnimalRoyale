@@ -99,14 +99,27 @@ namespace AnimalBattleRoyale
 
             // Prefer attaching to the right hand bone so the weapon follows the arm during
             // the (now real, Humanoid-animated) run/walk/carry pose instead of staying fixed
-            // to the static model root while the animated skeleton sways beneath it.
-            Transform handBone = FindBone(modelRoot, "R_Hand");
-            Transform socketParent = handBone != null ? handBone : modelRoot;
+            // to the static model root while the animated skeleton sways beneath it. Eagle's
+            // rig doesn't use the shared "R_Hand" name (see EagleHumanoidRigSetup) — bone_14
+            // is its right-wing equivalent.
+            Transform handBone = FindBone(modelRoot, "R_Hand") ?? FindBone(modelRoot, "bone_14");
+
+            // Eagle's "hand" is inside the wing chain, which still visibly drifts during
+            // ground locomotion (the run clip's arm-swing before it gets pinned back to rest
+            // each frame lags a frame behind, and the wing-flap system can nudge it too) — so
+            // for her the weapon is fixed at the hand's rest/bind-pose position instead of
+            // live-following the bone, matching "stays exactly where it is when standing
+            // still" rather than swinging with the arm like the biped animals do.
+            bool freezeAtRestPosition = type == AnimalType.Eagle;
+            Transform socketParent = handBone != null && !freezeAtRestPosition ? handBone : modelRoot;
 
             GameObject socketObject = new GameObject("ShoulderWeaponSocket");
             Transform socket = socketObject.transform;
             socket.SetParent(socketParent, false);
-            socket.localPosition = handBone != null ? ShoulderWeaponHandOffset(type) : ShoulderWeaponPosition(type);
+            if (handBone != null && freezeAtRestPosition)
+                socket.localPosition = modelRoot.InverseTransformPoint(handBone.position);
+            else
+                socket.localPosition = handBone != null ? ShoulderWeaponHandOffset(type) : ShoulderWeaponPosition(type);
             // When following the hand, rotation is pinned every frame by ShoulderWeaponFixedForward
             // below instead, so this initial value is only ever visible for the fallback case.
             socket.localRotation = Quaternion.identity;
@@ -126,7 +139,11 @@ namespace AnimalBattleRoyale
             {
                 seedWeapon = Object.Instantiate(shoulderWeaponPrefab, socket, false);
                 seedWeapon.name = "SeedLauncherVisual";
-                seedWeapon.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                // This model's own muzzle points along its local +X at rest (confirmed via
+                // WeaponAxisProbe) instead of +Z like the tomato/watermelon models sharing
+                // this same socket, so it needs its own extra correction rather than changing
+                // the socket's shared forward rotation and breaking the other two.
+                seedWeapon.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.Euler(0f, 90f, 0f));
                 seedWeapon.transform.localScale = Vector3.one * ShoulderWeaponScale(type);
                 PrepareShoulderWeapon(seedWeapon, null);
             }
@@ -270,7 +287,6 @@ namespace AnimalBattleRoyale
         private static float ShoulderWeaponScale(AnimalType type) => type switch
         {
             AnimalType.Ant => 1.00f,
-            AnimalType.Eagle => 1.05f,
             AnimalType.Monkey => 1.08f,
             _ => 1.12f
         };

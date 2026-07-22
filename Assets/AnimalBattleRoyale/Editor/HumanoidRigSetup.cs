@@ -4,11 +4,30 @@ using UnityEngine;
 
 namespace AnimalBattleRoyale.EditorTools
 {
-    // Temporary tool: configures a Tripo animal FBX (custom bone names, Generic rig) as a
-    // Unity Humanoid avatar by hand-mapping our bone names to HumanBodyBones, so Mixamo
+    // Reusable pipeline: configures any Tripo animal FBX (custom bone names, Generic rig) as
+    // a Unity Humanoid avatar by hand-mapping our bone names to HumanBodyBones, so Mixamo
     // clips can be retargeted onto it. Built from the hierarchy printed by BoneHierarchyDump.
+    //
+    // To add a new animal once its model is dropped in at the standard
+    // Art/Characters/{Animal}/Models/{Animal}3D_Rigged.fbx path, either run
+    // "AnimalBattleRoyale/Debug/Configure All Animals As Humanoid" (skips anything already
+    // configured or whose rig doesn't match — safe to re-run) or call
+    // HumanoidRigSetup.Configure("NewAnimal") directly. Only works for rigs that follow the
+    // Tripo naming convention below (Hip/Waist/Spine01/L_Thigh/L_Upperarm/etc. — confirmed
+    // shared by Tiger, Ant, Monkey, Cow). Rigs that don't (e.g. Eagle, built from generic
+    // "tripo::"/"bone_N" chains instead of named limbs) are skipped with a clear log message
+    // rather than partially/incorrectly configured — they need a bespoke bone map.
     public static class HumanoidRigSetup
     {
+        // The minimum set of bones Unity's Humanoid avatar validation actually requires;
+        // used as a fast compatibility check before touching an animal's import settings.
+        private static readonly string[] RequiredBoneNames =
+        {
+            "Hip", "Waist", "Spine01", "Head",
+            "L_Thigh", "L_Calf", "L_Foot", "R_Thigh", "R_Calf", "R_Foot",
+            "L_Upperarm", "L_Forearm", "L_Hand", "R_Upperarm", "R_Forearm", "R_Hand",
+        };
+
         private static readonly Dictionary<string, string> BoneMap = new Dictionary<string, string>
         {
             { "Hips", "Hip" },
@@ -43,17 +62,34 @@ namespace AnimalBattleRoyale.EditorTools
             { "RightLowerArmTwist", "R_ForearmTwist01" },
         };
 
-        [MenuItem("AnimalBattleRoyale/Debug/Configure Tiger As Humanoid")]
-        public static void ConfigureTiger() =>
-            Configure("Tiger", "Assets/AnimalBattleRoyale/Art/Characters/Tiger/Models/Tiger3D_Rigged.fbx");
+        [MenuItem("AnimalBattleRoyale/Debug/Configure All Animals As Humanoid")]
+        public static void ConfigureAllAnimals()
+        {
+            foreach (AnimalType type in System.Enum.GetValues(typeof(AnimalType)))
+                Configure(type.ToString());
+        }
 
-        private static void Configure(string animal, string modelPath)
+        [MenuItem("AnimalBattleRoyale/Debug/Configure Tiger As Humanoid")]
+        public static void ConfigureTiger() => Configure("Tiger");
+
+        // Standard model path convention for every animal in this project — see class comment.
+        public static bool Configure(string animal) =>
+            Configure(animal, $"Assets/AnimalBattleRoyale/Art/Characters/{animal}/Models/{animal}3D_Rigged.fbx");
+
+        public static bool Configure(string animal, string modelPath) =>
+            Configure(animal, modelPath, BoneMap, RequiredBoneNames);
+
+        // Overload for animals with a non-standard rig (e.g. Eagle) that still want the same
+        // T-pose calibration / SkeletonBone / avatar-validation machinery, just with their own
+        // bone name mapping instead of the Tripo biped convention.
+        public static bool Configure(string animal, string modelPath, Dictionary<string, string> boneMap,
+            string[] requiredBoneNames)
         {
             GameObject source = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
             if (source == null)
             {
-                Debug.LogError($"[HumanoidRigSetup] Could not load {modelPath}");
-                return;
+                Debug.LogWarning($"[HumanoidRigSetup] {animal}: no model at {modelPath}, skipping.");
+                return false;
             }
 
             // Work on a temporary instance so we can bend the arms into a T-pose purely for
@@ -63,13 +99,32 @@ namespace AnimalBattleRoyale.EditorTools
             Transform armature = FindByName(instance.transform, "Armature") ?? FindByName(instance.transform, "Root");
             if (armature == null)
             {
-                Debug.LogError($"[HumanoidRigSetup] {animal}: could not find an 'Armature'/'Root' bone.");
+                Debug.LogWarning($"[HumanoidRigSetup] {animal}: no 'Armature'/'Root' bone found, skipping.");
                 Object.DestroyImmediate(instance);
-                return;
+                return false;
             }
 
-            EnforceArmTPose(armature, "L_Clavicle", "L_Upperarm", "L_Forearm", "L_Hand");
-            EnforceArmTPose(armature, "R_Clavicle", "R_Upperarm", "R_Forearm", "R_Hand");
+            string missingBone = System.Array.Find(requiredBoneNames, name => FindByName(armature, name) == null);
+            if (missingBone != null)
+            {
+                Debug.Log($"[HumanoidRigSetup] {animal}: rig is missing expected bone " +
+                    $"'{missingBone}' — skipping, this animal needs a bespoke bone map or stays procedural.");
+                Object.DestroyImmediate(instance);
+                return false;
+            }
+
+            if (boneMap.TryGetValue("LeftUpperArm", out string leftUpperArm) && boneMap.TryGetValue("LeftLowerArm", out string leftLowerArm))
+            {
+                boneMap.TryGetValue("LeftShoulder", out string leftShoulder);
+                boneMap.TryGetValue("LeftHand", out string leftHand);
+                EnforceArmTPose(armature, leftShoulder ?? leftUpperArm, leftUpperArm, leftLowerArm, leftHand, side: -1f);
+            }
+            if (boneMap.TryGetValue("RightUpperArm", out string rightUpperArm) && boneMap.TryGetValue("RightLowerArm", out string rightLowerArm))
+            {
+                boneMap.TryGetValue("RightShoulder", out string rightShoulder);
+                boneMap.TryGetValue("RightHand", out string rightHand);
+                EnforceArmTPose(armature, rightShoulder ?? rightUpperArm, rightUpperArm, rightLowerArm, rightHand, side: 1f);
+            }
 
             List<SkeletonBone> skeleton = new List<SkeletonBone>();
             CollectSkeleton(instance.transform, skeleton);
@@ -79,7 +134,7 @@ namespace AnimalBattleRoyale.EditorTools
                 rotation = skeleton[0].rotation, scale = skeleton[0].scale };
 
             List<HumanBone> humanBones = new List<HumanBone>();
-            foreach (KeyValuePair<string, string> pair in BoneMap)
+            foreach (KeyValuePair<string, string> pair in boneMap)
             {
                 Transform bone = FindByName(armature, pair.Value);
                 if (bone == null)
@@ -114,7 +169,7 @@ namespace AnimalBattleRoyale.EditorTools
             if (AssetImporter.GetAtPath(modelPath) is not ModelImporter importer)
             {
                 Debug.LogError($"[HumanoidRigSetup] No ModelImporter at {modelPath}");
-                return;
+                return false;
             }
 
             importer.animationType = ModelImporterAnimationType.Human;
@@ -123,11 +178,13 @@ namespace AnimalBattleRoyale.EditorTools
             importer.SaveAndReimport();
 
             Avatar avatar = AssetDatabase.LoadAssetAtPath<Avatar>(modelPath);
-            if (avatar != null && avatar.isValid && avatar.isHuman)
+            bool success = avatar != null && avatar.isValid && avatar.isHuman;
+            if (success)
                 Debug.Log($"[HumanoidRigSetup] {animal}: Humanoid avatar configured successfully ({humanBones.Count} bones mapped).");
             else
                 Debug.LogError($"[HumanoidRigSetup] {animal}: Avatar is " +
                     $"{(avatar == null ? "null" : avatar.isValid ? "valid but not human" : "INVALID")}. Check Console for Unity's own avatar errors.");
+            return success;
         }
 
         // Bends one arm chain into a horizontal T-pose in-place (world rotation), purely so
@@ -135,18 +192,17 @@ namespace AnimalBattleRoyale.EditorTools
         // muscle calibration. The model's real rest pose (arms at its sides) is untouched —
         // this only ever runs on a throwaway instance that gets discarded after capture.
         private static void EnforceArmTPose(Transform armature, string clavicleName, string upperArmName,
-            string forearmName, string handName)
+            string forearmName, string handName, float side)
         {
             Transform clavicle = FindByName(armature, clavicleName);
             Transform upperArm = FindByName(armature, upperArmName);
             Transform forearm = FindByName(armature, forearmName);
-            Transform hand = FindByName(armature, handName);
+            Transform hand = handName != null ? FindByName(armature, handName) : null;
             if (clavicle == null || upperArm == null || forearm == null) return;
 
             // The character is spawned at identity rotation facing world +Z, so its own
             // right side is always world +X (Unity's transform.right for an unrotated
             // object) — fixed and reliable, unlike inferring it from bone positions.
-            float side = clavicleName.StartsWith("L_") ? -1f : 1f;
             Vector3 targetDirection = new Vector3(side, 0f, 0f);
 
             AlignBoneToward(upperArm, forearm.position, targetDirection);

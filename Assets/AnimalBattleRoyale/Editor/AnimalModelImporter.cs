@@ -405,9 +405,13 @@ namespace AnimalBattleRoyale.EditorTools
             foreach (Collider collider in instance.GetComponentsInChildren<Collider>(true))
                 collider.enabled = false;
 
+            // Unlike the legacy Blender-exported weapons, this model (like the current animal
+            // rigs) is a Tripo export at roughly real-world scale already (~0.98 units), not
+            // a Blender FBX needing the x100 nested-prefab compensation — applying that
+            // unconditionally here blew it up to ~107 units.
             Bounds bounds = CalcBounds(root);
             float length = Mathf.Max(bounds.size.x, bounds.size.y, bounds.size.z);
-            float scale = length > 0.0001f ? 1.05f / length * BlenderFbxPrefabScale : 1f;
+            float scale = length > 0.0001f ? 1.05f / length : 1f;
             instance.transform.localScale = Vector3.one * scale;
             bounds = CalcBounds(root);
             instance.transform.position -= bounds.center;

@@ -161,15 +161,115 @@ namespace AnimalBattleRoyale
             VineAnchor vineAnchor = anchor.AddComponent<VineAnchor>();
             vineAnchor.ConfigureSwing(pivot.transform);
 
-            GameObject vine = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            vine.name = "ClimbableVine";
-            vine.transform.SetParent(pivot.transform, false);
-            vine.transform.localPosition = Vector3.down * (length * 0.5f);
-            vine.transform.localScale = new Vector3(0.2f, length * 0.5f, 0.2f);
-            vine.GetComponent<Renderer>().sharedMaterial = material;
-            Collider collider = vine.GetComponent<Collider>();
-            if (collider != null) collider.enabled = false;
+            // Thickness is a real-world target (~0.2m), not a fraction of the tree — trees
+            // spawned at very different scales (a giant 30-unit tree vs. a small 8-unit one)
+            // would otherwise get a vine 30x/8x as fat, since localScale here multiplies with
+            // whatever scale "tree" itself has.
+            float parentScale = Mathf.Max(0.0001f, tree.lossyScale.x);
+            CreateVineVisual(pivot.transform, length, parentScale, material);
             return vineAnchor;
+        }
+
+        // A single straight cylinder read as a rigid pole, not a hanging vine. This instead
+        // walks a gentle randomized S-curve from the attachment point down to the grab point
+        // and builds it out of several short segments, so it reads as organic rope/vine
+        // instead of a machined rod — while the curve's start and end still land exactly on
+        // the pivot and the original Vector3.down * length anchor point, so the swing physics
+        // and grab range are unaffected.
+        private static void CreateVineVisual(Transform pivot, float length, float parentScale, Material material)
+        {
+            const int segmentCount = 8;
+            float thickness = 0.2f / parentScale;
+            float amplitudeX = length * Random.Range(0.05f, 0.09f);
+            float amplitudeZ = length * Random.Range(0.05f, 0.09f);
+            float frequencyX = Random.Range(1.3f, 2.1f);
+            float frequencyZ = Random.Range(1.1f, 1.9f);
+            float phaseX = Random.Range(0f, Mathf.PI * 2f);
+            float phaseZ = Random.Range(0f, Mathf.PI * 2f);
+
+            GameObject container = new GameObject("ClimbableVine");
+            container.transform.SetParent(pivot, false);
+
+            // The bare cylinder end used to just float next to the branch with nothing
+            // visually tying it there. A wider wrap knot at the attachment point reads as
+            // the vine actually looped/tied around the branch instead of floating beside it.
+            CreateVineWrapKnot(container.transform, thickness, material);
+
+            Vector3 previousPoint = Vector3.zero;
+            for (int i = 1; i <= segmentCount; i++)
+            {
+                float t = (float)i / segmentCount;
+                // Waviness fades to zero at both ends (Mathf.Sin(t*PI) is 0 at t=0 and t=1) so
+                // the curve is tightest right at the attachment point and the grab handle,
+                // fullest in the middle — and the bottom point lands exactly on the original
+                // straight-line anchor position.
+                float taper = Mathf.Sin(t * Mathf.PI);
+                float x = Mathf.Sin(t * frequencyX * Mathf.PI * 2f + phaseX) * amplitudeX * taper;
+                float z = Mathf.Sin(t * frequencyZ * Mathf.PI * 2f + phaseZ) * amplitudeZ * taper;
+                Vector3 point = new Vector3(x, -length * t, z);
+
+                CreateVineSegment(container.transform, previousPoint, point, thickness, material, i);
+                // Each cylinder segment has a flat end cap, so bending segments at a joint
+                // leaves a visible notch/seam there — a small sphere the same thickness
+                // covers it and reads as a natural knot/thickening in the vine instead.
+                if (i < segmentCount) CreateVineJoint(container.transform, point, thickness, material, i);
+                previousPoint = point;
+            }
+        }
+
+        // A small cluster of overlapping spheres around the attachment point, mimicking a
+        // coil of vine wrapped/tied around the branch instead of a bare cylinder end
+        // floating next to it.
+        private static void CreateVineWrapKnot(Transform parent, float thickness, Material material)
+        {
+            const int coilCount = 3;
+            float coilRadius = thickness * 0.85f;
+            for (int i = 0; i < coilCount; i++)
+            {
+                float angle = i * Mathf.PI * 2f / coilCount + Random.Range(-0.2f, 0.2f);
+                Vector3 offset = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle * 2f) * 0.35f, Mathf.Sin(angle)) * coilRadius;
+                GameObject coil = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                coil.name = "VineWrapCoil" + i;
+                coil.transform.SetParent(parent, false);
+                coil.transform.localPosition = offset;
+                coil.transform.localScale = Vector3.one * thickness * 1.4f;
+                coil.GetComponent<Renderer>().sharedMaterial = material;
+                Collider coilCollider = coil.GetComponent<Collider>();
+                if (coilCollider != null) coilCollider.enabled = false;
+            }
+        }
+
+        private static void CreateVineJoint(Transform parent, Vector3 position, float thickness, Material material, int index)
+        {
+            GameObject joint = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            joint.name = "VineJoint" + index;
+            joint.transform.SetParent(parent, false);
+            joint.transform.localPosition = position;
+            joint.transform.localScale = Vector3.one * thickness;
+            joint.GetComponent<Renderer>().sharedMaterial = material;
+            Collider jointCollider = joint.GetComponent<Collider>();
+            if (jointCollider != null) jointCollider.enabled = false;
+        }
+
+        private static void CreateVineSegment(Transform parent, Vector3 from, Vector3 to,
+            float thickness, Material material, int index)
+        {
+            Vector3 delta = to - from;
+            float segmentLength = delta.magnitude;
+            if (segmentLength <= 0.0001f) return;
+
+            GameObject segment = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            segment.name = "VineSegment" + index;
+            segment.transform.SetParent(parent, false);
+            segment.transform.localPosition = (from + to) * 0.5f;
+            segment.transform.localRotation = Quaternion.FromToRotation(Vector3.up, delta.normalized);
+            // Slightly irregular thickness segment-to-segment reads as organic vine surface
+            // instead of a uniform machined pole.
+            float segmentThickness = thickness * Random.Range(0.82f, 1.18f);
+            segment.transform.localScale = new Vector3(segmentThickness, segmentLength * 0.5f, segmentThickness);
+            segment.GetComponent<Renderer>().sharedMaterial = material;
+            Collider collider = segment.GetComponent<Collider>();
+            if (collider != null) collider.enabled = false;
         }
 
         private void ConfigureSwing(Transform pivot)

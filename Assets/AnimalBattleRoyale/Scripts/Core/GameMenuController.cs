@@ -168,7 +168,11 @@ namespace AnimalBattleRoyale
             GUI.depth = -1000;
             EnsureStyles();
 
-            float scale = Mathf.Clamp(Mathf.Min(Screen.width / 1280f, Screen.height / 720f), 0.72f, 1.18f);
+            // Same reference-size scaling as BattleRoyaleManager's HUD (kept in sync so the
+            // menu and the HUD grow together) — 1.18 used to cap this well before it matched
+            // large/high-DPI screens, making the pause menu read as tiny relative to the
+            // inflated virtual canvas behind it.
+            float scale = Mathf.Clamp(Mathf.Min(Screen.width / 1280f, Screen.height / 720f), 0.72f, 2.4f);
             float width = Screen.width / scale;
             float height = Screen.height / scale;
             Matrix4x4 previousMatrix = GUI.matrix;
@@ -177,7 +181,7 @@ namespace AnimalBattleRoyale
             if (inGame && page == MenuPage.Closed
                        && (BattleRoyaleManager.Instance == null || !BattleRoyaleManager.Instance.MatchFinished))
             {
-                DrawHamburgerButton();
+                DrawHamburgerButton(width);
             }
 
             if (page != MenuPage.Closed)
@@ -195,9 +199,9 @@ namespace AnimalBattleRoyale
             GUI.matrix = previousMatrix;
         }
 
-        private void DrawHamburgerButton()
+        private void DrawHamburgerButton(float viewWidth)
         {
-            Rect button = new Rect(20f, 126f, 104f, 40f);
+            Rect button = new Rect(viewWidth - 20f - 104f, 20f, 104f, 40f);
             RuntimeGuiTheme.DrawPanel(button, new Color(0.025f, 0.05f, 0.052f, 0.95f),
                 new Color(0.3f, 0.76f, 0.56f, 1f), 1f);
             Color previous = GUI.color;

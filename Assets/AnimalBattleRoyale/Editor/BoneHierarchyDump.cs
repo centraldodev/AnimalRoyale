@@ -11,6 +11,18 @@ namespace AnimalBattleRoyale.EditorTools
         [MenuItem("AnimalBattleRoyale/Debug/Dump Tiger Bone Hierarchy")]
         public static void DumpTiger() => Dump("Tiger");
 
+        [MenuItem("AnimalBattleRoyale/Debug/Dump Ant Bone Hierarchy")]
+        public static void DumpAnt() => Dump("Ant");
+
+        [MenuItem("AnimalBattleRoyale/Debug/Dump Eagle Bone Hierarchy")]
+        public static void DumpEagle() => Dump("Eagle");
+
+        [MenuItem("AnimalBattleRoyale/Debug/Dump Monkey Bone Hierarchy")]
+        public static void DumpMonkey() => Dump("Monkey");
+
+        [MenuItem("AnimalBattleRoyale/Debug/Dump Cow Bone Hierarchy")]
+        public static void DumpCow() => Dump("Cow");
+
         private static void Dump(string animal)
         {
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(

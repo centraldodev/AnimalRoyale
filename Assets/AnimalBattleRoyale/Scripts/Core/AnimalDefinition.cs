@@ -60,7 +60,7 @@ namespace AnimalBattleRoyale
             {
                 AnimalType.Tiger => new AnimalStats(
                     "Tigre", new[] { "Bote Certeiro", "DESATIVADO", "DESATIVADO" },
-                    100f, 6.1f, 9.0f, 6.2f, 22.5f, 2.0f, 0.9f, new[] { 7f, 0f, 0f }, 0.62f, 1.45f,
+                    100f, 6.1f, 9.0f, 6.2f, 22.5f, 2.0f, 0.9f, new[] { 8f, 0f, 0f }, 0.62f, 1.45f,
                     Vector3.one * 0.78f, new Color(0.95f, 0.42f, 0.08f)),
 
                 AnimalType.Ant => new AnimalStats(
@@ -80,7 +80,7 @@ namespace AnimalBattleRoyale
 
                 AnimalType.Cow => new AnimalStats(
                     "Vaca", new[] { "Investida", "DESATIVADO", "DESATIVADO" },
-                    100f, 5.8f, 8.4f, 5.8f, 24f, 2.1f, 0.95f, new[] { 12f, 0f, 0f }, 0.68f, 1.55f,
+                    100f, 5.8f, 8.4f, 5.8f, 24f, 2.1f, 0.95f, new[] { 8f, 0f, 0f }, 0.68f, 1.55f,
                     Vector3.one * 0.85f, new Color(0.68f, 0.5f, 0.32f)),
 
                 _ => throw new System.ArgumentOutOfRangeException(nameof(type), type, null)

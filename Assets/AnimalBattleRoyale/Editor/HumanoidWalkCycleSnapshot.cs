@@ -21,6 +21,18 @@ namespace AnimalBattleRoyale.EditorTools
         [MenuItem("AnimalBattleRoyale/Debug/Capture Tiger Jump Sequence")]
         public static void CaptureTigerJump() => Capture("Tiger", "Mixamo_Jump.fbx", "jump", 6);
 
+        [MenuItem("AnimalBattleRoyale/Debug/Capture Ant Run Cycle")]
+        public static void CaptureAntRun() => Capture("Ant", "Mixamo_Run.fbx", "run");
+
+        [MenuItem("AnimalBattleRoyale/Debug/Capture Monkey Run Cycle")]
+        public static void CaptureMonkeyRun() => Capture("Monkey", "Mixamo_Run.fbx", "run");
+
+        [MenuItem("AnimalBattleRoyale/Debug/Capture Cow Run Cycle")]
+        public static void CaptureCowRun() => Capture("Cow", "Mixamo_Run.fbx", "run");
+
+        [MenuItem("AnimalBattleRoyale/Debug/Capture Eagle Run Cycle")]
+        public static void CaptureEagleRun() => Capture("Eagle", "Mixamo_Run.fbx", "run", 6);
+
         private static void Capture(string animal, string clipFileName, string tag, int frameCount = 4)
         {
             GameObject root = new GameObject("WalkCycleTestRoot");
