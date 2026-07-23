@@ -14,15 +14,16 @@ namespace AnimalBattleRoyale
         [SerializeField] private float rotationSpeed = 14f;
         [SerializeField] private float gravity = -24f;
 
-        private const int SeedMaxAmmo = 120;
-        private const int SeedMagazineCapacity = 30;
-        private const int TomatoMaxAmmo = 60;
-        private const int TomatoMagazineCapacity = 10;
+        // Seed ("nozes") is the precision one-shot-then-reload sniper slot — small reserve,
+        // one round per magazine on purpose (see FireRateMultiplierFor/reload flow).
+        private const int SeedMaxAmmo = 20;
+        private const int SeedMagazineCapacity = 1;
+        // Tomato is now the primary sustained-fire weapon.
+        private const int TomatoMaxAmmo = 90;
+        private const int TomatoMagazineCapacity = 12;
         private const int WatermelonMaxAmmo = 30;
         private const int WatermelonMagazineCapacity = 5;
         private const float DefeatedCleanupDelay = 1.5f;
-        public const int CrystalsPerWeaponLevel = 5;
-        public const int MaxWeaponLevel = 3;
 
         private readonly Collider[] combatHits = new Collider[64];
         private readonly RaycastHit[] rangedAimHits = new RaycastHit[24];
@@ -59,13 +60,14 @@ namespace AnimalBattleRoyale
         private float abilitySlow;
         private Vector3 dashDirection;
         private Color abilityColor;
-        private readonly int[] weaponReserveAmmo = { SeedMaxAmmo, 0, 0 };
-        private readonly int[] weaponMagazineAmmo = { SeedMagazineCapacity, 0, 0 };
-        private WeaponAmmoType selectedWeapon = WeaponAmmoType.Seed;
+        // All three weapons are available from the start now (no crystal-unlock gate) —
+        // tomato (the primary) starts loaded, nozes/watermelon start empty and are found via
+        // their own dedicated pickups scattered on the map.
+        private readonly int[] weaponReserveAmmo = { 0, TomatoMaxAmmo, 0 };
+        private readonly int[] weaponMagazineAmmo = { 0, TomatoMagazineCapacity, 0 };
+        private WeaponAmmoType selectedWeapon = WeaponAmmoType.Tomato;
         private bool rangedReloading;
         private float rangedReloadEndsAt;
-        private int weaponLevel = 1;
-        private int weaponCrystalProgress;
         private int lastPowerSlot = -1;
         private bool defeated;
         private bool eliminated;
@@ -78,6 +80,7 @@ namespace AnimalBattleRoyale
         private Transform heldVine;
         private Transform targetVine;
         private bool hangingVine;
+        private bool isAiming;
         private bool vineLeaping;
         private bool cowCharging;
         private int vinesVisitedInChain;
@@ -109,7 +112,7 @@ namespace AnimalBattleRoyale
         public const int MaxLives = 3;
         private const float SpawnProtectionSeconds = 2.5f;
 
-        public const int MaxVinesPerChain = 5;
+        public const int MaxVinesPerChain = 4;
         private const float VineLeapSpeed = 22f;
         private const float VineLaunchForward = 15f;
         private const float VineLaunchUp = 9f;
@@ -135,6 +138,7 @@ namespace AnimalBattleRoyale
         public int LivesRemaining => livesRemaining;
         public bool IsSpawnProtected => Time.time < spawnProtectedUntil;
         public bool IsFlying => Time.time < flyingUntil;
+        public bool IsAiming => isAiming;
         public float GlideSecondsRemaining => Mathf.Max(0f, flyingUntil - Time.time);
         public bool IsBurrowed => burrowed;
         public bool IsNetworkProxy => networkProxy;
@@ -177,20 +181,18 @@ namespace AnimalBattleRoyale
             : 0f;
         public int MaxRangedAmmoValue => MaxAmmoFor(CurrentWeaponAmmo);
         public bool NeedsRangedAmmo => SelectedReserveAmmo < MaxAmmoFor(CurrentWeaponAmmo);
-        public RangedSupplyKind CompatibleRangedSupply => RangedSupplyKind.NaturalAmmo;
-        public int WeaponLevel => weaponLevel;
-        public int WeaponCrystalProgress => weaponCrystalProgress;
-        public bool CanUpgradeWeapon => weaponLevel < MaxWeaponLevel;
         public WeaponAmmoType CurrentWeaponAmmo => selectedWeapon;
         public int SelectedWeaponSlot => (int)selectedWeapon;
 
-        /// <summary>A weapon is unlocked once enough weapon crystals raised the level to reach its slot.</summary>
-        public bool IsWeaponUnlocked(WeaponAmmoType weapon) => (int)weapon <= weaponLevel - 1;
+        /// <summary>Backpack reserve for a given ammo type, regardless of which one is
+        /// currently equipped — used by the HUD to show what's been collected of each.</summary>
+        public int ReserveAmmoFor(WeaponAmmoType weapon) => weaponReserveAmmo[(int)weapon];
 
-        /// <summary>Switches the active weapon among the ones already unlocked. Returns false if locked.</summary>
+        /// <summary>Switches the active weapon — all three are always available, the only
+        /// thing that gates firing is whether you're actually carrying ammo for it.</summary>
         public bool TrySelectWeapon(WeaponAmmoType weapon)
         {
-            if (!IsWeaponUnlocked(weapon) || selectedWeapon == weapon) return false;
+            if (selectedWeapon == weapon) return false;
             selectedWeapon = weapon;
             rangedReloading = false;
             rangedReloadEndsAt = 0f;
@@ -198,12 +200,25 @@ namespace AnimalBattleRoyale
             return true;
         }
 
-        // Tomato fire rate is half of the seed launcher's; watermelon is a third of the tomato's.
+        // Tomato (primary) targets ~3 shots/sec at the default 7 shots/sec base — was too fast
+        // at the old 0.5 multiplier (3.5/s). Watermelon is unchanged. Seed ("nozes") doesn't
+        // really have a "rate" since its 1-round magazine forces a reload after every shot —
+        // multiplier left at 1 just means the single shot fires the instant you click.
         private static float FireRateMultiplierFor(WeaponAmmoType ammoType) => ammoType switch
         {
-            WeaponAmmoType.Tomato => 0.5f,
+            WeaponAmmoType.Tomato => 3f / 7f,
             WeaponAmmoType.Watermelon => 0.5f / 3f,
             _ => 1f
+        };
+
+        // Nozes ("quase instantâneo" — a precision weapon you have to aim to land) is much
+        // faster than the base speed; tomato ("pistola mais fraca") is a bit above it;
+        // watermelon ("escopeta") stays at the unmultiplied base.
+        public static float ProjectileSpeedMultiplierFor(WeaponAmmoType ammoType) => ammoType switch
+        {
+            WeaponAmmoType.Tomato => 1.2f,
+            WeaponAmmoType.Watermelon => 1f,
+            _ => 4.5f
         };
 
         private static int MagazineCapacityFor(WeaponAmmoType ammoType) => ammoType switch
@@ -223,7 +238,7 @@ namespace AnimalBattleRoyale
         {
             WeaponAmmoType.Tomato => "TOMATE",
             WeaponAmmoType.Watermelon => "MELANCIA",
-            _ => "SEMENTE"
+            _ => "NOZES"
         };
 
         public static Color ColorForWeapon(WeaponAmmoType weapon) => weapon switch
@@ -452,17 +467,18 @@ namespace AnimalBattleRoyale
         }
 
         public void ApplyNetworkSnapshot(Vector3 position, Quaternion rotation, float replicatedHealth, int replicatedLives,
-            int replicatedAmmo, int replicatedMagazineAmmo, int replicatedWeaponLevel,
-            int replicatedCrystalProgress, int replicatedSelectedWeapon, bool replicatedEliminated, bool applyTransform)
+            int replicatedNozesAmmo, int replicatedTomatoAmmo, int replicatedWatermelonAmmo, int replicatedMagazineAmmo,
+            int replicatedSelectedWeapon, bool replicatedEliminated, bool applyTransform)
         {
             livesRemaining = Mathf.Clamp(replicatedLives, 0, MaxLives);
-            weaponLevel = Mathf.Clamp(replicatedWeaponLevel, 1, MaxWeaponLevel);
-            selectedWeapon = (WeaponAmmoType)Mathf.Clamp(replicatedSelectedWeapon, 0, weaponLevel - 1);
-            SelectedReserveAmmo = Mathf.Clamp(replicatedAmmo, 0, MaxAmmoFor(CurrentWeaponAmmo));
+            selectedWeapon = (WeaponAmmoType)Mathf.Clamp(replicatedSelectedWeapon, 0, 2);
+            // All three ammo types replicate independently now (no more single "current
+            // weapon ammo" value) so switching weapons on a remote fighter shows the right
+            // backpack counts instead of a stale/zeroed reserve.
+            weaponReserveAmmo[(int)WeaponAmmoType.Seed] = Mathf.Clamp(replicatedNozesAmmo, 0, MaxAmmoFor(WeaponAmmoType.Seed));
+            weaponReserveAmmo[(int)WeaponAmmoType.Tomato] = Mathf.Clamp(replicatedTomatoAmmo, 0, MaxAmmoFor(WeaponAmmoType.Tomato));
+            weaponReserveAmmo[(int)WeaponAmmoType.Watermelon] = Mathf.Clamp(replicatedWatermelonAmmo, 0, MaxAmmoFor(WeaponAmmoType.Watermelon));
             SelectedMagazineAmmo = Mathf.Clamp(replicatedMagazineAmmo, 0, Mathf.Min(MagazineCapacityFor(CurrentWeaponAmmo), SelectedReserveAmmo));
-            weaponCrystalProgress = weaponLevel >= MaxWeaponLevel
-                ? 0
-                : Mathf.Clamp(replicatedCrystalProgress, 0, CrystalsPerWeaponLevel - 1);
             health?.ApplyReplicatedState(replicatedHealth);
             eliminated = replicatedEliminated;
             defeated = replicatedEliminated;
@@ -488,7 +504,7 @@ namespace AnimalBattleRoyale
                     TryUsePower(0, actionDirection);
                     break;
                 case OnlineActionType.Consume:
-                    if (!WeaponUpgradeCrystal.TryCollectNearest(this) && !RangedAmmoPickup.TryCollectNearest(this))
+                    if (!RangedAmmoPickup.TryCollectNearest(this))
                         FoodPickup.TryConsumeNearest(this);
                     break;
                 case OnlineActionType.SelectWeapon:
@@ -536,6 +552,7 @@ namespace AnimalBattleRoyale
             EnsureRuntimeReferences();
             vineLeaping = false;
             hangingVine = false;
+            VineAnchor.DestroyThrown(heldVine);
             heldVine = null;
             targetVine = null;
             vinesVisitedInChain = 0;
@@ -547,18 +564,16 @@ namespace AnimalBattleRoyale
             characterController.skinWidth = 0.04f;
             Transform visualRoot = AnimalVisualFactory.Build(transform, type, stats.MainColor, stats.VisualScale);
             visualMotion = visualRoot != null ? visualRoot.GetComponent<AnimalVisualMotion>() : null;
-            weaponLevel = 1;
-            selectedWeapon = WeaponAmmoType.Seed;
+            selectedWeapon = WeaponAmmoType.Tomato;
             for (int slot = 0; slot < weaponReserveAmmo.Length; slot++)
             {
                 weaponReserveAmmo[slot] = 0;
                 weaponMagazineAmmo[slot] = 0;
             }
-            weaponReserveAmmo[(int)WeaponAmmoType.Seed] = SeedMaxAmmo;
-            weaponMagazineAmmo[(int)WeaponAmmoType.Seed] = SeedMagazineCapacity;
+            weaponReserveAmmo[(int)WeaponAmmoType.Tomato] = TomatoMaxAmmo;
+            weaponMagazineAmmo[(int)WeaponAmmoType.Tomato] = TomatoMagazineCapacity;
             rangedReloading = false;
             rangedReloadEndsAt = 0f;
-            weaponCrystalProgress = 0;
             health.Initialize(stats.MaxHealth, this);
             if (!refillHealth) health.ReconfigureMaxHealth(stats.MaxHealth, false);
         }
@@ -594,7 +609,11 @@ namespace AnimalBattleRoyale
         {
             Vector2 rawInput = GameInput.ReadMovement();
             Vector3 movement = GetCameraRelativeDirection(rawInput);
-            bool sprint = GameSettings.AutomaticSprint || GameInput.SprintHeld();
+            // Precision aim only makes sense with the long-range "nozes" ammo — holding RMB
+            // with tomato/watermelon selected does nothing.
+            isAiming = GameInput.AimHeld() && CurrentWeaponAmmo == WeaponAmmoType.Seed;
+            if (cameraTransform != null) cameraTransform.GetComponent<ThirdPersonCamera>()?.SetAiming(isAiming);
+            bool sprint = !isAiming && (GameSettings.AutomaticSprint || GameInput.SprintHeld());
             SimulateMovement(movement, sprint, GameInput.JumpPressed(), rawInput, useStrafing: true);
             bool rangedAttackRequested = GameSettings.RangedFireMode == RangedFireMode.Automatic
                 ? GameInput.RangedAttackHeld()
@@ -623,7 +642,7 @@ namespace AnimalBattleRoyale
                 online?.ReportAction(OnlineActionType.Consume, transform.forward);
                 if (online == null || !online.UsesRemoteAuthority)
                 {
-                    if (!WeaponUpgradeCrystal.TryCollectNearest(this) && !RangedAmmoPickup.TryCollectNearest(this))
+                    if (!RangedAmmoPickup.TryCollectNearest(this))
                         FoodPickup.TryConsumeNearest(this);
                 }
             }
@@ -641,12 +660,13 @@ namespace AnimalBattleRoyale
             }
         }
 
-        /// <summary>Cycles among the weapons unlocked so far; +1 = next, -1 = previous, wrapping around.</summary>
+        private const int WeaponTypeCount = 3;
+
+        /// <summary>Cycles among all three weapons; +1 = next, -1 = previous, wrapping around.</summary>
         private bool TryCycleWeapon(int direction)
         {
-            if (weaponLevel <= 1) return false;
             int current = (int)selectedWeapon;
-            int next = ((current + direction) % weaponLevel + weaponLevel) % weaponLevel;
+            int next = ((current + direction) % WeaponTypeCount + WeaponTypeCount) % WeaponTypeCount;
             return TrySelectWeapon((WeaponAmmoType)next);
         }
 
@@ -676,6 +696,13 @@ namespace AnimalBattleRoyale
             // only genuine forward input (W) turns the body and can run. Flight steers freely.
             bool hasForwardInput = !useStrafing || IsFlying || rawInput.y > 0.05f;
             sprint = sprint && hasForwardInput;
+
+            // Backpedaling/strafing covered as much ground per step as running forward, which
+            // read as too large — those two axes are now scaled down independently before
+            // being blended into a single world-space direction. Forward also no longer snaps
+            // straight to full speed the instant W is pressed; it ramps up from a lower
+            // starting fraction over ForwardAccelerationTime instead.
+            if (useStrafing && !IsFlying) direction = ApplyDirectionalSpeedShaping(direction, rawInput);
 
             bool grounded = characterController.isGrounded;
             if (grounded && !wasGroundedForLandingSfx) CombatFeedback.PlayJump(transform.position);
@@ -764,6 +791,7 @@ namespace AnimalBattleRoyale
             }
 
             float speed = sprint ? stats.SprintSpeed : stats.MoveSpeed;
+            if (isAiming) speed *= AimMovementSpeedMultiplier;
             if (Time.time < slowUntil) speed *= slowMultiplier;
             if (gliding) speed *= ServerGameTuning.EagleFlySpeedBonus;
             if (swimming) speed *= 0.72f;
@@ -833,6 +861,36 @@ namespace AnimalBattleRoyale
             return Vector3.ClampMagnitude(forward.normalized * input.y + right.normalized * input.x, 1f);
         }
 
+        // Time to reach full forward speed from a standstill once W is held, and the fraction
+        // of full speed available the instant it's first pressed (ramps linearly from there to
+        // 1x). Strafe (A/D) and backpedal (S) are simple flat multipliers — no ramp requested
+        // for those, just a smaller step.
+        private const float ForwardAccelerationTime = 0.45f;
+        private const float ForwardStartSpeedFraction = 0.45f;
+        private const float LateralSpeedMultiplier = 0.5f;
+        private const float BackwardSpeedMultiplier = 0.5f;
+        // Precision-aim (RMB, nozes ammo) plants your feet more like a real sniper stance.
+        private const float AimMovementSpeedMultiplier = 0.4f;
+        private float forwardSpeedBlend;
+
+        private Vector3 ApplyDirectionalSpeedShaping(Vector3 fallbackDirection, Vector2 rawInput)
+        {
+            bool forwardHeld = rawInput.y > 0.05f;
+            forwardSpeedBlend = Mathf.MoveTowards(forwardSpeedBlend, forwardHeld ? 1f : 0f,
+                Time.deltaTime / ForwardAccelerationTime);
+            float forwardAccelMultiplier = Mathf.Lerp(ForwardStartSpeedFraction, 1f, forwardSpeedBlend);
+
+            float forwardScale = rawInput.y >= 0f ? forwardAccelMultiplier : BackwardSpeedMultiplier;
+            Vector2 scaledInput = new Vector2(rawInput.x * LateralSpeedMultiplier, rawInput.y * forwardScale);
+
+            if (cameraTransform == null) return fallbackDirection;
+            Vector3 forward = cameraTransform.forward;
+            Vector3 right = cameraTransform.right;
+            forward.y = 0f;
+            right.y = 0f;
+            return Vector3.ClampMagnitude(forward.normalized * scaledInput.y + right.normalized * scaledInput.x, 1f);
+        }
+
         private Vector3 GetAttackDirection(Vector3 movementDirection) => movementDirection.sqrMagnitude > 0.01f
             ? movementDirection.normalized : transform.forward;
 
@@ -867,8 +925,22 @@ namespace AnimalBattleRoyale
             return cameraTransform != null && cameraTransform.GetComponent<Camera>() != null;
         }
 
+        public bool TryGetWeaponMuzzle(out Vector3 position, out Quaternion rotation)
+        {
+            if (visualMotion != null) return visualMotion.TryGetWeaponMuzzle(out position, out rotation);
+            position = default;
+            rotation = default;
+            return false;
+        }
+
+
+        // Re-enabled now that the new animal models (weapon built into the hand/back mesh)
+        // and their muzzle sockets are wired up (see AnimalVisualFactory.AttachWeaponMuzzle).
+        private const bool RangedCombatEnabled = true;
+
         private bool TryRangedAttack(Vector3 direction)
         {
+            if (!RangedCombatEnabled) return false;
             if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return false;
             UpdateRangedReload();
             if (rangedReloading || SelectedReserveAmmo <= 0) return false;
@@ -994,9 +1066,10 @@ namespace AnimalBattleRoyale
                     AttackVfx.CreateBurst(transform.position + Vector3.up * 0.4f, new Color(0.85f, 0.8f, 0.66f), 1.8f);
                     break;
                 case AnimalType.Monkey:
-                    // The first Q starts the chain; additional Q presses can visit up to five vines.
+                    // The first Q throws a vine at whatever tree is aimed at (Spider-Man
+                    // style grappling); additional Q presses can chain up to four trees total.
                     bool wasHangingVine = hangingVine;
-                    if (!VineAnchor.TryUseNearest(this, direction) && !wasHangingVine)
+                    if (!VineAnchor.TryThrowVine(this) && !wasHangingVine)
                     {
                         verticalVelocity.y = 9f;
                         extraVelocity += new Vector3(direction.x, 0f, direction.z).normalized * 9f;
@@ -1219,6 +1292,7 @@ namespace AnimalBattleRoyale
             cowCharging = false;
             vineLeaping = false;
             hangingVine = false;
+            VineAnchor.DestroyThrown(heldVine);
             heldVine = null;
             targetVine = null;
             vinesVisitedInChain = 0;
@@ -1228,36 +1302,18 @@ namespace AnimalBattleRoyale
             extraVelocity = flatDirection * horizontalSpeed;
         }
 
-        public bool TryRefillRangedAmmo(RangedSupplyKind supplyKind, int amount)
+        /// <summary>Fills the reserve for whichever ammo type the pickup was, regardless of
+        /// what's currently equipped — matches a dedicated per-type pickup instead of the old
+        /// "refills whatever you're holding" generic supply.</summary>
+        public bool TryRefillRangedAmmo(WeaponAmmoType type, int amount)
         {
-            if (defeated || health == null || health.IsDead || supplyKind != CompatibleRangedSupply || amount <= 0 || !NeedsRangedAmmo) return false;
-            SelectedReserveAmmo = Mathf.Min(MaxAmmoFor(CurrentWeaponAmmo), SelectedReserveAmmo + amount);
-            if (SelectedMagazineAmmo <= 0) BeginRangedReload();
+            if (defeated || health == null || health.IsDead || amount <= 0) return false;
+            int max = MaxAmmoFor(type);
+            int current = weaponReserveAmmo[(int)type];
+            if (current >= max) return false;
+            weaponReserveAmmo[(int)type] = Mathf.Min(max, current + amount);
+            if (type == CurrentWeaponAmmo && SelectedMagazineAmmo <= 0) BeginRangedReload();
             AttackVfx.CreateBurst(transform.position + Vector3.up * 0.6f, new Color(1f, 0.76f, 0.18f), 1.25f);
-            return true;
-        }
-
-        public bool TryCollectWeaponCrystal()
-        {
-            if (defeated || health == null || health.IsDead || !CanUpgradeWeapon) return false;
-
-            weaponCrystalProgress++;
-            bool upgraded = weaponCrystalProgress >= CrystalsPerWeaponLevel;
-            if (upgraded)
-            {
-                weaponLevel = Mathf.Min(MaxWeaponLevel, weaponLevel + 1);
-                weaponCrystalProgress = 0;
-                // The newly unlocked weapon comes with a full clip and reserve, ready to select.
-                int newSlot = weaponLevel - 1;
-                weaponReserveAmmo[newSlot] = MaxAmmoFor((WeaponAmmoType)newSlot);
-                weaponMagazineAmmo[newSlot] = MagazineCapacityFor((WeaponAmmoType)newSlot);
-            }
-
-            Color crystalColor = upgraded
-                ? new Color(0.18f, 1f, 0.95f)
-                : new Color(0.08f, 0.78f, 1f);
-            AttackVfx.CreateBurst(transform.position + Vector3.up * 0.75f, crystalColor, upgraded ? 2.8f : 1.45f);
-            BattleRoyaleManager.Instance?.NotifyWeaponCrystalCollected(this, upgraded);
             return true;
         }
 
@@ -1294,6 +1350,9 @@ namespace AnimalBattleRoyale
             vineLeapArcHeight = Mathf.Clamp(distance * 0.16f, 0.8f, 2.2f);
             vineLeaping = true;
             hangingVine = false;
+            // Leaving this vine for good (either chaining onward or this is the very first
+            // grab, where heldVine is already null) — tear down the one we're leaving.
+            VineAnchor.DestroyThrown(heldVine);
             heldVine = null;
             flyingUntil = 0f;
             verticalVelocity = Vector3.zero;
@@ -1348,6 +1407,7 @@ namespace AnimalBattleRoyale
             VineAnchor vineAnchor = heldVine != null ? heldVine.GetComponent<VineAnchor>() : null;
             Vector3 carriedSwingVelocity = vineAnchor != null ? vineAnchor.SwingVelocity : Vector3.zero;
             hangingVine = false;
+            VineAnchor.DestroyThrown(heldVine);
             heldVine = null;
             targetVine = null;
             vinesVisitedInChain = 0;
@@ -1408,6 +1468,7 @@ namespace AnimalBattleRoyale
             flyingUntil = 0f;
             vineLeaping = false;
             hangingVine = false;
+            VineAnchor.DestroyThrown(heldVine);
             heldVine = null;
             targetVine = null;
             vinesVisitedInChain = 0;
@@ -1431,7 +1492,7 @@ namespace AnimalBattleRoyale
             foreach (Collider collider in GetComponentsInChildren<Collider>()) if (collider != null) collider.enabled = true;
 
             health.Initialize(stats.MaxHealth, this);
-            for (int slot = 0; slot < weaponLevel; slot++)
+            for (int slot = 0; slot < WeaponTypeCount; slot++)
             {
                 weaponReserveAmmo[slot] = MaxAmmoFor((WeaponAmmoType)slot);
                 weaponMagazineAmmo[slot] = MagazineCapacityFor((WeaponAmmoType)slot);

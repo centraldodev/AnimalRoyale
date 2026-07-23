@@ -4,18 +4,17 @@ using UnityEngine;
 namespace AnimalBattleRoyale.EditorTools
 {
     /// <summary>
-    /// One-off diagnostic for the user-supplied pickup/prop FBX (cura, municao, diamante3D,
-    /// TunnelHole) that aren't showing up in-game. Instantiates each Resources prefab in
-    /// edit mode, logs whether it has renderers and what their real bounds/material are,
-    /// then destroys it — so the cause (missing resource, no renderer, tiny/huge bounds,
-    /// missing material) shows up in the log without needing to press Play.
+    /// One-off diagnostic for the user-supplied pickup/prop FBX (cura, municao, TunnelHole)
+    /// that aren't showing up in-game. Instantiates each Resources prefab in edit mode, logs
+    /// whether it has renderers and what their real bounds/material are, then destroys it —
+    /// so the cause (missing resource, no renderer, tiny/huge bounds, missing material) shows
+    /// up in the log without needing to press Play.
     /// </summary>
     [InitializeOnLoad]
     public static class PickupAssetDiagnostics
     {
         private static readonly string[] Paths =
         {
-            "Pickups/Diamante/diamante3D",
             "Pickups/Municao/municao",
             "Pickups/Cura/cura",
             "Environment/TunnelHole",
@@ -61,9 +60,8 @@ namespace AnimalBattleRoyale.EditorTools
                 Object.DestroyImmediate(instance);
             }
 
-            DiagnoseLive("Diamante", WeaponUpgradeCrystal.Create(Vector3.zero).gameObject);
             DiagnoseLive("Cura", FoodPickup.Create(Vector3.zero, FoodKind.Fruit).gameObject);
-            DiagnoseLive("Municao", RangedAmmoPickup.Create(Vector3.zero, RangedSupplyKind.NaturalAmmo).gameObject);
+            DiagnoseLive("Municao", RangedAmmoPickup.Create(Vector3.zero, WeaponAmmoType.Tomato).gameObject);
             DiagnoseLive("TunnelEntrance", AntTunnelEntrance.Create(Vector3.zero,
                 new Material(ShaderLibrary.Lit), new Material(ShaderLibrary.Lit)).gameObject);
         }

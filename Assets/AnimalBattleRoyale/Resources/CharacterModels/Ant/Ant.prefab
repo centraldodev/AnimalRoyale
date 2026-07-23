@@ -42,27 +42,27 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: m_LocalScale.x
-      value: 1.9267602
+      value: 1.9425509
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: m_LocalScale.y
-      value: 1.9267602
+      value: 1.9425509
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: m_LocalScale.z
-      value: 1.9267602
+      value: 1.9425509
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -0.028297063
+      value: 0.04241649
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.07418895
+      value: 0.04923457
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0.027511656
+      value: 0.021107666
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: m_LocalRotation.w
@@ -96,19 +96,19 @@ PrefabInstance:
       propertyPath: m_Name
       value: Ant3DModel
       objectReference: {fileID: 0}
-    - target: {fileID: 9059370780945500881, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
+    - target: {fileID: 7086987331123917605, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: m_AABB.m_Extent.x
-      value: 0.42995977
+      value: 0.41870335
       objectReference: {fileID: 0}
-    - target: {fileID: 9059370780945500881, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
+    - target: {fileID: 7086987331123917605, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: m_AABB.m_Extent.y
-      value: 0.39149842
+      value: 0.5950168
       objectReference: {fileID: 0}
-    - target: {fileID: 9059370780945500881, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
+    - target: {fileID: 7086987331123917605, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: m_AABB.m_Extent.z
-      value: 0.70065784
+      value: 0.6949623
       objectReference: {fileID: 0}
-    - target: {fileID: 9059370780945500881, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
+    - target: {fileID: 7086987331123917605, guid: 1d556778723a4407bb0a373a8960eca0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 032a490a12bba4b5f9d5fa0631ce0c7b, type: 2}

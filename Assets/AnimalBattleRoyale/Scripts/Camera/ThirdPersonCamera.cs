@@ -13,11 +13,32 @@ namespace AnimalBattleRoyale
         [SerializeField] private float collisionRadius = 0.25f;
         [SerializeField] private float minPitch = -90f;
         [SerializeField] private float maxPitch = 70f;
+        [SerializeField] private float baseVerticalFov = 58f;
 
+        // Tuned against 16:9. Unity's Camera.fieldOfView is the VERTICAL fov, so on a
+        // narrower/smaller window the horizontal fov shrinks and everything reads as more
+        // "zoomed in" — most noticeably the shoulder weapon, since it sits much closer to the
+        // camera than the rest of the character and near objects are far more sensitive to
+        // fov changes than distant ones. Below the reference aspect we widen the vertical fov
+        // to hold the horizontal fov constant (Hor+); at/above it we leave it alone, so 16:9
+        // and wider behave exactly as before.
+        private const float ReferenceAspect = 16f / 9f;
+
+        // Precision-aim zoom (right mouse button, nozes ammo) — fraction of the base FOV at
+        // full zoom, and how fast the blend moves toward the target each second.
+        private const float AimZoomFovFraction = 0.42f;
+        private const float AimZoomBlendSpeed = 7f;
+
+        private Camera cachedCamera;
         private float yaw;
         private float pitch = 18f;
         private Vector3 smoothVelocity;
         private readonly RaycastHit[] collisionHits = new RaycastHit[32];
+        private bool aiming;
+        private float aimZoomBlend;
+
+        public bool IsAiming => aiming;
+        public float AimZoomBlend01 => aimZoomBlend;
 
         public Transform Target => target;
         // Aim follows the exact center ray of the rendered camera.
@@ -25,6 +46,7 @@ namespace AnimalBattleRoyale
 
         private void Start()
         {
+            cachedCamera = GetComponent<Camera>();
             yaw = transform.eulerAngles.y;
             bool resultScreenOpen = BattleRoyaleManager.Instance != null
                                     && BattleRoyaleManager.Instance.MatchFinished;
@@ -34,6 +56,8 @@ namespace AnimalBattleRoyale
         private void LateUpdate()
         {
             if (target == null) return;
+
+            ApplyAspectCorrectedFov();
 
             bool resultScreenOpen = BattleRoyaleManager.Instance != null
                                     && BattleRoyaleManager.Instance.MatchFinished;
@@ -72,6 +96,29 @@ namespace AnimalBattleRoyale
         public void SetTarget(Transform newTarget)
         {
             target = newTarget;
+        }
+
+        /// <summary>Held state for the precision-aim zoom — set every frame by whoever owns
+        /// input (ThirdPersonAnimalController), since only it knows the current ammo type.</summary>
+        public void SetAiming(bool value) => aiming = value;
+
+        private void ApplyAspectCorrectedFov()
+        {
+            if (cachedCamera == null) return;
+            aimZoomBlend = Mathf.MoveTowards(aimZoomBlend, aiming ? 1f : 0f, Time.deltaTime * AimZoomBlendSpeed);
+            float zoomedVerticalFov = baseVerticalFov * Mathf.Lerp(1f, AimZoomFovFraction, aimZoomBlend);
+
+            float aspect = cachedCamera.aspect;
+            if (aspect >= ReferenceAspect)
+            {
+                cachedCamera.fieldOfView = zoomedVerticalFov;
+                return;
+            }
+
+            float halfVerticalReference = zoomedVerticalFov * 0.5f * Mathf.Deg2Rad;
+            float halfHorizontalReference = Mathf.Atan(Mathf.Tan(halfVerticalReference) * ReferenceAspect);
+            float halfVerticalForAspect = Mathf.Atan(Mathf.Tan(halfHorizontalReference) / aspect);
+            cachedCamera.fieldOfView = halfVerticalForAspect * 2f * Mathf.Rad2Deg;
         }
 
         private Vector3 ResolveCollision(Vector3 origin, Vector3 desiredPosition)

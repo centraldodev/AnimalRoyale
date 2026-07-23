@@ -68,6 +68,7 @@ namespace AnimalBattleRoyale
         public static bool JumpHeld => ControlsEnabled && instance.jumpHeld;
         public static bool ConsumePressed => ControlsEnabled && instance.consumePressed;
         public static bool SprintHeld => false;
+        public static bool AimHeld => false;
 
         public static void EnsureExists()
         {

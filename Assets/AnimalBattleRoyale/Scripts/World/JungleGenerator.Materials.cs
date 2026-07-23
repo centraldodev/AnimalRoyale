@@ -332,9 +332,11 @@ namespace AnimalBattleRoyale
                 }
                 renderer.sharedMaterials = enhanced;
 
-                string rendererName = renderer.name.ToLowerInvariant();
-                bool foliage = rendererName.Contains("leaf") || rendererName.Contains("moss") || rendererName.Contains("petal");
-                renderer.shadowCastingMode = foliage ? ShadowCastingMode.TwoSided : ShadowCastingMode.On;
+                // TwoSided is the most expensive shadow mode (draws both faces in the shadow
+                // pass) and was applied to every leaf/moss/petal renderer on every high-detail
+                // tree — the shadow-quality gain over single-sided is imperceptible at this
+                // scale, but the draw-call cost isn't.
+                renderer.shadowCastingMode = ShadowCastingMode.On;
                 renderer.receiveShadows = true;
             }
         }

@@ -42,6 +42,22 @@ namespace AnimalBattleRoyale
         private readonly Dictionary<string, Texture2D> abilityIconCache = new Dictionary<string, Texture2D>();
         private Texture2D ammoBulletIcon;
         private Texture2D ammoReloadIcon;
+        // OnGUI can fire several times per rendered frame (Layout/Repaint/input events), and
+        // these particular labels get re-formatted on every single one of those calls even
+        // though the underlying value usually hasn't changed since the last call — each is
+        // cached and only rebuilt when its source value actually changes.
+        private float cachedHealthValue = float.NaN;
+        private float cachedHealthMax = float.NaN;
+        private string cachedHealthText = string.Empty;
+        private int cachedElapsedSeconds = -1;
+        private string cachedElapsedText = "00:00";
+        private int cachedMagazineAmmo = int.MinValue;
+        private bool cachedReloadingState;
+        private string cachedMagazineText = string.Empty;
+        private int cachedReserveAmmo = int.MinValue;
+        private string cachedReserveText = string.Empty;
+        private readonly int[] cachedAbilityCountdown = { int.MinValue, int.MinValue };
+        private readonly string[] cachedAbilityCountdownText = { string.Empty, string.Empty };
         private JungleGenerator jungle;
         public Rect WeaponSelectorScreenRect { get; private set; }
         private string resultMessage = string.Empty;
@@ -59,9 +75,6 @@ namespace AnimalBattleRoyale
         private float respawnBannerUntil;
         private int respawnBannerLives;
         private float respawnCountdownEndsAt;
-        private float weaponCrystalBannerUntil;
-        private string weaponCrystalBanner = string.Empty;
-        private Color weaponCrystalBannerColor = new Color(0.12f, 0.9f, 1f);
         private float matchStartedAt;
         private int localEliminations;
 
@@ -262,29 +275,6 @@ namespace AnimalBattleRoyale
             GUI.color = previous;
         }
 
-        public void NotifyWeaponCrystalCollected(ThirdPersonAnimalController fighter, bool upgraded)
-        {
-            if (fighter == null || fighter != LocalPlayer) return;
-            WeaponAmmoType unlockedWeapon = (WeaponAmmoType)(fighter.WeaponLevel - 1);
-            weaponCrystalBanner = upgraded
-                ? $"ARMA DESBLOQUEADA:  {ThirdPersonAnimalController.DisplayNameForWeapon(unlockedWeapon)}!  (tecla {fighter.WeaponLevel})"
-                : $"CRISTAL DE ARMA  {fighter.WeaponCrystalProgress}/{ThirdPersonAnimalController.CrystalsPerWeaponLevel}";
-            weaponCrystalBannerColor = upgraded
-                ? ThirdPersonAnimalController.ColorForWeapon(unlockedWeapon)
-                : new Color(0.12f, 0.9f, 1f);
-            weaponCrystalBannerUntil = Time.time + (upgraded ? 2.8f : 1.7f);
-        }
-
-        private void DrawWeaponCrystalBanner()
-        {
-            GUIStyle style = centeredStyle ?? resultStyle ?? GUI.skin.label;
-            Color previous = GUI.color;
-            GUI.color = new Color(weaponCrystalBannerColor.r, weaponCrystalBannerColor.g,
-                weaponCrystalBannerColor.b, 0.98f);
-            GUI.Label(new Rect(0f, viewHeight * 0.29f, viewWidth, 42f), weaponCrystalBanner, style);
-            GUI.color = previous;
-        }
-
         public void HandleFighterDisconnected(ThirdPersonAnimalController fighter)
         {
             if (fighter == null || shuttingDown || !gameObject.scene.isLoaded || !fighters.Remove(fighter)) return;
@@ -415,7 +405,6 @@ namespace AnimalBattleRoyale
             DrawWeaponSelector();
 
             if (Time.time < respawnBannerUntil) DrawRespawnBanner();
-            if (Time.time < weaponCrystalBannerUntil) DrawWeaponCrystalBanner();
 
             if (MatchFinished)
             {
@@ -544,7 +533,16 @@ namespace AnimalBattleRoyale
                 : new Color(0.08f, 0.72f, 0.46f, 0.95f);
             DrawCartoonPanel(panel, new Color(0.006f, 0.026f, 0.025f, 0.86f), panelBorder, 1f);
 
-            Rect portraitFrame = new Rect(panel.x + 7f, panel.y + 7f, 82f, 82f);
+            // Both blocks are vertically centered within the panel independently (portrait is
+            // 82 tall, the name/health/hearts column is 76 tall — close but not identical, so
+            // each gets its own centering offset rather than sharing one fixed top margin,
+            // which is what read as "pushed up" before.
+            const float portraitBlockHeight = 82f;
+            const float textBlockHeight = 76f;
+            float portraitY = panel.y + (panel.height - portraitBlockHeight) * 0.5f;
+            float textY = panel.y + (panel.height - textBlockHeight) * 0.5f;
+
+            Rect portraitFrame = new Rect(panel.x + 7f, portraitY, 82f, 82f);
             DrawSquareFrame(portraitFrame, new Color(0.03f, 0.065f, 0.055f, 1f),
                 Color.Lerp(stats.MainColor, new Color(0.2f, 1f, 0.55f), 0.42f), 2f);
             Texture portrait = GetAnimalPortrait(LocalPlayer.AnimalType);
@@ -552,12 +550,22 @@ namespace AnimalBattleRoyale
 
             float contentX = panel.x + 100f;
             float contentWidth = panel.width - 109f;
-            GUI.Label(new Rect(contentX, panel.y + 5f, contentWidth, 20f), stats.DisplayName.ToUpperInvariant(), titleStyle);
-            DrawStatBar(new Rect(contentX, panel.y + 29f, contentWidth, 22f), healthNormalized, healthTrailNormalized,
-                healthColor, "VIDA", $"{health.CurrentHealth:0} / {health.MaxHealth:0}");
-            DrawLivesHearts(new Rect(contentX, panel.y + 57f, contentWidth, 24f), LocalPlayer.LivesRemaining);
+            GUI.Label(new Rect(contentX, textY, contentWidth, 20f), stats.DisplayName.ToUpperInvariant(), titleStyle);
+            DrawStatBar(new Rect(contentX, textY + 24f, contentWidth, 22f), healthNormalized, healthTrailNormalized,
+                healthColor, "VIDA", GetHealthText(health));
+            DrawLivesHearts(new Rect(contentX, textY + 52f, contentWidth, 24f), LocalPlayer.LivesRemaining);
 
             if (healthNormalized <= 0.25f) DrawLowHealthVignette();
+        }
+
+        private string GetHealthText(Health health)
+        {
+            if (health.CurrentHealth == cachedHealthValue && health.MaxHealth == cachedHealthMax)
+                return cachedHealthText;
+            cachedHealthValue = health.CurrentHealth;
+            cachedHealthMax = health.MaxHealth;
+            cachedHealthText = $"{cachedHealthValue:0} / {cachedHealthMax:0}";
+            return cachedHealthText;
         }
 
         // A numeric "3" badge was hard to read at a glance — three hearts that empty out one
@@ -664,7 +672,11 @@ namespace AnimalBattleRoyale
         {
             float elapsed = Mathf.Max(0f, Time.time - matchStartedAt);
             int totalSeconds = Mathf.FloorToInt(elapsed);
-            string elapsedText = $"{totalSeconds / 60:00}:{totalSeconds % 60:00}";
+            if (totalSeconds != cachedElapsedSeconds)
+            {
+                cachedElapsedSeconds = totalSeconds;
+                cachedElapsedText = $"TEMPO  {totalSeconds / 60:00}:{totalSeconds % 60:00}";
+            }
             // Sits directly under the minimap now (used to float above it) — same width as
             // the map instead of the wider free-floating strip that fit above it.
             float minimapSize = Mathf.Clamp(viewHeight * 0.29f, 190f, 232f);
@@ -673,7 +685,7 @@ namespace AnimalBattleRoyale
             DrawCartoonPanel(strip, new Color(0.005f, 0.02f, 0.022f, 0.87f), new Color(0.08f, 0.22f, 0.19f, 0.9f), 1f);
 
             float cellWidth = strip.width / 3f;
-            GUI.Label(new Rect(strip.x, strip.y, cellWidth, strip.height), $"TEMPO  {elapsedText}", counterStyle);
+            GUI.Label(new Rect(strip.x, strip.y, cellWidth, strip.height), cachedElapsedText, counterStyle);
             GUI.Label(new Rect(strip.x + cellWidth, strip.y, cellWidth, strip.height), $"VIVOS  {AliveCount}", counterStyle);
             GUI.Label(new Rect(strip.x + cellWidth * 2f, strip.y, cellWidth, strip.height), $"ELIMS  {localEliminations}", counterStyle);
 
@@ -690,9 +702,12 @@ namespace AnimalBattleRoyale
         };
         private static readonly string[] WeaponSelectorKeys = { "1", "2", "3" };
 
+        // Re-enabled alongside RangedCombatEnabled in ThirdPersonAnimalController.
+        private const bool WeaponSelectorEnabled = true;
+
         private void DrawWeaponSelector()
         {
-            if (LocalPlayer == null) return;
+            if (!WeaponSelectorEnabled || LocalPlayer == null) return;
             bool mobileControls = MobileInputController.ControlsEnabled;
             float iconSize = mobileControls ? 78f : 64f;
             const float textHeight = 16f;
@@ -728,11 +743,14 @@ namespace AnimalBattleRoyale
                 (iconSize + touchPadding * 2f) * uiScale,
                 (columnHeight + touchPadding * 2f) * uiScale);
 
+            // All three are always selectable — this is now just a backpack readout (which
+            // ammo type is active, and how much of each has been collected), not an
+            // unlock/progression ladder.
+            const float sideLabelWidth = 54f;
             for (int i = 0; i < WeaponSelectorSlots.Length; i++)
             {
                 WeaponAmmoType weapon = WeaponSelectorSlots[i];
-                bool unlocked = LocalPlayer.IsWeaponUnlocked(weapon);
-                bool selected = unlocked && LocalPlayer.CurrentWeaponAmmo == weapon;
+                bool selected = LocalPlayer.CurrentWeaponAmmo == weapon;
                 float y = startY + i * (rowHeight + spacing);
                 Rect slot = new Rect(startX, y, iconSize, iconSize);
                 Rect touchSlot = mobileControls
@@ -740,12 +758,12 @@ namespace AnimalBattleRoyale
                         slot.width + touchPadding * 2f, slot.height + touchPadding * 2f)
                     : slot;
 
-                if (unlocked && !selected && GUI.Button(touchSlot, GUIContent.none, GUIStyle.none))
+                if (!selected && GUI.Button(touchSlot, GUIContent.none, GUIStyle.none))
                 {
                     SelectWeaponFromHud(weapon);
                 }
 
-                Texture icon = GetWeaponIcon(weapon, unlocked);
+                Texture icon = GetWeaponIcon(weapon, true);
                 if (icon != null)
                 {
                     Rect iconRect = selected ? new Rect(slot.x - 10f, slot.y - 10f, slot.width + 20f, slot.height + 20f) : slot;
@@ -753,43 +771,18 @@ namespace AnimalBattleRoyale
                 }
                 else
                 {
-                    Color swatchColor = unlocked
-                        ? ThirdPersonAnimalController.ColorForWeapon(weapon)
-                        : Desaturate(ThirdPersonAnimalController.ColorForWeapon(weapon), 0.92f);
-                    DrawRoundedRect(slot, swatchColor);
+                    DrawRoundedRect(slot, ThirdPersonAnimalController.ColorForWeapon(weapon));
                 }
 
-                string label;
-                Color color;
-                bool isNextUnlock = !unlocked && (int)weapon == LocalPlayer.WeaponLevel;
-                if (!unlocked)
-                {
-                    // Only the next tier in the sequence shows progress; further-out
-                    // weapons stay locked until the one before them is unlocked first.
-                    label = "BLOQUEADO";
-                    color = new Color(0.62f, 0.64f, 0.64f, 1f);
-                }
-                else
-                {
-                    label = WeaponSelectorKeys[i];
-                    color = selected ? new Color(1f, 0.92f, 0.35f, 1f) : new Color(0.4f, 0.95f, 0.6f, 1f);
-                }
+                string label = WeaponSelectorKeys[i];
+                Color color = selected ? new Color(1f, 0.92f, 0.35f, 1f) : new Color(0.4f, 0.95f, 0.6f, 1f);
+                Rect textRect = new Rect(slot.x - 8f, slot.yMax + textGap, iconSize + 16f, textHeight);
+                DrawOutlinedLabel(textRect, label, color);
 
-                if (isNextUnlock)
-                {
-                    // The crystal progress toward the next weapon reads to the left of its
-                    // icon (e.g. "1/5") instead of below it, so it stays legible right next
-                    // to the icon it unlocks rather than competing with the row below it.
-                    const float progressWidth = 54f;
-                    Rect progressRect = new Rect(slot.x - progressWidth - 6f, slot.y, progressWidth, iconSize);
-                    string progressLabel = $"{LocalPlayer.WeaponCrystalProgress}/{ThirdPersonAnimalController.CrystalsPerWeaponLevel}";
-                    DrawOutlinedLabel(progressRect, progressLabel, new Color(0.08f, 0.84f, 1f));
-                }
-                else
-                {
-                    Rect textRect = new Rect(slot.x - 8f, slot.yMax + textGap, iconSize + 16f, textHeight);
-                    DrawOutlinedLabel(textRect, label, color);
-                }
+                // "Backpack" count — how many of this ammo type are carried right now.
+                int reserve = LocalPlayer.ReserveAmmoFor(weapon);
+                Rect countRect = new Rect(slot.x - sideLabelWidth - 6f, slot.y, sideLabelWidth, iconSize);
+                DrawOutlinedLabel(countRect, reserve.ToString(), new Color(0.85f, 0.9f, 0.92f, 1f));
             }
         }
 
@@ -883,7 +876,13 @@ namespace AnimalBattleRoyale
                 GUI.color = new Color(0f, 0f, 0f, 0.4f);
                 GUI.DrawTexture(rect, RuntimeGuiTheme.CircleTexture);
                 GUI.color = Color.white;
-                DrawOutlinedLabel(rect, Mathf.CeilToInt(remaining).ToString(), Color.white, abilityCountdownStyle);
+                int countdown = Mathf.CeilToInt(remaining);
+                if (countdown != cachedAbilityCountdown[slot])
+                {
+                    cachedAbilityCountdown[slot] = countdown;
+                    cachedAbilityCountdownText[slot] = countdown.ToString();
+                }
+                DrawOutlinedLabel(rect, cachedAbilityCountdownText[slot], Color.white, abilityCountdownStyle);
             }
 
             Rect keyRect = new Rect(rect.x + rect.width * 0.5f - 16f, rect.yMax - 12f, 32f, 24f);
@@ -913,10 +912,37 @@ namespace AnimalBattleRoyale
             Rect reserveRow = new Rect(rect.x, magazineRow.yMax + 2f, rect.width, rect.height * 0.16f);
 
             Color textColor = empty ? new Color(1f, 0.4f, 0.32f) : reloading ? new Color(1f, 0.78f, 0.32f) : Color.white;
-            string magazineText = empty ? "0" : reloading ? $"{LocalPlayer.RangedReloadSecondsRemaining:0.0}s" : magazine.ToString();
+            string magazineText;
+            if (empty)
+            {
+                magazineText = "0";
+            }
+            else if (reloading)
+            {
+                // Ticks continuously while reloading, so caching by value would never hit —
+                // this branch is left as a direct format each call.
+                magazineText = $"{LocalPlayer.RangedReloadSecondsRemaining:0.0}s";
+            }
+            else
+            {
+                if (magazine != cachedMagazineAmmo || cachedReloadingState)
+                {
+                    cachedMagazineAmmo = magazine;
+                    cachedMagazineText = magazine.ToString();
+                }
+                magazineText = cachedMagazineText;
+            }
+            cachedReloadingState = reloading;
             DrawIconValueRow(magazineRow, GetAmmoBulletIcon(), magazineText, textColor, abilityCountdownStyle, magazineRow.height);
             if (!empty && !reloading)
-                DrawIconValueRow(reserveRow, GetAmmoReloadIcon(), reserve.ToString(), new Color(0.85f, 0.88f, 0.88f), smallStyle, reserveRow.height);
+            {
+                if (reserve != cachedReserveAmmo)
+                {
+                    cachedReserveAmmo = reserve;
+                    cachedReserveText = reserve.ToString();
+                }
+                DrawIconValueRow(reserveRow, GetAmmoReloadIcon(), cachedReserveText, new Color(0.85f, 0.88f, 0.88f), smallStyle, reserveRow.height);
+            }
         }
 
         // Icon + number pair, centered as one group within rowRect (icon on the left of its
@@ -1081,6 +1107,7 @@ namespace AnimalBattleRoyale
             bool vineTarget = LocalPlayer != null && VineAnchor.IsLookedAtBy(LocalPlayer);
             bool hasAmmo = LocalPlayer != null && LocalPlayer.RangedAmmo > 0;
             bool reloading = LocalPlayer != null && LocalPlayer.IsRangedReloading;
+            bool precisionAiming = LocalPlayer != null && LocalPlayer.IsAiming;
             Color previousColor = GUI.color;
             GUI.color = vineTarget
                 ? new Color(0.3f, 1f, 0.58f, 1f)
@@ -1089,11 +1116,21 @@ namespace AnimalBattleRoyale
 
             float centerX = viewWidth * 0.5f;
             float centerY = viewHeight * 0.5f;
-            GUI.DrawTexture(new Rect(centerX - 14f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(centerX + 6f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(centerX - 1f, centerY - 14f, 2f, 8f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(centerX - 1f, centerY + 6f, 2f, 8f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(centerX - 1.5f, centerY - 1.5f, 3f, 3f), Texture2D.whiteTexture);
+            if (precisionAiming)
+            {
+                // Tight dot + thin ring instead of the open 4-tick crosshair — reads as
+                // "zoomed/precise" while aiming down the sights.
+                GUI.DrawTexture(new Rect(centerX - 1.5f, centerY - 1.5f, 3f, 3f), Texture2D.whiteTexture);
+                RuntimeGuiTheme.DrawCircle(new Rect(centerX - 22f, centerY - 22f, 44f, 44f), GUI.color, ring: true);
+            }
+            else
+            {
+                GUI.DrawTexture(new Rect(centerX - 14f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(centerX + 6f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(centerX - 1f, centerY - 14f, 2f, 8f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(centerX - 1f, centerY + 6f, 2f, 8f), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(centerX - 1.5f, centerY - 1.5f, 3f, 3f), Texture2D.whiteTexture);
+            }
             GUI.color = previousColor;
 
             if (vineTarget)
@@ -1159,13 +1196,6 @@ namespace AnimalBattleRoyale
                 if (pickup == null || !pickup.IsAvailable) continue;
                 Vector2 point = WorldToMinimap(pickup.transform.position, map, jungle.MapSize);
                 DrawMinimapAmmoMarker(point, 8f);
-            }
-
-            foreach (WeaponUpgradeCrystal crystal in WeaponUpgradeCrystal.ActivePickups)
-            {
-                if (crystal == null || !crystal.IsAvailable) continue;
-                Vector2 point = WorldToMinimap(crystal.transform.position, map, jungle.MapSize);
-                DrawMinimapCrystalMarker(point, 8f);
             }
 
             foreach (DiamondPickup diamond in DiamondPickup.ActivePickups)
@@ -1236,14 +1266,9 @@ namespace AnimalBattleRoyale
             GUI.Label(new Rect(map.center.x - 12f, map.y + 2f, 24f, 18f), "N", minimapStyle);
 
             float legendY = map.yMax + 4f;
-            float legendColumn = panel.width / 2f;
             DrawMinimapAmmoMarker(new Vector2(panel.x + 12f, legendY + 8f), 6.5f);
             GUI.color = Color.white;
-            GUI.Label(new Rect(panel.x + 19f, legendY, legendColumn - 19f, 16f), "MUNIÇÃO", eyebrowStyle);
-            DrawMinimapCrystalMarker(new Vector2(panel.x + legendColumn + 8f, legendY + 8f), 6.5f);
-            GUI.color = Color.white;
-            GUI.Label(new Rect(panel.x + legendColumn + 15f, legendY,
-                legendColumn - 16f, 16f), "CRISTAL", eyebrowStyle);
+            GUI.Label(new Rect(panel.x + 19f, legendY, panel.width - 19f, 16f), "MUNIÇÃO", eyebrowStyle);
             GUI.color = previous;
         }
 
@@ -1270,19 +1295,6 @@ namespace AnimalBattleRoyale
             GUI.color = new Color(1f, 0.94f, 0.66f, 1f);
             GUI.DrawTexture(new Rect(point.x - size * 0.3f, point.y - size * 0.18f, size * 0.6f, size * 0.13f), Texture2D.whiteTexture);
             GUI.DrawTexture(new Rect(point.x - size * 0.3f, point.y + size * 0.08f, size * 0.6f, size * 0.13f), Texture2D.whiteTexture);
-        }
-
-        private void DrawMinimapCrystalMarker(Vector2 point, float size)
-        {
-            GUI.color = new Color(0.01f, 0.08f, 0.12f, 0.98f);
-            GUI.DrawTexture(new Rect(point.x - size * 0.68f, point.y - size * 0.68f,
-                size * 1.36f, size * 1.36f), RuntimeGuiTheme.CircleTexture);
-            GUI.color = new Color(0.08f, 0.84f, 1f, 1f);
-            GUI.DrawTexture(new Rect(point.x - size * 0.42f, point.y - size * 0.56f,
-                size * 0.84f, size * 1.12f), RuntimeGuiTheme.CircleTexture);
-            GUI.color = new Color(0.82f, 0.98f, 1f, 1f);
-            GUI.DrawTexture(new Rect(point.x - size * 0.1f, point.y - size * 0.42f,
-                size * 0.2f, size * 0.62f), Texture2D.whiteTexture);
         }
 
         private void DrawObjectiveStatus()

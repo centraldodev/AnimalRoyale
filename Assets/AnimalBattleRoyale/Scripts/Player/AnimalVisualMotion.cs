@@ -30,18 +30,24 @@ namespace AnimalBattleRoyale
 
         private Transform leftThigh, rightThigh, leftUpperarm, rightUpperarm;
         private Quaternion leftThighRest, rightThighRest, leftUpperarmRest, rightUpperarmRest;
+        private Transform leftForearm, rightForearm;
+        private Quaternion leftForearmRest, rightForearmRest;
         private Transform leftHandBone, rightHandBone;
+        private Quaternion leftHandRest, rightHandRest;
         private Transform activeHandBone;
+        private bool pinRightArm, pinLeftArm, customLeftArmSwing;
         private Animator humanoidAnimator;
         private bool useHumanoidAnimation;
         private float animatorSpeedVelocity;
 
         private bool isMoving, isSprinting, isAirborne, isFlying, hanging, frozen;
         private float gaitPhase;
+        private float armSwingPhase;
         private float locomotionBlend;
         private float airborneBlend;
         private float sprintBlend;
         private Vector3 handAimTarget;
+        private WeaponMuzzleSocket weaponSocket;
 
         private Transform leftWing, rightWing;
         private Quaternion leftWingRest, rightWingRest;
@@ -56,6 +62,27 @@ namespace AnimalBattleRoyale
 
             leftHandBone = FindBone(transform, "L_Hand");
             rightHandBone = FindBone(transform, "R_Hand");
+            leftUpperarm = FindBone(transform, "L_Upperarm");
+            rightUpperarm = FindBone(transform, "R_Upperarm");
+            leftForearm = FindBone(transform, "L_Forearm");
+            rightForearm = FindBone(transform, "R_Forearm");
+            if (leftUpperarm != null) leftUpperarmRest = leftUpperarm.localRotation;
+            if (rightUpperarm != null) rightUpperarmRest = rightUpperarm.localRotation;
+            if (leftForearm != null) leftForearmRest = leftForearm.localRotation;
+            if (rightForearm != null) rightForearmRest = rightForearm.localRotation;
+            if (leftHandBone != null) leftHandRest = leftHandBone.localRotation;
+            if (rightHandBone != null) rightHandRest = rightHandBone.localRotation;
+
+            // The Run/Walk clips (and the procedural fallback below) swing the right arm
+            // side-to-side across the body, which reads badly now that the seed weapon hangs
+            // rigidly from that hand — so the whole right arm is held at its imported rest
+            // pose instead (see UpdateArmOverride). The left arm keeps a light custom
+            // forward/back-only swing in its place. The cow doesn't carry a weapon and
+            // shouldn't swing either arm. Eagle is untouched (different bone names/rig,
+            // already handled by its own wing-pin system above).
+            pinRightArm = type != AnimalType.Eagle;
+            pinLeftArm = type == AnimalType.Cow;
+            customLeftArmSwing = !pinLeftArm && type != AnimalType.Eagle;
 
             // Eagle's rig doesn't use the shared L_/R_ bone names (see EagleHumanoidRigSetup) —
             // its wing roots are these generic auto-rig names instead. The whole chain (not
@@ -96,13 +123,9 @@ namespace AnimalBattleRoyale
             {
                 leftThigh = FindBone(transform, "L_Thigh");
                 rightThigh = FindBone(transform, "R_Thigh");
-                leftUpperarm = FindBone(transform, "L_Upperarm");
-                rightUpperarm = FindBone(transform, "R_Upperarm");
 
                 if (leftThigh != null) leftThighRest = leftThigh.localRotation;
                 if (rightThigh != null) rightThighRest = rightThigh.localRotation;
-                if (leftUpperarm != null) leftUpperarmRest = leftUpperarm.localRotation;
-                if (rightUpperarm != null) rightUpperarmRest = rightUpperarm.localRotation;
 
                 // No clip/retargeting involved for this animal — keep any imported Animator
                 // off so it can never fight the procedural bone rotations below.
@@ -113,6 +136,24 @@ namespace AnimalBattleRoyale
                     disabled.enabled = false;
                 }
             }
+
+            weaponSocket = GetComponentInChildren<WeaponMuzzleSocket>(true);
+        }
+
+        /// <summary>Muzzle world position/rotation for spawning a projectile — the socket is
+        /// already stable by construction (see WeaponMuzzleSocket), no per-shot settling
+        /// needed.</summary>
+        public bool TryGetWeaponMuzzle(out Vector3 position, out Quaternion rotation)
+        {
+            if (weaponSocket == null)
+            {
+                position = default;
+                rotation = default;
+                return false;
+            }
+            position = weaponSocket.MuzzlePosition;
+            rotation = weaponSocket.MuzzleRotation;
+            return true;
         }
 
         public void SetLocomotion(bool moving, bool sprinting, bool airborne,
@@ -165,11 +206,7 @@ namespace AnimalBattleRoyale
 
         private void UpdateLocomotionPose()
         {
-            if (useHumanoidAnimation) return;
             float dt = Time.deltaTime;
-
-            float airborneTarget = !frozen && isAirborne ? 1f : 0f;
-            airborneBlend = Mathf.MoveTowards(airborneBlend, airborneTarget, dt * BlendSpeed);
 
             float locomotionTarget = !frozen && isMoving && !isAirborne && !hanging ? 1f : 0f;
             locomotionBlend = Mathf.MoveTowards(locomotionBlend, locomotionTarget, dt * BlendSpeed);
@@ -181,7 +218,18 @@ namespace AnimalBattleRoyale
             {
                 float frequency = Mathf.Lerp(WalkFrequency, RunFrequency, sprintBlend);
                 gaitPhase += dt * frequency * Mathf.PI * 2f;
+                // Left-arm swing always paces like the walk cycle, even while sprinting — the
+                // walking arm swing read fine, but speeding it up to match the run cadence
+                // looked bad, so it's kept on its own phase instead of following gaitPhase.
+                armSwingPhase += dt * WalkFrequency * Mathf.PI * 2f;
             }
+
+            UpdateArmOverride();
+
+            if (useHumanoidAnimation) return;
+
+            float airborneTarget = !frozen && isAirborne ? 1f : 0f;
+            airborneBlend = Mathf.MoveTowards(airborneBlend, airborneTarget, dt * BlendSpeed);
 
             float amplitude = Mathf.Lerp(LegSwingDegrees, LegSwingDegrees * RunSwingMultiplier, sprintBlend) * locomotionBlend;
             float legSwing = Mathf.Sin(gaitPhase) * amplitude;
@@ -189,10 +237,38 @@ namespace AnimalBattleRoyale
 
             ApplyBoneSwing(leftThigh, leftThighRest, legSwing - tuck);
             ApplyBoneSwing(rightThigh, rightThighRest, -legSwing - tuck);
+        }
 
-            float armSwing = legSwing * (ArmSwingDegrees / Mathf.Max(1f, LegSwingDegrees));
-            ApplyBoneSwing(leftUpperarm, leftUpperarmRest, -armSwing);
-            ApplyBoneSwing(rightUpperarm, rightUpperarmRest, armSwing);
+        // Runs after the Humanoid Animator's own pose for this frame (LateUpdate always
+        // follows Animator updates) so it overrides whatever the Run/Walk clip did with the
+        // arms — see pinRightArm/pinLeftArm/customLeftArmSwing in Initialize for why. Shared
+        // by both the humanoid-clip path and the procedural fallback below, so the same rule
+        // applies regardless of which one is driving the legs.
+        private void UpdateArmOverride()
+        {
+            bool rightHanging = hanging && activeHandBone == rightHandBone;
+            bool leftHanging = hanging && activeHandBone == leftHandBone;
+
+            if (pinRightArm && !rightHanging)
+            {
+                ApplyBoneSwing(rightUpperarm, rightUpperarmRest, 0f);
+                ApplyBoneSwing(rightForearm, rightForearmRest, 0f);
+                ApplyBoneSwing(rightHandBone, rightHandRest, 0f);
+            }
+
+            if (leftHanging) return;
+
+            if (pinLeftArm)
+            {
+                ApplyBoneSwing(leftUpperarm, leftUpperarmRest, 0f);
+                ApplyBoneSwing(leftForearm, leftForearmRest, 0f);
+            }
+            else if (customLeftArmSwing)
+            {
+                float swing = Mathf.Sin(armSwingPhase) * ArmSwingDegrees * locomotionBlend;
+                ApplyBoneSwing(leftUpperarm, leftUpperarmRest, swing);
+                ApplyBoneSwing(leftForearm, leftForearmRest, 0f);
+            }
         }
 
         private static void ApplyBoneSwing(Transform bone, Quaternion restRotation, float angleDegrees)

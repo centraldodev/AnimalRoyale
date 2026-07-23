@@ -217,7 +217,8 @@ namespace AnimalBattleRoyale
             if (GameplayInputBlocked) return false;
             if (MobileInputController.ControlsEnabled) return MobileInputController.MeleePressed;
 #if ENABLE_INPUT_SYSTEM
-            return (Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
+            // Moved off the right mouse button onto V so aim (see AimHeld) can have RMB.
+            return (Keyboard.current != null && Keyboard.current.vKey.wasPressedThisFrame)
                    || (Gamepad.current != null && Gamepad.current.leftTrigger.wasPressedThisFrame)
                    || MobileInputController.MeleePressed;
 #else
@@ -227,6 +228,21 @@ namespace AnimalBattleRoyale
         }
 
         public static bool AttackModeTogglePressed() => MeleeAttackPressed();
+
+        /// <summary>Held to enter precision-aim (zoomed) mode — only meaningful with the
+        /// long-range "nozes" ammo selected, checked by the caller.</summary>
+        public static bool AimHeld()
+        {
+            if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return MobileInputController.AimHeld;
+#if ENABLE_INPUT_SYSTEM
+            return (Mouse.current != null && Mouse.current.rightButton.isPressed)
+                   || (Gamepad.current != null && Gamepad.current.leftTrigger.isPressed)
+                   || MobileInputController.AimHeld;
+#else
+            return GameInputBindings.IsHeld(GameInputAction.Aim) || MobileInputController.AimHeld;
+#endif
+        }
 
 #if ENABLE_INPUT_SYSTEM
         private static bool keyboardQPressed()

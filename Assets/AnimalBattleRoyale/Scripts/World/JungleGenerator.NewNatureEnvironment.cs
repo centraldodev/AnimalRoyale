@@ -259,15 +259,10 @@ namespace AnimalBattleRoyale
             return surface;
         }
 
-        private Material newTreeVineMaterial;
-        private const float NewTreeVineChance = 0.5f;
-
         private void CreateNewNatureEnvironment(Transform parent)
         {
             Transform natureRoot = new GameObject("NewNatureEnvironment").transform;
             natureRoot.SetParent(parent, false);
-
-            newTreeVineMaterial = CreateMaterial(new Color(0.48f, 0.88f, 0.16f), new Color(0.1f, 0.22f, 0.02f));
 
             System.Random random = new System.Random(unchecked(seed ^ 0x274B91D3));
             int trees = SpawnNewTrees(natureRoot, random);
@@ -465,7 +460,7 @@ namespace AnimalBattleRoyale
                 Quaternion rotation = Quaternion.Euler(0f, NextNatureFloat(random, 0f, 360f), 0f);
                 GameObject treeInstance = SpawnScaledPrefab(treesRoot, prefab, $"{prefabName}_{index + 1:00}_{size:0}m",
                     position, rotation, Vector3.one * size);
-                AttachNewTreeVine(treeInstance, random);
+                RegisterTreeAsThrowable(treeInstance);
                 created++;
             }
 
@@ -503,7 +498,7 @@ namespace AnimalBattleRoyale
                 Quaternion rotation = Quaternion.Euler(0f, NextNatureFloat(random, 0f, 360f), 0f);
                 GameObject treeInstance = SpawnScaledPrefab(treesRoot, prefab, $"Lakeside_{prefabName}_{index + 1:00}_{size:0}m",
                     position, rotation, Vector3.one * size);
-                AttachNewTreeVine(treeInstance, random);
+                RegisterTreeAsThrowable(treeInstance);
                 created++;
             }
 
@@ -556,7 +551,7 @@ namespace AnimalBattleRoyale
                 Quaternion rotation = Quaternion.Euler(0f, NextNatureFloat(random, 0f, 360f), 0f);
                 GameObject treeInstance = SpawnScaledPrefab(treesRoot, prefab, $"OuterForest_{ring + 1}_{slot + 1:00}_{prefabName}",
                     position, rotation, Vector3.one * size);
-                AttachNewTreeVine(treeInstance, random);
+                RegisterTreeAsThrowable(treeInstance);
                 created++;
             }
 
@@ -656,35 +651,12 @@ namespace AnimalBattleRoyale
             return Mathf.Lerp(minimum, maximum, (float)random.NextDouble());
         }
 
-        // CartoonTree/StylizedTree/TreeA/TreeB (see NewTreeBoundsProbe) all sit roughly in
-        // local bounds x:[-0.5,0.5] y:[0,~1] z:[-0.3,0.3] before the per-instance scale is
-        // applied, so normalized (fractional) local coordinates here land near the canopy on
-        // any of them regardless of that instance's actual world-space size — a giant 30m
-        // tree gets a proportionally long vine, a small one a short vine, and the bottom end
-        // always ends up close enough to the ground (~15% of height) to grab from
-        // VineAnchor.GroundUseRange.
-        private void AttachNewTreeVine(GameObject treeInstance, System.Random random)
+        // Trees no longer carry a permanent decorative vine — the monkey throws one at
+        // whatever tree it's aiming at instead (see VineAnchor.TryThrowVine), created on
+        // demand and torn down once left. This just makes the tree a valid throw target.
+        private static void RegisterTreeAsThrowable(GameObject treeInstance)
         {
-            if (treeInstance == null || newTreeVineMaterial == null) return;
-            if (random.NextDouble() > NewTreeVineChance) return;
-
-            // Lower/further out than the canopy mass: these prefabs' foliage blob covers
-            // roughly the upper half of the bounds (see NewTreeBoundsProbe), and attaching a
-            // vine up inside it just buries the tie-in point in leaf geometry with no visible
-            // branch under it. Around the trunk/canopy boundary, further from center, reads as
-            // coming off a real branch instead.
-            float side = random.Next(0, 2) == 0 ? -1f : 1f;
-            float front = random.Next(0, 2) == 0 ? -1f : 1f;
-            Vector3 localStart = new Vector3(
-                side * NextNatureFloat(random, 0.14f, 0.2f),
-                NextNatureFloat(random, 0.42f, 0.56f),
-                front * NextNatureFloat(random, 0.14f, 0.2f));
-            Vector3 localEnd = new Vector3(
-                side * NextNatureFloat(random, 0.18f, 0.26f),
-                NextNatureFloat(random, 0.1f, 0.18f),
-                front * NextNatureFloat(random, 0.16f, 0.24f));
-
-            VineAnchor.Create(treeInstance.transform, localStart, localEnd, newTreeVineMaterial);
+            if (treeInstance != null) VineAnchor.RegisterThrowableTree(treeInstance.transform);
         }
     }
 }

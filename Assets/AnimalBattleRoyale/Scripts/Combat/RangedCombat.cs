@@ -10,19 +10,28 @@ namespace AnimalBattleRoyale
         Watermelon
     }
 
-    public enum RangedSupplyKind
-    {
-        NaturalAmmo
-    }
-
     public sealed class RangedProjectile : MonoBehaviour
     {
-        public const float WatermelonExplosionRadius = 3.4f;
+        // Watermelon's splash radius was widened (was 3.4) so it reads as more of an area
+        // weapon now that the seed slot is the dedicated precision option.
+        public const float WatermelonExplosionRadius = 5f;
         public const float SeedDamage = 6f;
         public const float TomatoDamage = 12f;
         public const float WatermelonDamage = 15f;
+        // Headshots (any ammo) deal double damage. The seed slot ("nozes" — the long-range
+        // precision weapon) additionally instant-kills on a headshot, matching a sniper's
+        // one-shot identity; tomato/watermelon headshots just get the damage multiplier.
+        private const float HeadshotDamageMultiplier = 2f;
+        // Top fraction of the target's controller height counted as the head — these are
+        // chibi characters with proportionally huge heads, so this sits fairly high but not
+        // razor-thin at the very top.
+        private const float HeadshotHeightFraction = 0.72f;
+        // Large enough to guarantee a kill after Health.TakeDamage's own modifiers (spawn
+        // protection/resistance) rather than exactly matching current HP, so spawn protection
+        // still correctly blocks it instead of being bypassed.
+        private const float HeadshotInstakillDamage = 9999f;
         // Cow keeps the same seed/tomato/watermelon damage tiers under the hood — only the
-        // projectile's look is swapped to milk, regardless of weapon level.
+        // projectile's look is swapped to milk.
         public static readonly Color MilkColor = new Color(0.96f, 0.95f, 0.9f);
         private static Material sharedMilkMaterial;
         private static Material sharedTrailMaterial;
@@ -103,6 +112,12 @@ namespace AnimalBattleRoyale
         public static Vector3 GetLaunchPosition(ThirdPersonAnimalController source, Vector3 direction)
         {
             if (source == null) return Vector3.zero;
+            // The muzzle marker is stable by construction (see WeaponMuzzleSocket) — no
+            // per-shot settling needed, unlike the old separate-prop weapon.
+            if (source.TryGetWeaponMuzzle(out Vector3 muzzlePosition, out _)) return muzzlePosition;
+
+            // Cow (no embedded gun) and any animal whose model failed to load fall back to
+            // a fixed offset from the body center.
             Vector3 flatDirection = new Vector3(direction.x, 0f, direction.z);
             Vector3 forwardOffset = flatDirection.sqrMagnitude > 0.01f
                 ? flatDirection.normalized * 0.9f
@@ -117,9 +132,10 @@ namespace AnimalBattleRoyale
             owner = source;
             ammoType = source.CurrentWeaponAmmo;
             direction = direction.sqrMagnitude > 0.01f ? direction.normalized : source.transform.forward;
-            // Projectile speed is controlled globally by the host; flight feel varies
-            // by animal, while damage depends on the ammo type the crystal level grants.
-            float speed = ServerGameTuning.ProjectileSpeed;
+            // Base speed is tunable globally by the host; each ammo type scales it to its own
+            // identity — nozes near-instant (precision, has to be aimed), tomato a weak-pistol
+            // pace, watermelon a shotgun-like base (see ProjectileSpeedMultiplierFor).
+            float speed = ServerGameTuning.ProjectileSpeed * ThirdPersonAnimalController.ProjectileSpeedMultiplierFor(source.CurrentWeaponAmmo);
             float lift;
             float visualScale;
             switch (source.AnimalType)
@@ -265,11 +281,28 @@ namespace AnimalBattleRoyale
         private void DamageDirectTarget(Health target, Vector3 hitPoint)
         {
             if (!CanDamage(target)) return;
-            target.TakeDamage(damage, owner);
-            CombatFeedback.NotifyHit(owner.AnimalType, hitPoint, damage);
+            bool headshot = IsHeadshot(target, hitPoint);
+            float appliedDamage = headshot ? damage * HeadshotDamageMultiplier : damage;
+            // Seed ("nozes") is the precision long-range slot — a headshot with it kills
+            // outright instead of just doubling damage, matching a sniper round.
+            if (headshot && ammoType == WeaponAmmoType.Seed) appliedDamage = HeadshotInstakillDamage;
+            target.TakeDamage(appliedDamage, owner);
+            CombatFeedback.NotifyHit(owner.AnimalType, hitPoint, appliedDamage);
             if (target.Owner == null) return;
             Vector3 knockback = velocity.sqrMagnitude > 0.01f ? velocity.normalized : owner.transform.forward;
             target.Owner.ReceiveKnockback(new Vector3(knockback.x, 0.12f, knockback.z).normalized * 4.2f);
+        }
+
+        // No dedicated head collider/bone to test against — these are simple capsule bodies
+        // physics-wise — so this just checks how high up the controller's height the hit
+        // landed instead, which reads as "aimed at the head" for these proportionally
+        // big-headed characters without needing per-bone hit detection.
+        private static bool IsHeadshot(Health target, Vector3 hitPoint)
+        {
+            if (target.Owner == null) return false;
+            float height = Mathf.Max(0.01f, target.Owner.Stats.ControllerHeight);
+            float heightFraction = (hitPoint.y - target.Owner.transform.position.y) / height;
+            return heightFraction >= HeadshotHeightFraction;
         }
 
         private void DamageArea(Vector3 center)
@@ -461,7 +494,7 @@ namespace AnimalBattleRoyale
         private static readonly List<RangedAmmoPickup> activePickups = new List<RangedAmmoPickup>();
         private static int nextMotionGroup;
 
-        private RangedSupplyKind supplyKind;
+        private WeaponAmmoType ammoType;
         private Transform visual;
         private GameObject labelObject;
         private GameObject highlightObject;
@@ -471,7 +504,7 @@ namespace AnimalBattleRoyale
         private int motionGroup;
 
         public static IReadOnlyList<RangedAmmoPickup> ActivePickups => activePickups;
-        public RangedSupplyKind SupplyKind => supplyKind;
+        public WeaponAmmoType AmmoType => ammoType;
         public bool IsAvailable => available;
 
         private void Awake()
@@ -489,24 +522,26 @@ namespace AnimalBattleRoyale
             activePickups.Remove(this);
         }
 
-        public static RangedAmmoPickup Create(Vector3 groundPosition, RangedSupplyKind kind)
+        public static RangedAmmoPickup Create(Vector3 groundPosition, WeaponAmmoType type)
         {
-            GameObject root = new GameObject("RangedSupply_" + kind);
+            GameObject root = new GameObject("RangedSupply_" + type);
             root.transform.position = groundPosition;
             RangedAmmoPickup pickup = root.AddComponent<RangedAmmoPickup>();
-            pickup.supplyKind = kind;
+            pickup.ammoType = type;
             pickup.BuildVisual();
             return pickup;
         }
 
+        /// <summary>Grabs whatever ammo pickup is nearest, regardless of type — all three
+        /// weapons are always selectable, so any type collected is useful.</summary>
         public static bool TryCollectNearest(ThirdPersonAnimalController animal)
         {
-            if (animal == null || !animal.NeedsRangedAmmo) return false;
+            if (animal == null) return false;
             RangedAmmoPickup nearest = null;
             float nearestDistance = CollectRange * CollectRange;
             foreach (RangedAmmoPickup pickup in activePickups)
             {
-                if (pickup == null || !pickup.available || pickup.supplyKind != animal.CompatibleRangedSupply) continue;
+                if (pickup == null || !pickup.available) continue;
                 float distance = (pickup.transform.position - animal.transform.position).sqrMagnitude;
                 if (distance >= nearestDistance) continue;
                 nearest = pickup;
@@ -515,6 +550,8 @@ namespace AnimalBattleRoyale
             return nearest != null && nearest.Collect(animal);
         }
 
+        /// <summary>Nearest pickup matching the animal's currently equipped weapon — used by
+        /// bot AI so it seeks out what it's actually short on, not just anything.</summary>
         public static RangedAmmoPickup FindClosestCompatible(ThirdPersonAnimalController animal)
         {
             if (animal == null) return null;
@@ -522,7 +559,7 @@ namespace AnimalBattleRoyale
             float closestDistance = float.MaxValue;
             foreach (RangedAmmoPickup pickup in activePickups)
             {
-                if (pickup == null || !pickup.available || pickup.supplyKind != animal.CompatibleRangedSupply) continue;
+                if (pickup == null || !pickup.available || pickup.ammoType != animal.CurrentWeaponAmmo) continue;
                 float distance = (pickup.transform.position - animal.transform.position).sqrMagnitude;
                 if (distance >= closestDistance) continue;
                 closest = pickup;
@@ -531,17 +568,20 @@ namespace AnimalBattleRoyale
             return closest;
         }
 
+        // TryRefillRangedAmmo clamps to that type's own max reserve internally, so passing a
+        // deliberately oversized amount here just means "top this type all the way up".
+        private const int FullRefillAmount = 9999;
+
         private bool Collect(ThirdPersonAnimalController animal)
         {
-            // Refills to whatever the animal's current weapon can carry, regardless of level.
-            if (!available || !animal.TryRefillRangedAmmo(supplyKind, animal.MaxRangedAmmoValue)) return false;
+            if (!available || !animal.TryRefillRangedAmmo(ammoType, FullRefillAmount)) return false;
             available = false;
             respawnAt = Time.time + RespawnSeconds;
             if (visual != null) visual.gameObject.SetActive(false);
             if (labelObject != null) labelObject.SetActive(false);
             if (highlightObject != null) highlightObject.SetActive(false);
             CombatFeedback.PlayAmmoPickup(transform.position);
-            Countdown.Spawn(transform.position, RespawnSeconds, SupplyColor(), "MUNIÇÃO");
+            Countdown.Spawn(transform.position, RespawnSeconds, SupplyColor(), SupplyLabel());
             return true;
         }
 
@@ -657,7 +697,7 @@ namespace AnimalBattleRoyale
 
         private string SupplyLabel()
         {
-            return "MUNIÇÃO";
+            return ThirdPersonAnimalController.DisplayNameForWeapon(ammoType);
         }
 
         private string SupplyAmmoLabel()
@@ -667,7 +707,7 @@ namespace AnimalBattleRoyale
 
         private Color SupplyColor()
         {
-            return new Color(0.36f, 0.86f, 0.62f);
+            return ThirdPersonAnimalController.ColorForWeapon(ammoType);
         }
     }
 }

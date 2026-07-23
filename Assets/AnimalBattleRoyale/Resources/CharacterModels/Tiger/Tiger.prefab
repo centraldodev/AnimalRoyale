@@ -42,27 +42,27 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 453e1e806cab94d748226eb40888073f, type: 3}
       propertyPath: m_LocalScale.x
-      value: 1.8890175
+      value: 1.8059489
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 453e1e806cab94d748226eb40888073f, type: 3}
       propertyPath: m_LocalScale.y
-      value: 1.8890175
+      value: 1.8059489
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 453e1e806cab94d748226eb40888073f, type: 3}
       propertyPath: m_LocalScale.z
-      value: 1.8890175
+      value: 1.8059489
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 453e1e806cab94d748226eb40888073f, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -0.06572973
+      value: -0.054165296
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 453e1e806cab94d748226eb40888073f, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.11581582
+      value: 0.10731995
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 453e1e806cab94d748226eb40888073f, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0.017764814
+      value: -0.03684955
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 453e1e806cab94d748226eb40888073f, type: 3}
       propertyPath: m_LocalRotation.w
@@ -92,6 +92,22 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: -3312015509251080119, guid: 453e1e806cab94d748226eb40888073f, type: 3}
+      propertyPath: m_AABB.m_Extent.x
+      value: 0.60373086
+      objectReference: {fileID: 0}
+    - target: {fileID: -3312015509251080119, guid: 453e1e806cab94d748226eb40888073f, type: 3}
+      propertyPath: m_AABB.m_Extent.y
+      value: 0.6862123
+      objectReference: {fileID: 0}
+    - target: {fileID: -3312015509251080119, guid: 453e1e806cab94d748226eb40888073f, type: 3}
+      propertyPath: m_AABB.m_Extent.z
+      value: 0.7475293
+      objectReference: {fileID: 0}
+    - target: {fileID: -3312015509251080119, guid: 453e1e806cab94d748226eb40888073f, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: d145330025a57452285113f4a00938d0, type: 2}
     - target: {fileID: 919132149155446097, guid: 453e1e806cab94d748226eb40888073f, type: 3}
       propertyPath: m_Name
       value: Tiger3DModel
@@ -100,22 +116,6 @@ PrefabInstance:
       propertyPath: m_Enabled
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 6636674341263042850, guid: 453e1e806cab94d748226eb40888073f, type: 3}
-      propertyPath: m_AABB.m_Extent.x
-      value: 0.48713815
-      objectReference: {fileID: 0}
-    - target: {fileID: 6636674341263042850, guid: 453e1e806cab94d748226eb40888073f, type: 3}
-      propertyPath: m_AABB.m_Extent.y
-      value: 0.43630537
-      objectReference: {fileID: 0}
-    - target: {fileID: 6636674341263042850, guid: 453e1e806cab94d748226eb40888073f, type: 3}
-      propertyPath: m_AABB.m_Extent.z
-      value: 0.71465707
-      objectReference: {fileID: 0}
-    - target: {fileID: 6636674341263042850, guid: 453e1e806cab94d748226eb40888073f, type: 3}
-      propertyPath: 'm_Materials.Array.data[0]'
-      value: 
-      objectReference: {fileID: 2100000, guid: d145330025a57452285113f4a00938d0, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

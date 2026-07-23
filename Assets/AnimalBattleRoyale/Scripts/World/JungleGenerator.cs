@@ -33,8 +33,9 @@ namespace AnimalBattleRoyale
         [SerializeField, Range(0, 150)] private int antTunnelEntranceCount = 100;
         [SerializeField, Range(8f, 40f)] private float antTunnelEntranceMinimumSpacing = 16f;
         [SerializeField, Range(0, 48)] private int mountainCount = 26;
-        [SerializeField, Range(0, 90)] private int rangedSupplyCount = 10;
-        [SerializeField, Range(0, 100)] private int weaponCrystalCount = 9;
+        // Covers all three ammo types combined (cycles nozes/tomato/watermelon) — no more
+        // separate weapon-crystal pool now that there's nothing left to unlock.
+        [SerializeField, Range(0, 150)] private int rangedSupplyCount = 24;
         [SerializeField, Range(0, 100)] private int foodPickupCount = 13;
         [SerializeField, Range(4f, 80f)] private float pickupMinimumSpacing = 50f;
         [SerializeField, Range(0, 40)] private int houseCount = 16;
@@ -382,9 +383,9 @@ namespace AnimalBattleRoyale
                 AntTunnelEntrance.Create(position, moundMaterial, moundDarkMaterial).transform.SetParent(standaloneEntrancesRoot, true);
             }
 
-            // Ammo, weapon-crystal and food pickups share one spacing list so none of the
-            // three kinds spawns within pickupMinimumSpacing of another, regardless of type.
-            List<Vector3> pickupPositions = new List<Vector3>(rangedSupplyCount + weaponCrystalCount + foodPickupCount);
+            // Ammo and food pickups share one spacing list so neither kind spawns within
+            // pickupMinimumSpacing of the other, regardless of type.
+            List<Vector3> pickupPositions = new List<Vector3>(rangedSupplyCount + foodPickupCount);
 
             Transform rangedSuppliesRoot = new GameObject("RangedAmmoSupplies").transform;
             rangedSuppliesRoot.SetParent(parent, false);
@@ -392,16 +393,8 @@ namespace AnimalBattleRoyale
             {
                 Vector3 position = RandomSpacedMapPosition(12f, pickupMinimumSpacing, pickupPositions);
                 pickupPositions.Add(position);
-                RangedAmmoPickup.Create(position, RangedSupplyKind.NaturalAmmo).transform.SetParent(rangedSuppliesRoot, true);
-            }
-
-            Transform weaponCrystalsRoot = new GameObject("WeaponUpgradeCrystals").transform;
-            weaponCrystalsRoot.SetParent(parent, false);
-            for (int i = 0; i < weaponCrystalCount; i++)
-            {
-                Vector3 position = RandomSpacedMapPosition(13f, pickupMinimumSpacing, pickupPositions);
-                pickupPositions.Add(position);
-                WeaponUpgradeCrystal.Create(position).transform.SetParent(weaponCrystalsRoot, true);
+                WeaponAmmoType type = (WeaponAmmoType)(i % 3);
+                RangedAmmoPickup.Create(position, type).transform.SetParent(rangedSuppliesRoot, true);
             }
 
             Transform foodPickupsRoot = new GameObject("FoodPickups").transform;
@@ -413,8 +406,8 @@ namespace AnimalBattleRoyale
                 FoodPickup.Create(position, RandomFoodKind()).transform.SetParent(foodPickupsRoot, true);
             }
 
-            Debug.Log($"[Jungle] Pickups no mapa: {WeaponUpgradeCrystal.ActivePickups.Count} diamantes, " +
-                      $"{RangedAmmoPickup.ActivePickups.Count} municoes, {foodPickupsRoot.childCount} curas, " +
+            Debug.Log($"[Jungle] Pickups no mapa: {RangedAmmoPickup.ActivePickups.Count} municoes, " +
+                      $"{foodPickupsRoot.childCount} curas, " +
                       $"{FindObjectsByType<AntTunnelEntrance>(FindObjectsSortMode.None).Length} buracos de formiga.");
         }
 

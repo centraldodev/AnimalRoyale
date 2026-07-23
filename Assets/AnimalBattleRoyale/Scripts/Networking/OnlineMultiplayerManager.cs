@@ -849,10 +849,10 @@ namespace AnimalBattleRoyale
                 writer.WriteValueSafe(fighter.transform.rotation);
                 writer.WriteValueSafe(fighter.Health != null ? fighter.Health.CurrentHealth : 0f);
                 writer.WriteValueSafe(fighter.LivesRemaining);
-                writer.WriteValueSafe(fighter.RangedAmmo);
+                writer.WriteValueSafe(fighter.ReserveAmmoFor(WeaponAmmoType.Seed));
+                writer.WriteValueSafe(fighter.ReserveAmmoFor(WeaponAmmoType.Tomato));
+                writer.WriteValueSafe(fighter.ReserveAmmoFor(WeaponAmmoType.Watermelon));
                 writer.WriteValueSafe(fighter.RangedMagazineAmmo);
-                writer.WriteValueSafe(fighter.WeaponLevel);
-                writer.WriteValueSafe(fighter.WeaponCrystalProgress);
                 writer.WriteValueSafe(fighter.SelectedWeaponSlot);
                 writer.WriteValueSafe(fighter.IsEliminated);
             }
@@ -876,17 +876,17 @@ namespace AnimalBattleRoyale
                 reader.ReadValueSafe(out Quaternion rotation);
                 reader.ReadValueSafe(out float health);
                 reader.ReadValueSafe(out int lives);
-                reader.ReadValueSafe(out int ammo);
+                reader.ReadValueSafe(out int nozesAmmo);
+                reader.ReadValueSafe(out int tomatoAmmo);
+                reader.ReadValueSafe(out int watermelonAmmo);
                 reader.ReadValueSafe(out int magazineAmmo);
-                reader.ReadValueSafe(out int weaponLevel);
-                reader.ReadValueSafe(out int crystalProgress);
                 reader.ReadValueSafe(out int selectedWeapon);
                 reader.ReadValueSafe(out bool eliminated);
                 if (!entities.TryGetValue(entityId, out ThirdPersonAnimalController fighter) || fighter == null) continue;
                 bool isLocal = fighter == localFighter;
                 bool hostRespawnedLocalPlayer = isLocal && lives < fighter.LivesRemaining && !eliminated;
-                fighter.ApplyNetworkSnapshot(position, rotation, health, lives, ammo, magazineAmmo,
-                    weaponLevel, crystalProgress, selectedWeapon, eliminated, !isLocal || hostRespawnedLocalPlayer);
+                fighter.ApplyNetworkSnapshot(position, rotation, health, lives, nozesAmmo, tomatoAmmo, watermelonAmmo,
+                    magazineAmmo, selectedWeapon, eliminated, !isLocal || hostRespawnedLocalPlayer);
             }
             BattleRoyaleManager.Instance?.RefreshReplicatedState();
         }

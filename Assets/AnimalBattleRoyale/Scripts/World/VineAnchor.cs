@@ -1,26 +1,27 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace AnimalBattleRoyale
 {
-    /// <summary>Hang point on jungle trees used by the monkey's Q leap.</summary>
+    /// <summary>Hang point on jungle trees used by the monkey's Q leap. Grappling-hook style:
+    /// aiming Q at a tree within <see cref="ThrowRange"/> throws a vine at it and swings the
+    /// monkey there — the anchor is created on demand at throw time and torn down once the
+    /// monkey leaves it, rather than being a permanent decoration pre-placed on trees.</summary>
     public sealed class VineAnchor : MonoBehaviour
     {
-        // Calibrated against the actual tree layout: with 650 trees scattered randomly
-        // across the map, the nearest neighboring tree is ~7m away on average (median 6.5m),
-        // and 90% of trees have a neighbor within ~12m. ChainUseRange covers that so aiming
-        // at a nearby vine while swinging almost always reaches it; only the sparsest, most
-        // isolated trees (the rare >90th percentile gaps) are genuinely out of leap range.
-        public const float GroundUseRange = 12f;
-        public const float ChainUseRange = 15f;
+        // Max distance to land a throw, grabbing the first tree or chaining mid-swing alike.
+        public const float ThrowRange = 30f;
         private const int IndicatorSegments = 24;
         private const float MaximumSwingAngle = 32f;
         private const float SwingSpring = 24f;
         private const float SwingDamping = 3.1f;
         private const float AmbientSwayDegrees = 5f;
         private static readonly List<VineAnchor> anchors = new List<VineAnchor>();
+        private static readonly List<Transform> throwableTrees = new List<Transform>();
+        private static Material sharedThrowVineMaterial;
+        private static LineRenderer previewIndicator;
         private static Material sharedIndicatorMaterial;
-        private LineRenderer gripIndicator;
         private Transform swingPivot;
         private Quaternion restLocalRotation = Quaternion.identity;
         private Vector2 swingAngles;
@@ -42,7 +43,6 @@ namespace AnimalBattleRoyale
         private void OnDisable()
         {
             anchors.Remove(this);
-            if (gripIndicator != null) gripIndicator.enabled = false;
         }
 
         private void LateUpdate()
@@ -59,77 +59,59 @@ namespace AnimalBattleRoyale
             SimulateSwing(worldDirection, deltaTime);
         }
 
+        // Previews where a throw would actually land — one shared ring (not one per tree,
+        // since there's no pre-placed anchor to hang it on anymore) shown on whichever tree
+        // currently scores best against FindBestTree's aim/range test.
         internal static void TickIndicators(ThirdPersonAnimalController player, Camera camera, float time)
         {
             bool monkeyActive = player != null && camera != null && player.AnimalType == AnimalType.Monkey
                 && !player.IsDefeated && !player.IsVineLeaping
                 && (!player.IsHangingVine || player.CanChainToAnotherVine);
-            Vector3 playerPosition = monkeyActive ? player.transform.position : Vector3.zero;
-            Vector3 cameraPosition = monkeyActive ? camera.transform.position : Vector3.zero;
-            Vector3 aimDirection = monkeyActive ? player.ViewAimDirection : Vector3.forward;
-            float indicatorRange = monkeyActive ? GetUseRange(player) : 0f;
-            float indicatorRangeSqr = indicatorRange * indicatorRange;
+
+            Vector3 point = default;
+            Transform target = monkeyActive ? FindBestTree(player, camera.transform, out point) : null;
+            if (target == null)
+            {
+                if (previewIndicator != null) previewIndicator.enabled = false;
+                return;
+            }
+
             float pulse = Mathf.Sin(time * 7f);
             float radius = 0.2f + pulse * 0.018f;
             float width = 0.022f + pulse * 0.003f;
-            Vector3 cameraRight = monkeyActive ? camera.transform.right : Vector3.right;
-            Vector3 cameraUp = monkeyActive ? camera.transform.up : Vector3.up;
+            Vector3 cameraRight = camera.transform.right;
+            Vector3 cameraUp = camera.transform.up;
 
-            foreach (VineAnchor anchor in anchors)
+            EnsurePreviewIndicator();
+            previewIndicator.enabled = true;
+            previewIndicator.widthMultiplier = width;
+            for (int i = 0; i <= IndicatorSegments; i++)
             {
-                if (anchor == null) continue;
-                bool visible = monkeyActive;
-                if (visible)
-                {
-                    Vector3 anchorPosition = anchor.transform.position;
-                    Vector3 toVine = anchorPosition - cameraPosition;
-                    float distanceToPlayer = (anchorPosition - playerPosition).sqrMagnitude;
-                    float lookDot = toVine.sqrMagnitude > 0.01f
-                        ? Vector3.Dot(aimDirection, toVine.normalized)
-                        : 0f;
-                    visible = distanceToPlayer <= indicatorRangeSqr && lookDot >= 0.84f;
-                }
-
-                if (!visible)
-                {
-                    if (anchor.gripIndicator != null) anchor.gripIndicator.enabled = false;
-                    continue;
-                }
-
-                anchor.EnsureGripIndicator();
-                anchor.gripIndicator.enabled = true;
-                anchor.gripIndicator.widthMultiplier = width;
-                for (int i = 0; i <= IndicatorSegments; i++)
-                {
-                    float angle = i * Mathf.PI * 2f / IndicatorSegments;
-                    Vector3 point = anchor.transform.position
-                                    + cameraRight * (Mathf.Cos(angle) * radius)
-                                    + cameraUp * (Mathf.Sin(angle) * radius);
-                    anchor.gripIndicator.SetPosition(i, point);
-                }
+                float angle = i * Mathf.PI * 2f / IndicatorSegments;
+                Vector3 ringPoint = point + cameraRight * (Mathf.Cos(angle) * radius) + cameraUp * (Mathf.Sin(angle) * radius);
+                previewIndicator.SetPosition(i, ringPoint);
             }
         }
 
-        private void EnsureGripIndicator()
+        private static void EnsurePreviewIndicator()
         {
-            if (gripIndicator != null) return;
-            GameObject circle = new GameObject("MonkeyGripCircle");
-            circle.transform.SetParent(transform, false);
-            circle.transform.localPosition = Vector3.zero;
-            gripIndicator = circle.AddComponent<LineRenderer>();
-            gripIndicator.useWorldSpace = true;
-            gripIndicator.loop = false;
-            gripIndicator.positionCount = IndicatorSegments + 1;
-            gripIndicator.numCornerVertices = 3;
-            gripIndicator.numCapVertices = 3;
-            gripIndicator.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            gripIndicator.receiveShadows = false;
-            gripIndicator.sortingOrder = 20;
+            if (previewIndicator != null) return;
+            GameObject circle = new GameObject("MonkeyThrowPreviewRing");
+            Object.DontDestroyOnLoad(circle);
+            previewIndicator = circle.AddComponent<LineRenderer>();
+            previewIndicator.useWorldSpace = true;
+            previewIndicator.loop = false;
+            previewIndicator.positionCount = IndicatorSegments + 1;
+            previewIndicator.numCornerVertices = 3;
+            previewIndicator.numCapVertices = 3;
+            previewIndicator.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            previewIndicator.receiveShadows = false;
+            previewIndicator.sortingOrder = 20;
             EnsureIndicatorMaterial();
-            gripIndicator.sharedMaterial = sharedIndicatorMaterial;
-            gripIndicator.startColor = new Color(1f, 0.98f, 0.45f, 1f);
-            gripIndicator.endColor = new Color(0.2f, 1f, 0.8f, 1f);
-            gripIndicator.enabled = false;
+            previewIndicator.sharedMaterial = sharedIndicatorMaterial;
+            previewIndicator.startColor = new Color(1f, 0.98f, 0.45f, 1f);
+            previewIndicator.endColor = new Color(0.2f, 1f, 0.8f, 1f);
+            previewIndicator.enabled = false;
         }
 
         private static void EnsureIndicatorMaterial()
@@ -233,9 +215,7 @@ namespace AnimalBattleRoyale
                 coil.transform.SetParent(parent, false);
                 coil.transform.localPosition = offset;
                 coil.transform.localScale = Vector3.one * thickness * 1.4f;
-                coil.GetComponent<Renderer>().sharedMaterial = material;
-                Collider coilCollider = coil.GetComponent<Collider>();
-                if (coilCollider != null) coilCollider.enabled = false;
+                ConfigureVinePart(coil, material);
             }
         }
 
@@ -246,9 +226,7 @@ namespace AnimalBattleRoyale
             joint.transform.SetParent(parent, false);
             joint.transform.localPosition = position;
             joint.transform.localScale = Vector3.one * thickness;
-            joint.GetComponent<Renderer>().sharedMaterial = material;
-            Collider jointCollider = joint.GetComponent<Collider>();
-            if (jointCollider != null) jointCollider.enabled = false;
+            ConfigureVinePart(joint, material);
         }
 
         private static void CreateVineSegment(Transform parent, Vector3 from, Vector3 to,
@@ -267,9 +245,24 @@ namespace AnimalBattleRoyale
             // instead of a uniform machined pole.
             float segmentThickness = thickness * Random.Range(0.82f, 1.18f);
             segment.transform.localScale = new Vector3(segmentThickness, segmentLength * 0.5f, segmentThickness);
-            segment.GetComponent<Renderer>().sharedMaterial = material;
-            Collider collider = segment.GetComponent<Collider>();
-            if (collider != null) collider.enabled = false;
+            ConfigureVinePart(segment, material);
+        }
+
+        // Shared setup for every small primitive making up a vine (~18 per vine, ~2000 across
+        // a full map) — shadows off since foliage-scale shadow detail here is imperceptible
+        // but not free (each part is a separate shadow-caster draw), and the collider is
+        // destroyed rather than just disabled so it isn't carried around as dead weight.
+        private static void ConfigureVinePart(GameObject part, Material material)
+        {
+            Renderer renderer = part.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                renderer.sharedMaterial = material;
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+            }
+            Collider collider = part.GetComponent<Collider>();
+            if (collider != null) Object.Destroy(collider);
         }
 
         private void ConfigureSwing(Transform pivot)
@@ -358,88 +351,156 @@ namespace AnimalBattleRoyale
         public static bool IsWithinUseRange(ThirdPersonAnimalController monkey, Transform vine)
         {
             if (monkey == null || vine == null) return false;
-            float range = GetUseRange(monkey);
-            return (vine.position - monkey.transform.position).sqrMagnitude <= range * range;
+            return (vine.position - monkey.transform.position).sqrMagnitude <= ThrowRange * ThrowRange;
         }
 
-        private static float GetUseRange(ThirdPersonAnimalController monkey)
+        /// <summary>A tree the monkey can currently throw a vine at, once every spawned tree
+        /// has been registered via <see cref="RegisterThrowableTree"/>.</summary>
+        public static void RegisterThrowableTree(Transform tree)
         {
-            return monkey != null && monkey.IsHangingVine ? ChainUseRange : GroundUseRange;
+            if (tree != null && !throwableTrees.Contains(tree)) throwableTrees.Add(tree);
         }
 
-        public static bool TryUseNearest(ThirdPersonAnimalController monkey, Vector3 requestedDirection)
+        // How close (horizontally) the aim ray has to pass by a tree's trunk to count as
+        // "aiming at" it — generous enough that roughly aiming at the tree (not needing to
+        // land a pixel-precise shot on a thin trunk) is enough.
+        private const float GrabRadius = 3.5f;
+        // Attach height is wherever the aim ray crosses the trunk, clamped to this band of
+        // the tree's own height so a throw can never land below the roots or above the
+        // canopy — the fraction is against tree.lossyScale.y since these prefabs' own local
+        // bounds are ~1 unit tall, so world scale doubles as world height.
+        private const float MinAttachHeightFraction = 0.2f;
+        private const float MaxAttachHeightFraction = 0.85f;
+
+        /// <summary>Where a throw at this tree would land, following the aim ray up/down the
+        /// trunk (so aiming low grabs a low branch, aiming high grabs a high one) instead of a
+        /// fixed height — and how far off-axis that ray passed, used to judge "is this even
+        /// aimed at the tree" and to pick the best tree when more than one qualifies.</summary>
+        private static bool TryGetAimedTrunkPoint(Transform tree, Vector3 rayOrigin, Vector3 rayDirection,
+            out Vector3 worldPoint, out float horizontalDistance)
+        {
+            worldPoint = default;
+            horizontalDistance = float.MaxValue;
+            if (tree == null) return false;
+
+            Vector2 rayDirXZ = new Vector2(rayDirection.x, rayDirection.z);
+            float rayDirXZSqrLength = rayDirXZ.sqrMagnitude;
+            if (rayDirXZSqrLength < 0.0001f) return false; // aiming straight up/down
+
+            Vector2 toTreeXZ = new Vector2(tree.position.x - rayOrigin.x, tree.position.z - rayOrigin.z);
+            float t = Vector2.Dot(toTreeXZ, rayDirXZ) / rayDirXZSqrLength;
+            if (t < 0f) return false; // trunk is behind the camera
+
+            Vector3 closestOnRay = rayOrigin + rayDirection * t;
+            horizontalDistance = Vector2.Distance(new Vector2(closestOnRay.x, closestOnRay.z),
+                new Vector2(tree.position.x, tree.position.z));
+            if (horizontalDistance > GrabRadius) return false;
+
+            float height = Mathf.Max(1f, tree.lossyScale.y);
+            float attachHeight = Mathf.Clamp(closestOnRay.y - tree.position.y,
+                height * MinAttachHeightFraction, height * MaxAttachHeightFraction);
+            worldPoint = new Vector3(tree.position.x, tree.position.y + attachHeight, tree.position.z);
+            return true;
+        }
+
+        // Nudges the anchor slightly toward whichever side the ray approached from and down
+        // a bit further for the free-hanging grab handle, purely so the vine reads as tied
+        // onto the trunk surface and has a bit of hang instead of floating exactly on the
+        // (otherwise invisible) trunk centerline.
+        private static void GetAttachmentLocalPoints(Transform tree, Vector3 worldAttachPoint,
+            Vector3 fromPosition, out Vector3 localStart, out Vector3 localEnd)
+        {
+            Vector3 fromLocal = tree.InverseTransformPoint(fromPosition);
+            float side = fromLocal.x >= 0f ? 1f : -1f;
+            float front = fromLocal.z >= 0f ? 1f : -1f;
+            Vector3 attachLocal = tree.InverseTransformPoint(worldAttachPoint);
+            localStart = attachLocal + new Vector3(side * 0.17f, 0f, front * 0.17f);
+            localEnd = attachLocal + new Vector3(side * 0.22f, -0.36f, front * 0.2f);
+        }
+
+        /// <summary>Finds the best tree to throw at right now: any tree the aim ray passes
+        /// close enough to its trunk, preferring the most precisely aimed one when several
+        /// qualify (e.g. two trees roughly in line with each other).</summary>
+        private static Transform FindBestTree(ThirdPersonAnimalController monkey, Transform camera,
+            out Vector3 bestPoint)
+        {
+            bestPoint = default;
+            if (monkey == null) return null;
+            Vector3 rayOrigin = camera != null ? camera.position : monkey.transform.position;
+            Vector3 rayDirection = monkey.ViewAimDirection;
+
+            Transform best = null;
+            float bestHorizontalDistance = float.MaxValue;
+            for (int i = 0; i < throwableTrees.Count; i++)
+            {
+                Transform tree = throwableTrees[i];
+                if (tree == null) continue;
+                if (!TryGetAimedTrunkPoint(tree, rayOrigin, rayDirection, out Vector3 point, out float horizontalDistance)) continue;
+                if ((point - monkey.transform.position).sqrMagnitude > ThrowRange * ThrowRange) continue;
+                if (horizontalDistance >= bestHorizontalDistance) continue;
+                best = tree;
+                bestHorizontalDistance = horizontalDistance;
+                bestPoint = point;
+            }
+            return best;
+        }
+
+        /// <summary>Throws a vine at whatever tree is currently aimed at (see FindBestTree)
+        /// and, if one's in range, grabs/chains to it exactly like the old pre-placed-vine
+        /// flow — BeginVineLeap etc. don't care whether the anchor was already there or was
+        /// just created for this throw.</summary>
+        public static bool TryThrowVine(ThirdPersonAnimalController monkey)
         {
             if (monkey == null || monkey.AnimalType != AnimalType.Monkey || monkey.IsVineLeaping) return false;
             if (monkey.IsHangingVine && !monkey.CanChainToAnotherVine) return false;
-            VineAnchor nearest = null;
-            VineAnchor lookedAt = null;
-            float bestScore = float.MaxValue;
-            float bestLookDot = 0.7f;
-            float lookedAtDistance = float.MaxValue;
-            Transform camera = CameraCache.MainTransform;
-            Vector3 viewAimDirection = monkey.ViewAimDirection;
-            float useRange = GetUseRange(monkey);
-            foreach (VineAnchor anchor in anchors)
-            {
-                if (anchor == null) continue;
-                if (monkey.IsHoldingVine(anchor.transform)) continue;
-                Vector3 offset = anchor.transform.position - monkey.transform.position;
-                float sqrDistance = offset.sqrMagnitude;
-                if (sqrDistance > useRange * useRange) continue;
-                float lookBonus = 0f;
-                if (camera != null)
-                {
-                    Vector3 fromCamera = anchor.transform.position - camera.position;
-                    if (fromCamera.sqrMagnitude > 0.01f)
-                    {
-                        float lookDot = Vector3.Dot(viewAimDirection, fromCamera.normalized);
-                        lookBonus = lookDot * 260f;
-                        if (lookDot > bestLookDot || (Mathf.Approximately(lookDot, bestLookDot) && sqrDistance < lookedAtDistance))
-                        {
-                            bestLookDot = lookDot;
-                            lookedAtDistance = sqrDistance;
-                            lookedAt = anchor;
-                        }
-                    }
-                }
 
-                // A vine the camera is pointing at should be usable even when the
-                // monkey is still facing another direction.
-                Vector3 flatOffset = offset;
-                flatOffset.y = 0f;
-                bool isLookedAt = lookedAt == anchor;
-                if (!isLookedAt && requestedDirection.sqrMagnitude > 0.01f && flatOffset.sqrMagnitude > 0.01f
-                    && Vector3.Dot(requestedDirection.normalized, flatOffset.normalized) < -0.35f) continue;
-                float score = sqrDistance - lookBonus;
-                if (score >= bestScore) continue;
-                bestScore = score;
-                nearest = anchor;
-            }
-            // A vine in the centre of the camera is always preferred. It is the one with the visible circle.
-            if (lookedAt != null) nearest = lookedAt;
-            if (nearest == null) return false;
+            Transform camera = CameraCache.MainTransform;
+            Transform tree = FindBestTree(monkey, camera, out Vector3 point);
+            if (tree == null) return false;
+
+            VineAnchor thrown = CreateThrowAnchor(tree, point, monkey.transform.position);
+            if (thrown == null) return false;
+
             return monkey.IsHangingVine
-                ? monkey.TryLaunchToVine(nearest.transform)
-                : monkey.TryGrabVine(nearest.transform);
+                ? monkey.TryLaunchToVine(thrown.transform)
+                : monkey.TryGrabVine(thrown.transform);
+        }
+
+        private static VineAnchor CreateThrowAnchor(Transform tree, Vector3 worldAttachPoint, Vector3 fromPosition)
+        {
+            GetAttachmentLocalPoints(tree, worldAttachPoint, fromPosition, out Vector3 localStart, out Vector3 localEnd);
+            return Create(tree, localStart, localEnd, GetThrowVineMaterial());
+        }
+
+        private static Material GetThrowVineMaterial()
+        {
+            if (sharedThrowVineMaterial != null) return sharedThrowVineMaterial;
+            Shader shader = ShaderLibrary.Lit;
+            Color color = new Color(0.48f, 0.88f, 0.16f);
+            sharedThrowVineMaterial = new Material(shader) { name = "ThrownVine", color = color };
+            if (sharedThrowVineMaterial.HasProperty("_BaseColor")) sharedThrowVineMaterial.SetColor("_BaseColor", color);
+            if (sharedThrowVineMaterial.HasProperty("_Glossiness")) sharedThrowVineMaterial.SetFloat("_Glossiness", 0.18f);
+            if (sharedThrowVineMaterial.HasProperty("_Smoothness")) sharedThrowVineMaterial.SetFloat("_Smoothness", 0.18f);
+            sharedThrowVineMaterial.enableInstancing = true;
+            return sharedThrowVineMaterial;
+        }
+
+        /// <summary>Thrown vines are single-use — the swing pivot (the vine's own parent, see
+        /// Create) owns both the grabbable anchor and the visual rope, so destroying it tears
+        /// the whole thing down at once. Safe to call with a vine that was never dynamically
+        /// thrown (e.g. null) — it's just a no-op then.</summary>
+        public static void DestroyThrown(Transform vine)
+        {
+            if (vine == null) return;
+            Transform pivot = vine.parent;
+            Object.Destroy(pivot != null ? pivot.gameObject : vine.gameObject);
         }
 
         public static bool IsLookedAtBy(ThirdPersonAnimalController player)
         {
             if (player == null || player.AnimalType != AnimalType.Monkey || player.IsDefeated || player.IsVineLeaping) return false;
             if (player.IsHangingVine && !player.CanChainToAnotherVine) return false;
-            Transform camera = CameraCache.MainTransform;
-            Vector3 aim = player.ViewAimDirection;
-            float useRange = GetUseRange(player);
-            foreach (VineAnchor anchor in anchors)
-            {
-                if (anchor == null || player.IsHoldingVine(anchor.transform)) continue;
-                Vector3 offset = anchor.transform.position - player.transform.position;
-                if (offset.sqrMagnitude > useRange * useRange) continue;
-                if (camera == null) continue;
-                Vector3 fromCamera = anchor.transform.position - camera.position;
-                if (fromCamera.sqrMagnitude > 0.01f && Vector3.Dot(aim, fromCamera.normalized) >= 0.84f) return true;
-            }
-            return false;
+            return FindBestTree(player, CameraCache.MainTransform, out _) != null;
         }
     }
 }

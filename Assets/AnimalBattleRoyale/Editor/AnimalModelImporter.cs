@@ -355,6 +355,13 @@ namespace AnimalBattleRoyale.EditorTools
 
             ConfigureFbx(modelPath);
             string textureDir = baseDir + "/Textures";
+            // Source art is 4096x4096; that's sized for a hero character, not a small
+            // shoulder-mounted prop that occupies a sliver of the screen. Capping on import
+            // (rather than relying on the platform's default max size) keeps VRAM/build size
+            // down without touching the source files.
+            CapTextureSize(textureDir + "/SeedLauncher_Diffuse.png", 1024);
+            CapTextureSize(textureDir + "/SeedLauncher_Metallic.png", 1024);
+            CapTextureSize(textureDir + "/SeedLauncher_Normal.png", 1024);
             Texture2D diffuse = AssetDatabase.LoadAssetAtPath<Texture2D>(textureDir + "/SeedLauncher_Diffuse.png");
             Texture2D metallic = AssetDatabase.LoadAssetAtPath<Texture2D>(textureDir + "/SeedLauncher_Metallic.png");
             Texture2D emissive = AssetDatabase.LoadAssetAtPath<Texture2D>(textureDir + "/SeedLauncher_Emissive.png");
@@ -484,6 +491,13 @@ namespace AnimalBattleRoyale.EditorTools
             PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
             Object.DestroyImmediate(root);
             Debug.Log($"[Prop] {name} saved (scale {scale:0.###}) -> {prefabPath}");
+        }
+
+        private static void CapTextureSize(string path, int maxSize)
+        {
+            if (AssetImporter.GetAtPath(path) is not TextureImporter importer || importer.maxTextureSize <= maxSize) return;
+            importer.maxTextureSize = maxSize;
+            importer.SaveAndReimport();
         }
 
         private static void RemoveLodGroups(GameObject root)
