@@ -14,12 +14,14 @@ namespace AnimalBattleRoyale
     public sealed class AnimalVisualMotion : MonoBehaviour
     {
         private const float WalkFrequency = 2.1f;
-        private const float RunFrequency = 3.3f;
         private const float LegSwingDegrees = 11f;
-        private const float RunSwingMultiplier = 1.4f;
         private const float ArmSwingDegrees = 6f;
         private const float AirborneTuckDegrees = 14f;
         private const float BlendSpeed = 5f;
+        private const float LocomotionPlaybackBlendSpeed = 4f;
+        private const float DefaultRunPlaybackSpeed = 1.45f;
+        private const float MinimumLocomotionPlaybackSpeed = 0.45f;
+        private const float MaximumLocomotionPlaybackSpeed = 1.65f;
         private const float WingFlapFrequency = 2.4f;
         private const float WingFlapDegrees = 55f;
         private const float WingFlapBlendSpeed = 6f;
@@ -40,17 +42,22 @@ namespace AnimalBattleRoyale
         private bool useHumanoidAnimation;
         private float animatorSpeedVelocity;
 
-        private bool isMoving, isSprinting, isAirborne, isFlying, hanging, frozen;
+        private bool isMoving, isAirborne, isFlying, hanging, frozen;
         private float gaitPhase;
         private float armSwingPhase;
         private float locomotionBlend;
         private float airborneBlend;
-        private float sprintBlend;
+        private float locomotionPlaybackSpeed = 1f;
+        private float targetLocomotionPlaybackSpeed = 1f;
         private Vector3 handAimTarget;
         private WeaponMuzzleSocket weaponSocket;
 
         private Transform leftWing, rightWing;
         private Quaternion leftWingRest, rightWingRest;
+        private Vector3 leftWingFlapAxis = Vector3.right;
+        private Vector3 rightWingFlapAxis = Vector3.right;
+        private float leftWingFlapSign = 1f;
+        private float rightWingFlapSign = 1f;
         private Transform[] leftWingChain, rightWingChain;
         private Quaternion[] leftWingChainRest, rightWingChainRest;
         private float wingFlapPhase;
@@ -78,26 +85,65 @@ namespace AnimalBattleRoyale
             // rigidly from that hand — so the whole right arm is held at its imported rest
             // pose instead (see UpdateArmOverride). The left arm keeps a light custom
             // forward/back-only swing in its place. The cow doesn't carry a weapon and
-            // shouldn't swing either arm. Eagle is untouched (different bone names/rig,
-            // already handled by its own wing-pin system above).
+            // shouldn't swing either arm. Eagle is handled separately by the wing system.
             pinRightArm = type != AnimalType.Eagle;
             pinLeftArm = type == AnimalType.Cow;
             customLeftArmSwing = !pinLeftArm && type != AnimalType.Eagle;
 
-            // Eagle's rig doesn't use the shared L_/R_ bone names (see EagleHumanoidRigSetup) —
-            // its wing roots are these generic auto-rig names instead. The whole chain (not
-            // just the root) is mapped to Humanoid arm bones purely so Mixamo clips retarget
-            // at all, so the rest of the chain needs to be pinned to rest too, or the Run
-            // clip's arm-swing visibly drags the wingtip forward even when not flying.
+            // The current Eagle uses a standard Humanoid shoulder/arm chain for each wing.
+            // Older Eagle assets used generic bone_5/bone_12 names, so keep those as a
+            // fallback. Every child wing bone is pinned to its imported rotation after the
+            // Animator runs; only the shoulder root flaps, keeping the wing rigid and
+            // guaranteeing that the end of every flap is exactly the original pose.
             if (type == AnimalType.Eagle)
             {
-                leftWing = FindBone(transform, "bone_5");
-                rightWing = FindBone(transform, "bone_12");
+                Transform standardLeftWing = FindBone(transform, "L_Clavicle");
+                Transform standardRightWing = FindBone(transform, "R_Clavicle");
+                bool usesStandardWingRig = standardLeftWing != null && standardRightWing != null;
+
+                leftWing = usesStandardWingRig ? standardLeftWing : FindBone(transform, "bone_5");
+                rightWing = usesStandardWingRig ? standardRightWing : FindBone(transform, "bone_12");
                 if (leftWing != null) leftWingRest = leftWing.localRotation;
                 if (rightWing != null) rightWingRest = rightWing.localRotation;
 
-                leftWingChain = new[] { FindBone(transform, "bone_6"), FindBone(transform, "bone_7") };
-                rightWingChain = new[] { FindBone(transform, "bone_13"), FindBone(transform, "bone_14") };
+                if (usesStandardWingRig)
+                {
+                    leftWingChain = new[]
+                    {
+                        leftUpperarm,
+                        FindBone(transform, "L_UpperarmTwist01"),
+                        FindBone(transform, "L_UpperarmTwist02"),
+                        leftForearm,
+                        FindBone(transform, "L_ForearmTwist01"),
+                        FindBone(transform, "L_ForearmTwist02"),
+                        leftHandBone
+                    };
+                    rightWingChain = new[]
+                    {
+                        rightUpperarm,
+                        FindBone(transform, "R_UpperarmTwist01"),
+                        FindBone(transform, "R_UpperarmTwist02"),
+                        rightForearm,
+                        FindBone(transform, "R_ForearmTwist01"),
+                        FindBone(transform, "R_ForearmTwist02"),
+                        rightHandBone
+                    };
+
+                    // Rotate around the animal's forward axis. Opposite signs make a wing
+                    // resting at each side open outward symmetrically instead of both being
+                    // pushed toward the same side. The axes are stored in each rest bone's
+                    // local space, so angle zero remains the exact imported rotation.
+                    leftWingFlapAxis = leftWing.InverseTransformDirection(transform.forward).normalized;
+                    rightWingFlapAxis = rightWing.InverseTransformDirection(transform.forward).normalized;
+                    leftWingFlapSign = -1f;
+                    rightWingFlapSign = 1f;
+                }
+                else
+                {
+                    leftWingChain = new[] { FindBone(transform, "bone_6"), FindBone(transform, "bone_7") };
+                    rightWingChain = new[] { FindBone(transform, "bone_13"), FindBone(transform, "bone_14") };
+                }
+
                 leftWingChainRest = System.Array.ConvertAll(leftWingChain, b => b != null ? b.localRotation : Quaternion.identity);
                 rightWingChainRest = System.Array.ConvertAll(rightWingChain, b => b != null ? b.localRotation : Quaternion.identity);
             }
@@ -157,12 +203,23 @@ namespace AnimalBattleRoyale
         }
 
         public void SetLocomotion(bool moving, bool sprinting, bool airborne,
-            float currentVerticalSpeed = 0f, bool flying = false, bool jumped = false)
+            float currentVerticalSpeed = 0f, bool flying = false, bool jumped = false,
+            float horizontalSpeed = 0f, float referenceWalkSpeed = 1f)
         {
             isMoving = moving;
-            isSprinting = sprinting;
             isAirborne = airborne;
             isFlying = flying;
+
+            // Walking is the only ground locomotion cycle. Running keeps that exact pose
+            // and changes only its playback rate, based on how fast the controller is
+            // actually moving (including aiming, slows and water), so the feet stay in pace.
+            float requestedPlaybackSpeed = horizontalSpeed > 0.01f
+                ? horizontalSpeed / Mathf.Max(0.01f, referenceWalkSpeed)
+                : sprinting ? DefaultRunPlaybackSpeed : 1f;
+            targetLocomotionPlaybackSpeed = moving && !airborne
+                ? Mathf.Clamp(requestedPlaybackSpeed,
+                    MinimumLocomotionPlaybackSpeed, MaximumLocomotionPlaybackSpeed)
+                : 1f;
 
             if (!useHumanoidAnimation || humanoidAnimator == null) return;
             // Airborne (flying, pouncing, jumping) never blends toward the ground Walk/Run
@@ -211,13 +268,15 @@ namespace AnimalBattleRoyale
             float locomotionTarget = !frozen && isMoving && !isAirborne && !hanging ? 1f : 0f;
             locomotionBlend = Mathf.MoveTowards(locomotionBlend, locomotionTarget, dt * BlendSpeed);
 
-            float sprintTarget = isSprinting ? 1f : 0f;
-            sprintBlend = Mathf.MoveTowards(sprintBlend, sprintTarget, dt * 3f);
+            locomotionPlaybackSpeed = Mathf.MoveTowards(locomotionPlaybackSpeed,
+                targetLocomotionPlaybackSpeed, dt * LocomotionPlaybackBlendSpeed);
+
+            if (humanoidAnimator != null)
+                humanoidAnimator.speed = frozen ? 0f : locomotionPlaybackSpeed;
 
             if (locomotionBlend > 0.001f && !frozen)
             {
-                float frequency = Mathf.Lerp(WalkFrequency, RunFrequency, sprintBlend);
-                gaitPhase += dt * frequency * Mathf.PI * 2f;
+                gaitPhase += dt * WalkFrequency * locomotionPlaybackSpeed * Mathf.PI * 2f;
                 // Left-arm swing always paces like the walk cycle, even while sprinting — the
                 // walking arm swing read fine, but speeding it up to match the run cadence
                 // looked bad, so it's kept on its own phase instead of following gaitPhase.
@@ -231,7 +290,7 @@ namespace AnimalBattleRoyale
             float airborneTarget = !frozen && isAirborne ? 1f : 0f;
             airborneBlend = Mathf.MoveTowards(airborneBlend, airborneTarget, dt * BlendSpeed);
 
-            float amplitude = Mathf.Lerp(LegSwingDegrees, LegSwingDegrees * RunSwingMultiplier, sprintBlend) * locomotionBlend;
+            float amplitude = LegSwingDegrees * locomotionBlend;
             float legSwing = Mathf.Sin(gaitPhase) * amplitude;
             float tuck = AirborneTuckDegrees * airborneBlend;
 
@@ -277,6 +336,13 @@ namespace AnimalBattleRoyale
             bone.localRotation = restRotation * Quaternion.Euler(angleDegrees, 0f, 0f);
         }
 
+        private static void ApplyBoneRotation(Transform bone, Quaternion restRotation,
+            Vector3 localAxis, float angleDegrees)
+        {
+            if (bone == null) return;
+            bone.localRotation = restRotation * Quaternion.AngleAxis(angleDegrees, localAxis);
+        }
+
         // Layered after the bone swing above, so the gripping hand visually reaches
         // toward the vine without needing a dedicated per-vine-angle animation clip.
         private void UpdateHandAim()
@@ -309,8 +375,10 @@ namespace AnimalBattleRoyale
             // 0 -> max -> 0 each cycle (never negative), so the wing opens away from rest and
             // always returns to it, instead of swinging past rest to the far side.
             float flapAngle = WingFlapDegrees * (0.5f - 0.5f * Mathf.Cos(wingFlapPhase)) * wingFlapBlend;
-            ApplyBoneSwing(leftWing, leftWingRest, flapAngle);
-            ApplyBoneSwing(rightWing, rightWingRest, flapAngle);
+            ApplyBoneRotation(leftWing, leftWingRest, leftWingFlapAxis,
+                flapAngle * leftWingFlapSign);
+            ApplyBoneRotation(rightWing, rightWingRest, rightWingFlapAxis,
+                flapAngle * rightWingFlapSign);
 
             // Rest of the chain never animates on its own (no separate elbow/wrist flex) —
             // just held rigid at rest so the Humanoid arm-swing can never reach it, whether

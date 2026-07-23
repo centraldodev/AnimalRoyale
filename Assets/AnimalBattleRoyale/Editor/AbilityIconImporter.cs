@@ -3,19 +3,24 @@ using UnityEngine;
 
 namespace AnimalBattleRoyale.EditorTools
 {
-    // Configures the ability/ammo HUD icons (dropped into Resources/UI/Abilities) so the
-    // runtime grayscale generator in BattleRoyaleManager (used for the "unavailable" cooldown
-    // look, mirroring the weapon icons' locked state) can read their pixels — Unity's default
-    // texture import has Read/Write disabled, which throws when GetPixels() is called.
+    // Configures the ability and ammunition HUD icons so BattleRoyaleManager can generate
+    // their unavailable grayscale versions at runtime. Unity's default texture import has
+    // Read/Write disabled, which would otherwise throw when GetPixels() is called.
     [InitializeOnLoad]
     public static class AbilityIconImporter
     {
-        private const string FolderPath = "Assets/AnimalBattleRoyale/Resources/UI/Abilities";
-
-        private static readonly string[] IconNames =
+        private static readonly string[] IconPaths =
         {
-            "Tiger_Ability1", "Ant_Ability1", "Eagle_Ability1", "Monkey_Ability1", "Cow_Ability1",
-            "AmmoBulletIcon", "AmmoReloadIcon"
+            "Assets/AnimalBattleRoyale/Resources/UI/Abilities/Tiger_Ability1.png",
+            "Assets/AnimalBattleRoyale/Resources/UI/Abilities/Ant_Ability1.png",
+            "Assets/AnimalBattleRoyale/Resources/UI/Abilities/Eagle_Ability1.png",
+            "Assets/AnimalBattleRoyale/Resources/UI/Abilities/Monkey_Ability1.png",
+            "Assets/AnimalBattleRoyale/Resources/UI/Abilities/Cow_Ability1.png",
+            "Assets/AnimalBattleRoyale/Resources/UI/Abilities/AmmoBulletIcon.png",
+            "Assets/AnimalBattleRoyale/Resources/UI/Abilities/AmmoReloadIcon.png",
+            "Assets/AnimalBattleRoyale/Resources/UI/WeaponIcons/Seed.png",
+            "Assets/AnimalBattleRoyale/Resources/UI/WeaponIcons/Tomato.png",
+            "Assets/AnimalBattleRoyale/Resources/UI/WeaponIcons/Watermelon.png"
         };
 
         static AbilityIconImporter()
@@ -27,9 +32,8 @@ namespace AnimalBattleRoyale.EditorTools
         public static void ConfigureAll()
         {
             bool changed = false;
-            foreach (string name in IconNames)
+            foreach (string path in IconPaths)
             {
-                string path = $"{FolderPath}/{name}.png";
                 if (AssetImporter.GetAtPath(path) is not TextureImporter importer) continue;
                 if (importer.isReadable && importer.textureType == TextureImporterType.Default
                     && importer.alphaIsTransparency) continue;

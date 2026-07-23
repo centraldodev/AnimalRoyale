@@ -28,6 +28,9 @@ namespace AnimalBattleRoyale
         // full zoom, and how fast the blend moves toward the target each second.
         private const float AimZoomFovFraction = 0.42f;
         private const float AimZoomBlendSpeed = 7f;
+        private const float GrappleDistanceMultiplier = 1.55f;
+        private const float GrappleFovMultiplier = 1.08f;
+        private const float GrappleViewBlendSpeed = 3.5f;
 
         private Camera cachedCamera;
         private float yaw;
@@ -36,6 +39,7 @@ namespace AnimalBattleRoyale
         private readonly RaycastHit[] collisionHits = new RaycastHit[32];
         private bool aiming;
         private float aimZoomBlend;
+        private float grappleViewBlend;
 
         public bool IsAiming => aiming;
         public float AimZoomBlend01 => aimZoomBlend;
@@ -57,6 +61,11 @@ namespace AnimalBattleRoyale
         {
             if (target == null) return;
 
+            ThirdPersonAnimalController followedPlayer = target.GetComponent<ThirdPersonAnimalController>();
+            bool grappling = followedPlayer != null
+                             && (followedPlayer.IsVineLeaping || followedPlayer.IsHangingVine);
+            grappleViewBlend = Mathf.MoveTowards(grappleViewBlend, grappling ? 1f : 0f,
+                Time.deltaTime * GrappleViewBlendSpeed);
             ApplyAspectCorrectedFov();
 
             bool resultScreenOpen = BattleRoyaleManager.Instance != null
@@ -84,9 +93,10 @@ namespace AnimalBattleRoyale
             // Move the camera to the selected shoulder so the animal is framed on
             // the chosen side while the screen center remains the firing ray.
             float shoulderSide = GameSettings.CharacterSide == CharacterScreenSide.Left ? 1f : -1f;
+            float effectiveDistance = distance * Mathf.Lerp(1f, GrappleDistanceMultiplier, grappleViewBlend);
             Vector3 desiredPosition = focusPoint
                                       + rotation * Vector3.right * (shoulderOffset * shoulderSide)
-                                      - rotation * Vector3.forward * distance;
+                                      - rotation * Vector3.forward * effectiveDistance;
             desiredPosition = ResolveCollision(focusPoint, desiredPosition);
 
             transform.position = Vector3.SmoothDamp(transform.position, desiredPosition, ref smoothVelocity, smoothTime);
@@ -106,7 +116,8 @@ namespace AnimalBattleRoyale
         {
             if (cachedCamera == null) return;
             aimZoomBlend = Mathf.MoveTowards(aimZoomBlend, aiming ? 1f : 0f, Time.deltaTime * AimZoomBlendSpeed);
-            float zoomedVerticalFov = baseVerticalFov * Mathf.Lerp(1f, AimZoomFovFraction, aimZoomBlend);
+            float grappleFov = baseVerticalFov * Mathf.Lerp(1f, GrappleFovMultiplier, grappleViewBlend);
+            float zoomedVerticalFov = grappleFov * Mathf.Lerp(1f, AimZoomFovFraction, aimZoomBlend);
 
             float aspect = cachedCamera.aspect;
             if (aspect >= ReferenceAspect)

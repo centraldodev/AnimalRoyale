@@ -74,7 +74,7 @@ namespace AnimalBattleRoyale
                     Vector3.one * 0.8f, new Color(0.74f, 0.68f, 0.58f)),
 
                 AnimalType.Monkey => new AnimalStats(
-                    "Macaco", new[] { "Sequência de Cipós", "DESATIVADO", "DESATIVADO" },
+                    "Macaco", new[] { "Gancho de Cipó", "DESATIVADO", "DESATIVADO" },
                     100f, 6.5f, 9.2f, 8.0f, 19f, 1.75f, 0.76f, new[] { 8f, 0f, 0f }, 0.46f, 1.2f,
                     Vector3.one * 0.76f, new Color(0.55f, 0.36f, 0.2f)),
 

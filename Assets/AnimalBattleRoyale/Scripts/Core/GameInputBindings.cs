@@ -17,7 +17,11 @@ namespace AnimalBattleRoyale
         Ability,
         Consume,
         Descend,
-        Aim
+        Aim,
+        WeaponPrimary,
+        WeaponSecondary,
+        WeaponThird,
+        Reload
     }
 
     public readonly struct GameInputBindingDefinition
@@ -47,6 +51,10 @@ namespace AnimalBattleRoyale
             new GameInputBindingDefinition(GameInputAction.Jump, "PULAR", KeyCode.Space),
             new GameInputBindingDefinition(GameInputAction.Sprint, "CORRER", KeyCode.LeftShift),
             new GameInputBindingDefinition(GameInputAction.RangedAttack, "ATIRAR", KeyCode.Mouse0),
+            new GameInputBindingDefinition(GameInputAction.Reload, "RECARREGAR", KeyCode.R),
+            new GameInputBindingDefinition(GameInputAction.WeaponPrimary, "MUNIÇÃO PRIMÁRIA", KeyCode.Alpha1),
+            new GameInputBindingDefinition(GameInputAction.WeaponSecondary, "MUNIÇÃO SECUNDÁRIA", KeyCode.Alpha2),
+            new GameInputBindingDefinition(GameInputAction.WeaponThird, "TERCEIRA MUNIÇÃO", KeyCode.Alpha3),
             // Right mouse button moved from melee to aim (precision zoom for the sniper/nozes
             // ammo) — melee moved to V so the two don't fight over the same button.
             new GameInputBindingDefinition(GameInputAction.MeleeAttack, "BATER", KeyCode.V),

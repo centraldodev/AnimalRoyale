@@ -63,10 +63,21 @@ namespace AnimalBattleRoyale
 
         public static void PlayProjectileLaunch(Vector3 position, WeaponAmmoType ammoType)
         {
-            if (ammoType == WeaponAmmoType.Seed)
-                PlaySfx(position, "SeedProjectile", 0.26f, 0.98f, 1.03f, 34f, 0.9f, 0.055f, 6);
-            else
-                PlaySfx(position, "ProjectileFly", 0.13f, 0.98f, 1.025f, 32f, 1f, 0.12f, 3);
+            switch (ammoType)
+            {
+                case WeaponAmmoType.Tomato:
+                    PlaySfx(position, "AmmoShotTomato", 0.24f, 0.98f, 1.02f,
+                        34f, 0.9f, 0.055f, 6);
+                    break;
+                case WeaponAmmoType.Watermelon:
+                    PlaySfx(position, "AmmoShotWatermelon", 0.32f, 0.98f, 1.02f,
+                        38f, 0.9f, 0.1f, 4);
+                    break;
+                default:
+                    PlaySfx(position, "AmmoShotSeed", 0.28f, 0.98f, 1.02f,
+                        36f, 0.9f, 0.055f, 6);
+                    break;
+            }
         }
 
         public static void PlaySeedShot(Vector3 position) =>
@@ -106,8 +117,16 @@ namespace AnimalBattleRoyale
         public static void PlayAmmoPickup(Vector3 position) =>
             PlaySfx(position, "AmmoPickup", 0.5f, 0.98f, 1.03f, 30f, 0.72f, 0.12f, 2);
 
-        public static void PlayWeaponReload(Vector3 position) =>
-            PlaySfx(position, "WeaponReload", 0.36f, 1f, 1f, 12f, 0.05f, 1.5f, 1);
+        public static void PlayWeaponReload(Vector3 position, WeaponAmmoType ammoType)
+        {
+            string key = ammoType switch
+            {
+                WeaponAmmoType.Tomato => "AmmoReloadTomato",
+                WeaponAmmoType.Watermelon => "AmmoReloadWatermelon",
+                _ => "AmmoReloadSeed"
+            };
+            PlaySfx(position, key, 0.38f, 1f, 1f, 12f, 0.05f, 0.1f, 1);
+        }
 
         // There are no replacement sounds for these events in the new bank.
         public static void PlayDiamond(Vector3 position) { }
@@ -122,6 +141,7 @@ namespace AnimalBattleRoyale
             if (!clips.TryGetValue(key, out AudioClip clip))
             {
                 clip = Resources.Load<AudioClip>(SfxRoot + key);
+                if (clip == null && key == "AmmoPickup") clip = CreatePickupChime();
                 clips[key] = clip;
             }
             if (clip == null) return;
@@ -141,6 +161,28 @@ namespace AnimalBattleRoyale
             source.minDistance = 2f;
             source.maxDistance = maxDistance;
             source.Play();
+        }
+
+        private static AudioClip CreatePickupChime()
+        {
+            const int sampleRate = 44100;
+            const float duration = 0.32f;
+            int sampleCount = Mathf.CeilToInt(sampleRate * duration);
+            float[] samples = new float[sampleCount];
+            for (int i = 0; i < sampleCount; i++)
+            {
+                float time = i / (float)sampleRate;
+                float attack = Mathf.Clamp01(time / 0.012f);
+                float decay = Mathf.Exp(-8f * time);
+                float upwardSweep = Mathf.Lerp(620f, 1040f, time / duration);
+                float tone = Mathf.Sin(2f * Mathf.PI * upwardSweep * time)
+                             + Mathf.Sin(2f * Mathf.PI * upwardSweep * 1.5f * time) * 0.32f;
+                samples[i] = tone * attack * decay * 0.3f;
+            }
+
+            AudioClip clip = AudioClip.Create("GeneratedAmmoPickup", sampleCount, 1, sampleRate, false);
+            clip.SetData(samples, 0);
+            return clip;
         }
 
         private static int CountPlayingInMixGroup(string mixGroup)

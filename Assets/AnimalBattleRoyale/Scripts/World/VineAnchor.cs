@@ -4,21 +4,20 @@ using UnityEngine.Rendering;
 
 namespace AnimalBattleRoyale
 {
-    /// <summary>Hang point on jungle trees used by the monkey's Q leap. Grappling-hook style:
-    /// aiming Q at a tree within <see cref="ThrowRange"/> throws a vine at it and swings the
-    /// monkey there — the anchor is created on demand at throw time and torn down once the
-    /// monkey leaves it, rather than being a permanent decoration pre-placed on trees.</summary>
+    /// <summary>Anchor used by the monkey's grappling vine. The thrown variant can attach to
+    /// any collider hit by the center-camera ray — terrain, props, trees or another animal —
+    /// and follows moving targets until the monkey releases or throws the next vine.</summary>
     public sealed class VineAnchor : MonoBehaviour
     {
-        // Max distance to land a throw, grabbing the first tree or chaining mid-swing alike.
-        public const float ThrowRange = 30f;
+        public const float ThrowRange = 50f;
         private const int IndicatorSegments = 24;
-        private const float MaximumSwingAngle = 32f;
+        private const int GrappleLineSegments = 10;
+        private const float MaximumSwingAngle = 68f;
         private const float SwingSpring = 24f;
         private const float SwingDamping = 3.1f;
         private const float AmbientSwayDegrees = 5f;
         private static readonly List<VineAnchor> anchors = new List<VineAnchor>();
-        private static readonly List<Transform> throwableTrees = new List<Transform>();
+        private static readonly RaycastHit[] aimHits = new RaycastHit[64];
         private static Material sharedThrowVineMaterial;
         private static LineRenderer previewIndicator;
         private static Material sharedIndicatorMaterial;
@@ -30,10 +29,21 @@ namespace AnimalBattleRoyale
         private Vector3 swingVelocity;
         private int lastDrivenFrame = -1;
         private bool swingPositionInitialized;
+        private Transform attachmentTarget;
+        private Vector3 attachmentLocalPoint;
+        private Vector3 attachmentLocalNormal;
+        private LineRenderer grappleOuterLine;
+        private LineRenderer grappleCoreLine;
+        private Vector3 grappleVisualEndPoint;
+        private bool hasExternalVisualEndPoint;
         private float ambientPhaseX;
         private float ambientPhaseZ;
 
         public Vector3 SwingVelocity => swingVelocity;
+        public Vector3 AttachmentPosition => swingPivot != null ? swingPivot.position : transform.position;
+        public Vector3 AttachmentNormal => attachmentTarget != null
+            ? attachmentTarget.TransformDirection(attachmentLocalNormal).normalized
+            : Vector3.up;
 
         private void OnEnable()
         {
@@ -47,38 +57,43 @@ namespace AnimalBattleRoyale
 
         private void LateUpdate()
         {
-            if (swingPivot == null || lastDrivenFrame == Time.frameCount) return;
-            SimulateSwing(Vector3.zero, Time.deltaTime);
+            FollowAttachment();
+            if (swingPivot == null) return;
+            if (lastDrivenFrame != Time.frameCount) SimulateSwing(Vector3.zero, Time.deltaTime);
+            UpdateGrappleVisual();
         }
 
         /// <summary>Pushes the bottom of the vine toward the requested world direction.</summary>
         public void DriveSwing(Vector3 worldDirection, float deltaTime)
         {
             if (swingPivot == null) return;
+            FollowAttachment();
             lastDrivenFrame = Time.frameCount;
             SimulateSwing(worldDirection, deltaTime);
         }
 
-        // Previews where a throw would actually land — one shared ring (not one per tree,
-        // since there's no pre-placed anchor to hang it on anymore) shown on whichever tree
-        // currently scores best against FindBestTree's aim/range test.
+        // One shared ring previews the exact surface point where the center-camera ray lands.
         internal static void TickIndicators(ThirdPersonAnimalController player, Camera camera, float time)
         {
             bool monkeyActive = player != null && camera != null && player.AnimalType == AnimalType.Monkey
-                && !player.IsDefeated && !player.IsVineLeaping
+                && !player.IsDefeated
                 && (!player.IsHangingVine || player.CanChainToAnotherVine);
 
             Vector3 point = default;
-            Transform target = monkeyActive ? FindBestTree(player, camera.transform, out point) : null;
-            if (target == null)
+            bool hasTarget = monkeyActive && TryFindAttachment(player, camera.transform.position,
+                player.ViewAimDirection, out _, out point, out _);
+            if (!hasTarget)
             {
                 if (previewIndicator != null) previewIndicator.enabled = false;
                 return;
             }
 
             float pulse = Mathf.Sin(time * 7f);
-            float radius = 0.2f + pulse * 0.018f;
-            float width = 0.022f + pulse * 0.003f;
+            float targetDistance = Vector3.Distance(camera.transform.position, point);
+            float distanceScale = Mathf.Lerp(1f, 3f, Mathf.InverseLerp(8f, ThrowRange, targetDistance));
+            float radius = (0.2f + pulse * 0.018f) * distanceScale;
+            float width = (0.022f + pulse * 0.003f) * Mathf.Lerp(1f, 2f,
+                Mathf.InverseLerp(8f, ThrowRange, targetDistance));
             Vector3 cameraRight = camera.transform.right;
             Vector3 cameraUp = camera.transform.up;
 
@@ -276,6 +291,94 @@ namespace AnimalBattleRoyale
             ambientPhaseZ = Random.Range(0f, Mathf.PI * 2f);
         }
 
+        private void ConfigureAttachment(Transform target, Vector3 worldPoint, Vector3 worldNormal)
+        {
+            attachmentTarget = target;
+            attachmentLocalPoint = target != null ? target.InverseTransformPoint(worldPoint) : worldPoint;
+            attachmentLocalNormal = target != null
+                ? target.InverseTransformDirection(worldNormal).normalized
+                : worldNormal.normalized;
+        }
+
+        public void SetGrappleVisualEndPoint(Vector3 worldPoint)
+        {
+            grappleVisualEndPoint = worldPoint;
+            hasExternalVisualEndPoint = true;
+        }
+
+        private void FollowAttachment()
+        {
+            if (swingPivot == null || attachmentTarget == null) return;
+            swingPivot.position = attachmentTarget.TransformPoint(attachmentLocalPoint);
+        }
+
+        // The thrown vine is rendered as a slim two-tone filament rather than the chunky
+        // cylinder chain used by decorative jungle vines. A dark outline keeps it readable
+        // against foliage while the narrow lime core gives it the look of a green web strand.
+        private void ConfigureGrappleVisual()
+        {
+            grappleOuterLine = CreateGrappleLine("GrappleWebOutline", 0.045f,
+                new Color(0.035f, 0.38f, 0.08f, 0.94f), 12);
+            grappleCoreLine = CreateGrappleLine("GrappleWebCore", 0.018f,
+                new Color(0.48f, 1f, 0.24f, 1f), 13);
+            UpdateGrappleVisual();
+        }
+
+        private LineRenderer CreateGrappleLine(string objectName, float width, Color color,
+            int sortingOrder)
+        {
+            GameObject strand = new GameObject(objectName);
+            strand.transform.SetParent(swingPivot, false);
+            LineRenderer line = strand.AddComponent<LineRenderer>();
+            line.useWorldSpace = true;
+            line.positionCount = GrappleLineSegments + 1;
+            line.widthMultiplier = width;
+            line.widthCurve = new AnimationCurve(
+                new Keyframe(0f, 0.4f),
+                new Keyframe(0.08f, 1f),
+                new Keyframe(0.92f, 1f),
+                new Keyframe(1f, 0.4f));
+            line.numCornerVertices = 3;
+            line.numCapVertices = 4;
+            line.shadowCastingMode = ShadowCastingMode.Off;
+            line.receiveShadows = false;
+            line.sortingOrder = sortingOrder;
+            line.sharedMaterial = GetThrowVineMaterial();
+            line.startColor = color;
+            line.endColor = color;
+            return line;
+        }
+
+        private void UpdateGrappleVisual()
+        {
+            if (grappleOuterLine == null || grappleCoreLine == null || swingPivot == null) return;
+
+            Vector3 start = swingPivot.position;
+            Vector3 end = hasExternalVisualEndPoint ? grappleVisualEndPoint : transform.position;
+            Vector3 direction = end - start;
+            float length = direction.magnitude;
+            Vector3 side = length > 0.001f
+                ? Vector3.Cross(direction / length, Vector3.up)
+                : Vector3.right;
+            if (side.sqrMagnitude < 0.001f) side = Vector3.right;
+            else side.Normalize();
+
+            // Just enough organic curve to avoid a synthetic laser-line appearance while
+            // remaining taut and much thinner than the old segmented rope.
+            float sag = Mathf.Min(0.16f, length * 0.006f);
+            for (int i = 0; i <= GrappleLineSegments; i++)
+            {
+                float t = (float)i / GrappleLineSegments;
+                float taper = Mathf.Sin(t * Mathf.PI);
+                float weave = Mathf.Sin(t * Mathf.PI * 4f + Time.time * 2.4f) * 0.012f * taper;
+                Vector3 point = Vector3.Lerp(start, end, t)
+                                + Vector3.down * (sag * taper)
+                                + side * weave;
+                grappleOuterLine.SetPosition(i, point);
+                grappleCoreLine.SetPosition(i, point);
+            }
+        }
+
         private void SimulateSwing(Vector3 worldDirection, float deltaTime)
         {
             float step = Mathf.Clamp(deltaTime, 0f, 0.05f);
@@ -354,133 +457,104 @@ namespace AnimalBattleRoyale
             return (vine.position - monkey.transform.position).sqrMagnitude <= ThrowRange * ThrowRange;
         }
 
-        /// <summary>A tree the monkey can currently throw a vine at, once every spawned tree
-        /// has been registered via <see cref="RegisterThrowableTree"/>.</summary>
-        public static void RegisterThrowableTree(Transform tree)
+        // Kept for map-generation compatibility. Explicit registration is no longer needed:
+        // every non-trigger collider is now a valid grapple surface.
+        public static void RegisterThrowableTree(Transform tree) { }
+
+        private static bool TryFindAttachment(ThirdPersonAnimalController monkey, Vector3 rayOrigin,
+            Vector3 rayDirection, out Transform attachment, out Vector3 point, out Vector3 normal)
         {
-            if (tree != null && !throwableTrees.Contains(tree)) throwableTrees.Add(tree);
-        }
+            attachment = null;
+            point = default;
+            normal = Vector3.up;
+            if (monkey == null || rayDirection.sqrMagnitude < 0.0001f) return false;
 
-        // How close (horizontally) the aim ray has to pass by a tree's trunk to count as
-        // "aiming at" it — generous enough that roughly aiming at the tree (not needing to
-        // land a pixel-precise shot on a thin trunk) is enough.
-        private const float GrabRadius = 3.5f;
-        // Attach height is wherever the aim ray crosses the trunk, clamped to this band of
-        // the tree's own height so a throw can never land below the roots or above the
-        // canopy — the fraction is against tree.lossyScale.y since these prefabs' own local
-        // bounds are ~1 unit tall, so world scale doubles as world height.
-        private const float MinAttachHeightFraction = 0.2f;
-        private const float MaxAttachHeightFraction = 0.85f;
+            rayDirection.Normalize();
+            float rayLength = ThrowRange + Vector3.Distance(rayOrigin, monkey.transform.position);
+            int hitCount = Physics.RaycastNonAlloc(new Ray(rayOrigin, rayDirection), aimHits,
+                rayLength, ~0, QueryTriggerInteraction.Ignore);
+            float nearestDistance = float.MaxValue;
 
-        /// <summary>Where a throw at this tree would land, following the aim ray up/down the
-        /// trunk (so aiming low grabs a low branch, aiming high grabs a high one) instead of a
-        /// fixed height — and how far off-axis that ray passed, used to judge "is this even
-        /// aimed at the tree" and to pick the best tree when more than one qualifies.</summary>
-        private static bool TryGetAimedTrunkPoint(Transform tree, Vector3 rayOrigin, Vector3 rayDirection,
-            out Vector3 worldPoint, out float horizontalDistance)
-        {
-            worldPoint = default;
-            horizontalDistance = float.MaxValue;
-            if (tree == null) return false;
-
-            Vector2 rayDirXZ = new Vector2(rayDirection.x, rayDirection.z);
-            float rayDirXZSqrLength = rayDirXZ.sqrMagnitude;
-            if (rayDirXZSqrLength < 0.0001f) return false; // aiming straight up/down
-
-            Vector2 toTreeXZ = new Vector2(tree.position.x - rayOrigin.x, tree.position.z - rayOrigin.z);
-            float t = Vector2.Dot(toTreeXZ, rayDirXZ) / rayDirXZSqrLength;
-            if (t < 0f) return false; // trunk is behind the camera
-
-            Vector3 closestOnRay = rayOrigin + rayDirection * t;
-            horizontalDistance = Vector2.Distance(new Vector2(closestOnRay.x, closestOnRay.z),
-                new Vector2(tree.position.x, tree.position.z));
-            if (horizontalDistance > GrabRadius) return false;
-
-            float height = Mathf.Max(1f, tree.lossyScale.y);
-            float attachHeight = Mathf.Clamp(closestOnRay.y - tree.position.y,
-                height * MinAttachHeightFraction, height * MaxAttachHeightFraction);
-            worldPoint = new Vector3(tree.position.x, tree.position.y + attachHeight, tree.position.z);
-            return true;
-        }
-
-        // Nudges the anchor slightly toward whichever side the ray approached from and down
-        // a bit further for the free-hanging grab handle, purely so the vine reads as tied
-        // onto the trunk surface and has a bit of hang instead of floating exactly on the
-        // (otherwise invisible) trunk centerline.
-        private static void GetAttachmentLocalPoints(Transform tree, Vector3 worldAttachPoint,
-            Vector3 fromPosition, out Vector3 localStart, out Vector3 localEnd)
-        {
-            Vector3 fromLocal = tree.InverseTransformPoint(fromPosition);
-            float side = fromLocal.x >= 0f ? 1f : -1f;
-            float front = fromLocal.z >= 0f ? 1f : -1f;
-            Vector3 attachLocal = tree.InverseTransformPoint(worldAttachPoint);
-            localStart = attachLocal + new Vector3(side * 0.17f, 0f, front * 0.17f);
-            localEnd = attachLocal + new Vector3(side * 0.22f, -0.36f, front * 0.2f);
-        }
-
-        /// <summary>Finds the best tree to throw at right now: any tree the aim ray passes
-        /// close enough to its trunk, preferring the most precisely aimed one when several
-        /// qualify (e.g. two trees roughly in line with each other).</summary>
-        private static Transform FindBestTree(ThirdPersonAnimalController monkey, Transform camera,
-            out Vector3 bestPoint)
-        {
-            bestPoint = default;
-            if (monkey == null) return null;
-            Vector3 rayOrigin = camera != null ? camera.position : monkey.transform.position;
-            Vector3 rayDirection = monkey.ViewAimDirection;
-
-            Transform best = null;
-            float bestHorizontalDistance = float.MaxValue;
-            for (int i = 0; i < throwableTrees.Count; i++)
+            for (int i = 0; i < hitCount; i++)
             {
-                Transform tree = throwableTrees[i];
-                if (tree == null) continue;
-                if (!TryGetAimedTrunkPoint(tree, rayOrigin, rayDirection, out Vector3 point, out float horizontalDistance)) continue;
-                if ((point - monkey.transform.position).sqrMagnitude > ThrowRange * ThrowRange) continue;
-                if (horizontalDistance >= bestHorizontalDistance) continue;
-                best = tree;
-                bestHorizontalDistance = horizontalDistance;
-                bestPoint = point;
+                RaycastHit hit = aimHits[i];
+                if (hit.collider == null || hit.distance >= nearestDistance) continue;
+                Transform hitTransform = hit.collider.transform;
+                if (hitTransform == monkey.transform || hitTransform.IsChildOf(monkey.transform)) continue;
+                if ((hit.point - monkey.transform.position).sqrMagnitude > ThrowRange * ThrowRange) continue;
+
+                // Attaching to an animal's controller root makes the hit point follow its
+                // movement and rotation. Other surfaces follow the exact collider transform.
+                ThirdPersonAnimalController hitAnimal = hit.collider.GetComponentInParent<ThirdPersonAnimalController>();
+                if (hitAnimal == monkey) continue;
+                attachment = hitAnimal != null ? hitAnimal.transform : hitTransform;
+                point = hit.point;
+                normal = hit.normal;
+                nearestDistance = hit.distance;
             }
-            return best;
+
+            return attachment != null;
         }
 
-        /// <summary>Throws a vine at whatever tree is currently aimed at (see FindBestTree)
-        /// and, if one's in range, grabs/chains to it exactly like the old pre-placed-vine
-        /// flow — BeginVineLeap etc. don't care whether the anchor was already there or was
-        /// just created for this throw.</summary>
-        public static bool TryThrowVine(ThirdPersonAnimalController monkey)
+        /// <summary>Throws at the exact collider point under the crosshair. The resulting
+        /// strand spans from that point to the monkey while the controller pulls the animal
+        /// toward the attachment.</summary>
+        public static bool TryThrowVine(ThirdPersonAnimalController monkey, Vector3 fallbackAimDirection)
         {
-            if (monkey == null || monkey.AnimalType != AnimalType.Monkey || monkey.IsVineLeaping) return false;
+            if (monkey == null || monkey.AnimalType != AnimalType.Monkey) return false;
             if (monkey.IsHangingVine && !monkey.CanChainToAnotherVine) return false;
 
-            Transform camera = CameraCache.MainTransform;
-            Transform tree = FindBestTree(monkey, camera, out Vector3 point);
-            if (tree == null) return false;
+            Transform camera = monkey.IsLocalPlayer ? CameraCache.MainTransform : null;
+            Vector3 rayOrigin = camera != null
+                ? camera.position
+                : monkey.transform.position + Vector3.up * (monkey.Stats.ControllerHeight * 0.7f);
+            Vector3 rayDirection = camera != null ? monkey.ViewAimDirection : fallbackAimDirection;
+            if (!TryFindAttachment(monkey, rayOrigin, rayDirection, out Transform attachment,
+                    out Vector3 point, out Vector3 normal)) return false;
 
-            VineAnchor thrown = CreateThrowAnchor(tree, point, monkey.transform.position);
+            Vector3 gripPoint = monkey.transform.position
+                                + Vector3.up * (monkey.Stats.ControllerHeight * 0.82f);
+            VineAnchor thrown = CreateThrowAnchor(attachment, point, normal, gripPoint);
             if (thrown == null) return false;
 
-            return monkey.IsHangingVine
+            bool attached = monkey.IsHangingVine || monkey.IsVineLeaping
                 ? monkey.TryLaunchToVine(thrown.transform)
                 : monkey.TryGrabVine(thrown.transform);
+            if (!attached) DestroyThrown(thrown.transform);
+            return attached;
         }
 
-        private static VineAnchor CreateThrowAnchor(Transform tree, Vector3 worldAttachPoint, Vector3 fromPosition)
+        private static VineAnchor CreateThrowAnchor(Transform attachment, Vector3 worldAttachPoint,
+            Vector3 worldAttachNormal, Vector3 worldGripPoint)
         {
-            GetAttachmentLocalPoints(tree, worldAttachPoint, fromPosition, out Vector3 localStart, out Vector3 localEnd);
-            return Create(tree, localStart, localEnd, GetThrowVineMaterial());
+            Vector3 direction = worldGripPoint - worldAttachPoint;
+            float length = direction.magnitude;
+            if (attachment == null || length <= 0.1f) return null;
+
+            GameObject pivot = new GameObject("VineSwingPivot");
+            pivot.transform.SetPositionAndRotation(worldAttachPoint,
+                Quaternion.FromToRotation(Vector3.down, direction.normalized));
+
+            GameObject anchor = new GameObject("VineAnchor");
+            anchor.transform.SetParent(pivot.transform, false);
+            anchor.transform.localPosition = Vector3.down * length;
+            VineAnchor vineAnchor = anchor.AddComponent<VineAnchor>();
+            vineAnchor.ConfigureSwing(pivot.transform);
+            vineAnchor.ConfigureAttachment(attachment, worldAttachPoint, worldAttachNormal);
+            vineAnchor.SetGrappleVisualEndPoint(worldGripPoint);
+            vineAnchor.ConfigureGrappleVisual();
+            return vineAnchor;
         }
 
         private static Material GetThrowVineMaterial()
         {
             if (sharedThrowVineMaterial != null) return sharedThrowVineMaterial;
-            Shader shader = ShaderLibrary.Lit;
-            Color color = new Color(0.48f, 0.88f, 0.16f);
-            sharedThrowVineMaterial = new Material(shader) { name = "ThrownVine", color = color };
-            if (sharedThrowVineMaterial.HasProperty("_BaseColor")) sharedThrowVineMaterial.SetColor("_BaseColor", color);
-            if (sharedThrowVineMaterial.HasProperty("_Glossiness")) sharedThrowVineMaterial.SetFloat("_Glossiness", 0.18f);
-            if (sharedThrowVineMaterial.HasProperty("_Smoothness")) sharedThrowVineMaterial.SetFloat("_Smoothness", 0.18f);
+            Shader shader = ShaderLibrary.Sprite;
+            sharedThrowVineMaterial = new Material(shader)
+            {
+                name = "GreenGrappleWeb",
+                color = Color.white
+            };
             sharedThrowVineMaterial.enableInstancing = true;
             return sharedThrowVineMaterial;
         }
@@ -498,9 +572,11 @@ namespace AnimalBattleRoyale
 
         public static bool IsLookedAtBy(ThirdPersonAnimalController player)
         {
-            if (player == null || player.AnimalType != AnimalType.Monkey || player.IsDefeated || player.IsVineLeaping) return false;
+            if (player == null || player.AnimalType != AnimalType.Monkey || player.IsDefeated) return false;
             if (player.IsHangingVine && !player.CanChainToAnotherVine) return false;
-            return FindBestTree(player, CameraCache.MainTransform, out _) != null;
+            Transform camera = CameraCache.MainTransform;
+            Vector3 origin = camera != null ? camera.position : player.transform.position;
+            return TryFindAttachment(player, origin, player.ViewAimDirection, out _, out _, out _);
         }
     }
 }

@@ -18,6 +18,9 @@ namespace AnimalBattleRoyale
         public const float SeedDamage = 6f;
         public const float TomatoDamage = 12f;
         public const float WatermelonDamage = 15f;
+        // Global travel-only boost: projectiles reach the aimed point twice as fast without
+        // changing fire cadence, damage, range lifetime, magazine size or reload timing.
+        private const float ProjectileTravelSpeedMultiplier = 2f;
         // Headshots (any ammo) deal double damage. The seed slot ("nozes" — the long-range
         // precision weapon) additionally instant-kills on a headshot, matching a sniper's
         // one-shot identity; tomato/watermelon headshots just get the damage multiplier.
@@ -135,7 +138,9 @@ namespace AnimalBattleRoyale
             // Base speed is tunable globally by the host; each ammo type scales it to its own
             // identity — nozes near-instant (precision, has to be aimed), tomato a weak-pistol
             // pace, watermelon a shotgun-like base (see ProjectileSpeedMultiplierFor).
-            float speed = ServerGameTuning.ProjectileSpeed * ThirdPersonAnimalController.ProjectileSpeedMultiplierFor(source.CurrentWeaponAmmo);
+            float speed = ServerGameTuning.ProjectileSpeed
+                          * ThirdPersonAnimalController.ProjectileSpeedMultiplierFor(source.CurrentWeaponAmmo)
+                          * ProjectileTravelSpeedMultiplier;
             float lift;
             float visualScale;
             switch (source.AnimalType)
@@ -532,8 +537,8 @@ namespace AnimalBattleRoyale
             return pickup;
         }
 
-        /// <summary>Grabs whatever ammo pickup is nearest, regardless of type — all three
-        /// weapons are always selectable, so any type collected is useful.</summary>
+        /// <summary>Grabs whatever ammo pickup is nearest, regardless of type. Collecting a
+        /// previously empty type unlocks it for selection and immediately makes it useful.</summary>
         public static bool TryCollectNearest(ThirdPersonAnimalController animal)
         {
             if (animal == null) return false;
@@ -568,13 +573,20 @@ namespace AnimalBattleRoyale
             return closest;
         }
 
-        // TryRefillRangedAmmo clamps to that type's own max reserve internally, so passing a
-        // deliberately oversized amount here just means "top this type all the way up".
-        private const int FullRefillAmount = 9999;
+        private int PickupAmount()
+        {
+            return ammoType switch
+            {
+                WeaponAmmoType.Seed => 10,
+                WeaponAmmoType.Tomato => 60,
+                WeaponAmmoType.Watermelon => 30,
+                _ => 0
+            };
+        }
 
         private bool Collect(ThirdPersonAnimalController animal)
         {
-            if (!available || !animal.TryRefillRangedAmmo(ammoType, FullRefillAmount)) return false;
+            if (!available || !animal.TryRefillRangedAmmo(ammoType, PickupAmount())) return false;
             available = false;
             respawnAt = Time.time + RespawnSeconds;
             if (visual != null) visual.gameObject.SetActive(false);
@@ -605,40 +617,23 @@ namespace AnimalBattleRoyale
             }
         }
 
-        private static GameObject cachedAmmoPrefab;
-        private static bool ammoPrefabLookedUp;
-        private static Material cachedAmmoMaterial;
+        private static readonly Dictionary<string, Material> pickupMaterials =
+            new Dictionary<string, Material>();
+        private static Mesh seedPickupMesh;
+        private static Mesh tomatoPickupMesh;
+        private static Mesh watermelonNoseMesh;
 
         private void BuildVisual()
         {
-            if (!ammoPrefabLookedUp)
+            GameObject instance = ammoType switch
             {
-                cachedAmmoPrefab = Resources.Load<GameObject>("Pickups/Municao/municao");
-                ammoPrefabLookedUp = true;
-            }
-
-            GameObject instance;
-            if (cachedAmmoPrefab != null)
-            {
-                instance = Instantiate(cachedAmmoPrefab, transform, false);
-                foreach (Collider c in instance.GetComponentsInChildren<Collider>(true)) if (c != null) c.enabled = false;
-                Material material = GetAmmoMaterial();
-                if (material != null)
-                {
-                    foreach (Renderer r in instance.GetComponentsInChildren<Renderer>(true)) r.sharedMaterial = material;
-                }
-            }
-            else
-            {
-                instance = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                instance.transform.SetParent(transform, false);
-                Collider fallbackCollider = instance.GetComponent<Collider>();
-                if (fallbackCollider != null) fallbackCollider.enabled = false;
-                Renderer renderer = instance.GetComponent<Renderer>();
-                if (renderer != null) renderer.sharedMaterial = MissionNode.CreateMaterial(SupplyColor(), true);
-            }
+                WeaponAmmoType.Seed => BuildSeedPickupModel(),
+                WeaponAmmoType.Tomato => BuildTomatoPickupModel(),
+                WeaponAmmoType.Watermelon => BuildWatermelonPickupModel(),
+                _ => BuildSeedPickupModel()
+            };
             instance.name = "SupplyVisual";
-            PrepareImportedVisual(instance);
+            PreparePickupVisual(instance);
             visualBasePosition = instance.transform.localPosition;
             visual = instance.transform;
 
@@ -658,41 +653,314 @@ namespace AnimalBattleRoyale
             labelObject.AddComponent<PickupLabel>();
         }
 
-        private static Material GetAmmoMaterial()
+        private GameObject BuildSeedPickupModel()
         {
-            if (cachedAmmoMaterial != null) return cachedAmmoMaterial;
-            Texture2D albedo = Resources.Load<Texture2D>("Pickups/Municao/municao_basecolor");
-            if (albedo == null) return null;
-            Material material = new Material(ShaderLibrary.Lit)
+            GameObject root = CreateModelRoot("WalnutBulletPickup");
+            Transform model = CreateHorizontalPickupModel(root.transform, "WalnutModel");
+            Material shell = GetPickupMaterial("PickupWalnutShell",
+                new Color(0.55f, 0.25f, 0.075f), 0.38f);
+            Material ridge = GetPickupMaterial("PickupWalnutRidge",
+                new Color(0.74f, 0.39f, 0.12f), 0.32f);
+            Material seam = GetPickupMaterial("PickupWalnutSeam",
+                new Color(0.18f, 0.065f, 0.018f), 0.22f);
+
+            if (seedPickupMesh == null)
             {
-                name = "Municao_RuntimePBR",
-                color = Color.white,
-                enableInstancing = true
-            };
-            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", albedo);
-            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", albedo);
-            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0.1f);
-            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.35f);
-            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.35f);
-            cachedAmmoMaterial = material;
-            return cachedAmmoMaterial;
+                seedPickupMesh = CreateLatheMesh("WalnutBulletPickupMesh", new[]
+                {
+                    new Vector2(0f, -0.76f),
+                    new Vector2(0.28f, -0.68f),
+                    new Vector2(0.4f, -0.42f),
+                    new Vector2(0.42f, 0.02f),
+                    new Vector2(0.34f, 0.3f),
+                    new Vector2(0.2f, 0.58f),
+                    new Vector2(0f, 0.92f)
+                }, 24);
+            }
+            AddPickupMesh(model, "WalnutShell", seedPickupMesh, shell);
+
+            // Raised organic ridges wrap the whole nut, while the two dark seams reproduce
+            // the split-kernel silhouette from the supplied front-facing reference.
+            for (int i = 0; i < 8; i++)
+            {
+                float angle = i * 45f;
+                Vector3 radial = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
+                AddPickupPrimitive(model, PrimitiveType.Capsule, "WalnutRidge_" + i,
+                    radial * 0.385f + Vector3.down * 0.08f,
+                    new Vector3(0.032f, 0.42f, 0.035f),
+                    Quaternion.Euler(0f, angle, Mathf.Sin(angle * Mathf.Deg2Rad) * 5f), ridge);
+            }
+            AddPickupPrimitive(model, PrimitiveType.Capsule, "WalnutFrontSeam",
+                new Vector3(0f, -0.05f, -0.414f), new Vector3(0.025f, 0.56f, 0.018f),
+                Quaternion.identity, seam);
+            AddPickupPrimitive(model, PrimitiveType.Capsule, "WalnutBackSeam",
+                new Vector3(0f, -0.05f, 0.414f), new Vector3(0.025f, 0.56f, 0.018f),
+                Quaternion.identity, seam);
+            return root;
         }
 
-        private void PrepareImportedVisual(GameObject instance)
+        private GameObject BuildTomatoPickupModel()
         {
-            foreach (Transform child in instance.GetComponentsInChildren<Transform>(true))
-                child.gameObject.SetActive(true);
-            foreach (LODGroup lodGroup in instance.GetComponentsInChildren<LODGroup>(true))
-                lodGroup.enabled = false;
-            foreach (Renderer renderer in instance.GetComponentsInChildren<Renderer>(true))
+            GameObject root = CreateModelRoot("TomatoBulletPickup");
+            Transform model = CreateHorizontalPickupModel(root.transform, "TomatoModel");
+            Material flesh = GetPickupMaterial("PickupTomatoFlesh",
+                new Color(0.96f, 0.075f, 0.025f), 0.58f);
+            Material inner = GetPickupMaterial("PickupTomatoInner",
+                new Color(1f, 0.28f, 0.035f), 0.5f);
+            Material seed = GetPickupMaterial("PickupTomatoSeed",
+                new Color(1f, 0.62f, 0.08f), 0.65f);
+            Material leaf = GetPickupMaterial("PickupTomatoLeaf",
+                new Color(0.12f, 0.42f, 0.025f), 0.3f);
+
+            if (tomatoPickupMesh == null)
             {
-                renderer.enabled = true;
-                renderer.forceRenderingOff = false;
+                tomatoPickupMesh = CreateLatheMesh("TomatoBulletPickupMesh", new[]
+                {
+                    new Vector2(0f, -0.68f),
+                    new Vector2(0.34f, -0.6f),
+                    new Vector2(0.48f, -0.3f),
+                    new Vector2(0.49f, 0.1f),
+                    new Vector2(0.42f, 0.4f),
+                    new Vector2(0.25f, 0.69f),
+                    new Vector2(0f, 0.94f)
+                }, 28);
+            }
+            AddPickupMesh(model, "TomatoBulletBody", tomatoPickupMesh, flesh);
+
+            // A bright central vein plus seed rows on both faces makes the model still read
+            // as the sliced tomato bullet when it rotates through a complete turn.
+            AddPickupPrimitive(model, PrimitiveType.Capsule, "TomatoFrontVein",
+                new Vector3(0f, -0.02f, -0.465f), new Vector3(0.025f, 0.43f, 0.014f),
+                Quaternion.identity, inner);
+            AddPickupPrimitive(model, PrimitiveType.Capsule, "TomatoBackVein",
+                new Vector3(0f, -0.02f, 0.465f), new Vector3(0.025f, 0.43f, 0.014f),
+                Quaternion.identity, inner);
+            for (int face = -1; face <= 1; face += 2)
+            {
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    for (int row = 0; row < 3; row++)
+                    {
+                        float y = -0.3f + row * 0.22f;
+                        AddPickupPrimitive(model, PrimitiveType.Sphere,
+                            $"TomatoSeed_{face}_{side}_{row}",
+                            new Vector3(side * (0.17f + row * 0.012f), y, face * 0.438f),
+                            new Vector3(0.055f, 0.085f, 0.022f),
+                            Quaternion.Euler(0f, 0f, side * (18f - row * 4f)), seed);
+                    }
+                }
             }
 
-            // The source FBX's authored scale isn't guaranteed, so rescale to a known
-            // footprint and re-anchor on the ground rather than trust it as-is.
-            ImportedPropVisual.NormalizeToGround(instance, 0.5f, transform.position.y, 0.08f);
+            for (int i = 0; i < 5; i++)
+            {
+                float angle = i * 72f;
+                Vector3 direction = Quaternion.Euler(0f, angle, 0f) * Vector3.forward;
+                AddPickupPrimitive(model, PrimitiveType.Sphere, "TomatoLeaf_" + i,
+                    Vector3.down * 0.62f + direction * 0.18f,
+                    new Vector3(0.09f, 0.028f, 0.3f),
+                    Quaternion.Euler(0f, angle, 0f), leaf);
+            }
+            AddPickupPrimitive(model, PrimitiveType.Cylinder, "TomatoStem",
+                Vector3.down * 0.73f, new Vector3(0.075f, 0.1f, 0.075f),
+                Quaternion.identity, leaf);
+            return root;
+        }
+
+        private GameObject BuildWatermelonPickupModel()
+        {
+            GameObject root = CreateModelRoot("WatermelonCartridgePickup");
+            root.transform.localRotation = Quaternion.Euler(0f, 18f, -7f);
+            Material rind = GetPickupMaterial("PickupWatermelonRind",
+                new Color(0.08f, 0.48f, 0.035f), 0.62f);
+            Material stripe = GetPickupMaterial("PickupWatermelonStripe",
+                new Color(0.38f, 0.78f, 0.08f), 0.48f);
+            Material flesh = GetPickupMaterial("PickupWatermelonFlesh",
+                new Color(0.98f, 0.035f, 0.025f), 0.6f);
+            Material whiteRind = GetPickupMaterial("PickupWatermelonWhiteRind",
+                new Color(0.93f, 0.98f, 0.78f), 0.42f);
+            Material blackSeed = GetPickupMaterial("PickupWatermelonSeed",
+                new Color(0.012f, 0.008f, 0.006f), 0.72f);
+            Material darkRing = GetPickupMaterial("PickupWatermelonRing",
+                new Color(0.02f, 0.18f, 0.018f), 0.5f);
+
+            AddPickupPrimitive(root.transform, PrimitiveType.Cylinder, "WatermelonCartridgeBody",
+                new Vector3(0.15f, 0f, 0f), new Vector3(0.42f, 0.65f, 0.42f),
+                Quaternion.Euler(0f, 0f, 90f), rind);
+            AddPickupPrimitive(root.transform, PrimitiveType.Cylinder, "WatermelonWhiteRind",
+                new Vector3(-0.51f, 0f, 0f), new Vector3(0.46f, 0.075f, 0.46f),
+                Quaternion.Euler(0f, 0f, 90f), whiteRind);
+            AddPickupPrimitive(root.transform, PrimitiveType.Cylinder, "WatermelonRearCap",
+                new Vector3(0.88f, 0f, 0f), new Vector3(0.48f, 0.13f, 0.48f),
+                Quaternion.Euler(0f, 0f, 90f), rind);
+            AddPickupPrimitive(root.transform, PrimitiveType.Cylinder, "WatermelonRearGroove",
+                new Vector3(0.73f, 0f, 0f), new Vector3(0.49f, 0.034f, 0.49f),
+                Quaternion.Euler(0f, 0f, 90f), darkRing);
+
+            if (watermelonNoseMesh == null)
+            {
+                watermelonNoseMesh = CreateLatheMesh("WatermelonCartridgeNoseMesh", new[]
+                {
+                    new Vector2(0f, -0.52f),
+                    new Vector2(0.42f, -0.5f),
+                    new Vector2(0.45f, -0.28f),
+                    new Vector2(0.4f, 0.04f),
+                    new Vector2(0.28f, 0.38f),
+                    new Vector2(0f, 0.72f)
+                }, 24);
+            }
+            AddPickupMesh(root.transform, "WatermelonRedNose", watermelonNoseMesh, flesh,
+                new Vector3(-0.73f, 0f, 0f), Vector3.one, Quaternion.Euler(0f, 0f, 90f));
+
+            Vector3[] stripePositions =
+            {
+                new Vector3(0.15f, 0.39f, 0f),
+                new Vector3(0.15f, -0.39f, 0f),
+                new Vector3(0.15f, 0f, 0.39f),
+                new Vector3(0.15f, 0f, -0.39f)
+            };
+            for (int i = 0; i < stripePositions.Length; i++)
+            {
+                Vector3 scale = i < 2
+                    ? new Vector3(0.055f, 0.54f, 0.115f)
+                    : new Vector3(0.115f, 0.54f, 0.055f);
+                AddPickupPrimitive(root.transform, PrimitiveType.Capsule, "WatermelonStripe_" + i,
+                    stripePositions[i], scale, Quaternion.Euler(0f, 0f, 90f), stripe);
+            }
+
+            for (int i = 0; i < 6; i++)
+            {
+                float angle = i * 60f + 30f;
+                float radians = angle * Mathf.Deg2Rad;
+                AddPickupPrimitive(root.transform, PrimitiveType.Sphere, "WatermelonSeed_" + i,
+                    new Vector3(-1.12f, Mathf.Cos(radians) * 0.24f, Mathf.Sin(radians) * 0.24f),
+                    new Vector3(0.025f, 0.07f, 0.045f),
+                    Quaternion.Euler(angle, 0f, 0f), blackSeed);
+            }
+            return root;
+        }
+
+        private GameObject CreateModelRoot(string modelName)
+        {
+            GameObject root = new GameObject(modelName);
+            root.transform.SetParent(transform, false);
+            return root;
+        }
+
+        private static Transform CreateHorizontalPickupModel(Transform root, string modelName)
+        {
+            // Keep the animated pickup root upright. Only the geometry is turned sideways,
+            // so bobbing, grounding and the Y-axis showcase spin cannot displace the model.
+            GameObject model = new GameObject(modelName);
+            model.transform.SetParent(root, false);
+            model.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+            return model.transform;
+        }
+
+        private static GameObject AddPickupPrimitive(Transform parent, PrimitiveType type,
+            string objectName, Vector3 localPosition, Vector3 localScale,
+            Quaternion localRotation, Material material)
+        {
+            GameObject part = GameObject.CreatePrimitive(type);
+            part.name = objectName;
+            part.transform.SetParent(parent, false);
+            part.transform.localPosition = localPosition;
+            part.transform.localScale = localScale;
+            part.transform.localRotation = localRotation;
+            Collider collider = part.GetComponent<Collider>();
+            if (collider != null) collider.enabled = false;
+            Renderer renderer = part.GetComponent<Renderer>();
+            if (renderer != null) renderer.sharedMaterial = material;
+            return part;
+        }
+
+        private static GameObject AddPickupMesh(Transform parent, string objectName, Mesh mesh,
+            Material material, Vector3? localPosition = null, Vector3? localScale = null,
+            Quaternion? localRotation = null)
+        {
+            GameObject part = new GameObject(objectName);
+            part.transform.SetParent(parent, false);
+            part.transform.localPosition = localPosition ?? Vector3.zero;
+            part.transform.localScale = localScale ?? Vector3.one;
+            part.transform.localRotation = localRotation ?? Quaternion.identity;
+            part.AddComponent<MeshFilter>().sharedMesh = mesh;
+            part.AddComponent<MeshRenderer>().sharedMaterial = material;
+            return part;
+        }
+
+        private static Mesh CreateLatheMesh(string meshName, Vector2[] profile, int radialSegments)
+        {
+            int columns = radialSegments + 1;
+            Vector3[] vertices = new Vector3[profile.Length * columns];
+            Vector2[] uvs = new Vector2[vertices.Length];
+            int[] triangles = new int[(profile.Length - 1) * radialSegments * 6];
+
+            for (int ring = 0; ring < profile.Length; ring++)
+            {
+                for (int side = 0; side <= radialSegments; side++)
+                {
+                    float normalizedSide = side / (float)radialSegments;
+                    float angle = normalizedSide * Mathf.PI * 2f;
+                    int index = ring * columns + side;
+                    vertices[index] = new Vector3(Mathf.Cos(angle) * profile[ring].x,
+                        profile[ring].y, Mathf.Sin(angle) * profile[ring].x);
+                    uvs[index] = new Vector2(normalizedSide, ring / (float)(profile.Length - 1));
+                }
+            }
+
+            int triangleIndex = 0;
+            for (int ring = 0; ring < profile.Length - 1; ring++)
+            {
+                for (int side = 0; side < radialSegments; side++)
+                {
+                    int lower = ring * columns + side;
+                    int upper = (ring + 1) * columns + side;
+                    triangles[triangleIndex++] = lower;
+                    triangles[triangleIndex++] = upper;
+                    triangles[triangleIndex++] = lower + 1;
+                    triangles[triangleIndex++] = lower + 1;
+                    triangles[triangleIndex++] = upper;
+                    triangles[triangleIndex++] = upper + 1;
+                }
+            }
+
+            Mesh mesh = new Mesh
+            {
+                name = meshName,
+                vertices = vertices,
+                uv = uvs,
+                triangles = triangles,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            mesh.RecalculateNormals();
+            mesh.RecalculateTangents();
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        private static Material GetPickupMaterial(string key, Color color, float smoothness)
+        {
+            if (pickupMaterials.TryGetValue(key, out Material cached) && cached != null)
+                return cached;
+
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = key,
+                color = color,
+                enableInstancing = true,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", smoothness);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", smoothness);
+            pickupMaterials[key] = material;
+            return material;
+        }
+
+        private void PreparePickupVisual(GameObject instance)
+        {
+            // All three composite models use different proportions, so normalize their
+            // largest dimension to the same readable pickup size and ground them uniformly.
+            ImportedPropVisual.NormalizeToGround(instance, 0.82f, transform.position.y, 0.08f);
         }
 
         private string SupplyLabel()
@@ -702,7 +970,7 @@ namespace AnimalBattleRoyale
 
         private string SupplyAmmoLabel()
         {
-            return "100%";
+            return "+" + PickupAmount();
         }
 
         private Color SupplyColor()

@@ -33,11 +33,10 @@ namespace AnimalBattleRoyale
         [SerializeField, Range(0, 150)] private int antTunnelEntranceCount = 100;
         [SerializeField, Range(8f, 40f)] private float antTunnelEntranceMinimumSpacing = 16f;
         [SerializeField, Range(0, 48)] private int mountainCount = 26;
-        // Covers all three ammo types combined (cycles nozes/tomato/watermelon) — no more
-        // separate weapon-crystal pool now that there's nothing left to unlock.
-        [SerializeField, Range(0, 150)] private int rangedSupplyCount = 24;
-        [SerializeField, Range(0, 100)] private int foodPickupCount = 13;
-        [SerializeField, Range(4f, 80f)] private float pickupMinimumSpacing = 50f;
+        // Combined ammunition pool: 50% tomato, 30% watermelon and 20% walnut.
+        [SerializeField, Range(0, 150)] private int rangedSupplyCount = 60;
+        [SerializeField, Range(0, 100)] private int foodPickupCount = 30;
+        [SerializeField, Range(4f, 80f)] private float pickupMinimumSpacing = 18f;
         [SerializeField, Range(0, 40)] private int houseCount = 16;
         [SerializeField, Range(12f, 40f)] private float houseMinimumSpacing = 22f;
         [SerializeField, Range(0, 16)] private int eagleMountainCount = 8;
@@ -389,11 +388,12 @@ namespace AnimalBattleRoyale
 
             Transform rangedSuppliesRoot = new GameObject("RangedAmmoSupplies").transform;
             rangedSuppliesRoot.SetParent(parent, false);
+            List<WeaponAmmoType> ammoSpawnDeck = BuildAmmoSpawnDeck(rangedSupplyCount);
             for (int i = 0; i < rangedSupplyCount; i++)
             {
                 Vector3 position = RandomSpacedMapPosition(12f, pickupMinimumSpacing, pickupPositions);
                 pickupPositions.Add(position);
-                WeaponAmmoType type = (WeaponAmmoType)(i % 3);
+                WeaponAmmoType type = ammoSpawnDeck[i];
                 RangedAmmoPickup.Create(position, type).transform.SetParent(rangedSuppliesRoot, true);
             }
 
@@ -409,6 +409,26 @@ namespace AnimalBattleRoyale
             Debug.Log($"[Jungle] Pickups no mapa: {RangedAmmoPickup.ActivePickups.Count} municoes, " +
                       $"{foodPickupsRoot.childCount} curas, " +
                       $"{FindObjectsByType<AntTunnelEntrance>(FindObjectsSortMode.None).Length} buracos de formiga.");
+        }
+
+        private static List<WeaponAmmoType> BuildAmmoSpawnDeck(int total)
+        {
+            int tomatoCount = Mathf.RoundToInt(total * 0.5f);
+            int watermelonCount = Mathf.RoundToInt(total * 0.3f);
+            int seedCount = Mathf.Max(0, total - tomatoCount - watermelonCount);
+            List<WeaponAmmoType> deck = new List<WeaponAmmoType>(total);
+            for (int i = 0; i < tomatoCount; i++) deck.Add(WeaponAmmoType.Tomato);
+            for (int i = 0; i < watermelonCount; i++) deck.Add(WeaponAmmoType.Watermelon);
+            for (int i = 0; i < seedCount; i++) deck.Add(WeaponAmmoType.Seed);
+
+            // Shuffle the exact weighted deck so the three types are spread across the map
+            // instead of appearing in large same-type regions.
+            for (int i = deck.Count - 1; i > 0; i--)
+            {
+                int swapIndex = Random.Range(0, i + 1);
+                (deck[i], deck[swapIndex]) = (deck[swapIndex], deck[i]);
+            }
+            return deck;
         }
 
         private void CreateGround(Transform parent, Material material)

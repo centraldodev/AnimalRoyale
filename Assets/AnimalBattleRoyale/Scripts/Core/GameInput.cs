@@ -279,18 +279,16 @@ namespace AnimalBattleRoyale
         public static int ReadWeaponSelection()
         {
             if (GameplayInputBlocked) return -1;
-#if ENABLE_INPUT_SYSTEM
-            Keyboard keyboard = Keyboard.current;
-            if (keyboard == null) return -1;
-            if (keyboard.digit1Key.wasPressedThisFrame) return 0;
-            if (keyboard.digit2Key.wasPressedThisFrame) return 1;
-            if (keyboard.digit3Key.wasPressedThisFrame) return 2;
-#else
-            if (Input.GetKeyDown(KeyCode.Alpha1)) return 0;
-            if (Input.GetKeyDown(KeyCode.Alpha2)) return 1;
-            if (Input.GetKeyDown(KeyCode.Alpha3)) return 2;
-#endif
+            if (GameInputBindings.WasPressedThisFrame(GameInputAction.WeaponPrimary)) return 0;
+            if (GameInputBindings.WasPressedThisFrame(GameInputAction.WeaponSecondary)) return 1;
+            if (GameInputBindings.WasPressedThisFrame(GameInputAction.WeaponThird)) return 2;
             return -1;
+        }
+
+        public static bool ReloadPressed()
+        {
+            if (GameplayInputBlocked || MobileInputController.ControlsEnabled) return false;
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.Reload);
         }
 
         /// <summary>+1 scrolled up, -1 scrolled down, 0 if no scroll happened this frame.</summary>

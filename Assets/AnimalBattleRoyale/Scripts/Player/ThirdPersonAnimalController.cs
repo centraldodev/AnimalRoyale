@@ -19,9 +19,9 @@ namespace AnimalBattleRoyale
         private const int SeedMaxAmmo = 20;
         private const int SeedMagazineCapacity = 1;
         // Tomato is now the primary sustained-fire weapon.
-        private const int TomatoMaxAmmo = 90;
+        private const int TomatoMaxAmmo = 120;
         private const int TomatoMagazineCapacity = 12;
-        private const int WatermelonMaxAmmo = 30;
+        private const int WatermelonMaxAmmo = 60;
         private const int WatermelonMagazineCapacity = 5;
         private const float DefeatedCleanupDelay = 1.5f;
 
@@ -60,11 +60,10 @@ namespace AnimalBattleRoyale
         private float abilitySlow;
         private Vector3 dashDirection;
         private Color abilityColor;
-        // All three weapons are available from the start now (no crystal-unlock gate) —
-        // tomato (the primary) starts loaded, nozes/watermelon start empty and are found via
-        // their own dedicated pickups scattered on the map.
-        private readonly int[] weaponReserveAmmo = { 0, TomatoMaxAmmo, 0 };
-        private readonly int[] weaponMagazineAmmo = { 0, TomatoMagazineCapacity, 0 };
+        // Total carried ammunition per type (loaded magazine included). A fresh fighter
+        // starts with exactly one loaded magazine of each type and no spare reloads.
+        private readonly int[] weaponReserveAmmo = { 0, 0, 0 };
+        private readonly int[] weaponMagazineAmmo = { 0, 0, 0 };
         private WeaponAmmoType selectedWeapon = WeaponAmmoType.Tomato;
         private bool rangedReloading;
         private float rangedReloadEndsAt;
@@ -83,12 +82,14 @@ namespace AnimalBattleRoyale
         private bool isAiming;
         private bool vineLeaping;
         private bool cowCharging;
-        private int vinesVisitedInChain;
         private float vineLeapStartedAt;
         private float vineLeapEndsAt;
-        private float vineLeapArcHeight;
         private Vector3 vineLeapStart;
         private Vector3 vineLeapEnd;
+        private Vector3 vineLeapSideOffset;
+        private Vector3 previousVineLeapPosition;
+        private Vector3 vineLeapVelocity;
+        private Vector3 vineLeapStartVelocity;
         private bool burrowed;
         private bool burrowEntering;
         private float burrowEntryUntil;
@@ -112,16 +113,18 @@ namespace AnimalBattleRoyale
         public const int MaxLives = 3;
         private const float SpawnProtectionSeconds = 2.5f;
 
-        public const int MaxVinesPerChain = 4;
         private const float VineLeapSpeed = 22f;
+        private const float VineSideControlSpeed = 8f;
+        private const float VineMaximumSideOffset = 5f;
+        private const float VineRetargetMomentumCorrection = 8f;
         private const float VineLaunchForward = 15f;
         private const float VineLaunchUp = 9f;
 
         private const float CowChargeDistance = 30f;
-        // Speed set so the 30m charge takes exactly 3s, matching the CowCharge.wav clip length.
-        private const float CowChargeSpeed = CowChargeDistance / 3f;
+        // Slightly faster than the Cow's 8.4 m/s normal sprint, while remaining controllable.
+        private const float CowChargeSpeed = 11f;
         private const float CowChargeMaxDuration = CowChargeDistance / CowChargeSpeed;
-        private const float CowChargeDamage = 26f;
+        private const float CowChargeDamage = 20f;
         private const float CowChargeKnockback = 12f;
         private const float CowChargeRadius = 1.8f;
         private const float CowChargeTurnRateDegreesPerSecond = 220f;
@@ -146,8 +149,9 @@ namespace AnimalBattleRoyale
         public bool IsHangingVine => hangingVine;
         public bool IsVineLeaping => vineLeaping;
         public bool IsCowCharging => cowCharging;
-        public int VinesVisitedInChain => vinesVisitedInChain;
-        public bool CanChainToAnotherVine => hangingVine && vinesVisitedInChain < MaxVinesPerChain;
+        // Grappling is continuous locomotion: while attached, the monkey can always choose
+        // another valid point instead of hitting an artificial chain limit.
+        public bool CanChainToAnotherVine => hangingVine || vineLeaping;
         public bool IsWading => CentralLake.TryGetWaterAt(transform.position, out _, out _);
         public bool IsSwimming => CentralLake.TryGetWaterAt(transform.position, out float surfaceHeight, out _)
                                   && transform.position.y < surfaceHeight - stats.ControllerHeight * 0.35f;
@@ -187,11 +191,20 @@ namespace AnimalBattleRoyale
         /// <summary>Backpack reserve for a given ammo type, regardless of which one is
         /// currently equipped — used by the HUD to show what's been collected of each.</summary>
         public int ReserveAmmoFor(WeaponAmmoType weapon) => weaponReserveAmmo[(int)weapon];
+        public static int MaxAmmoForWeapon(WeaponAmmoType weapon) => MaxAmmoFor(weapon);
+        public bool HasAmmoFor(WeaponAmmoType weapon)
+        {
+            int slot = (int)weapon;
+            return slot >= 0 && slot < weaponReserveAmmo.Length && weaponReserveAmmo[slot] > 0;
+        }
 
-        /// <summary>Switches the active weapon — all three are always available, the only
-        /// thing that gates firing is whether you're actually carrying ammo for it.</summary>
+        /// <summary>Switches the active ammunition while that type still has at least one
+        /// round. Empty types remain visible in the HUD but unavailable.</summary>
         public bool TrySelectWeapon(WeaponAmmoType weapon)
         {
+            int slot = (int)weapon;
+            if (slot < 0 || slot >= weaponReserveAmmo.Length || weaponReserveAmmo[slot] <= 0)
+                return false;
             if (selectedWeapon == weapon) return false;
             selectedWeapon = weapon;
             rangedReloading = false;
@@ -212,11 +225,11 @@ namespace AnimalBattleRoyale
         };
 
         // Nozes ("quase instantâneo" — a precision weapon you have to aim to land) is much
-        // faster than the base speed; tomato ("pistola mais fraca") is a bit above it;
-        // watermelon ("escopeta") stays at the unmultiplied base.
+        // faster than the base speed; tomato travels at twice its previous 1.2x speed while
+        // keeping damage/rate/range unchanged; watermelon stays at the unmultiplied base.
         public static float ProjectileSpeedMultiplierFor(WeaponAmmoType ammoType) => ammoType switch
         {
-            WeaponAmmoType.Tomato => 1.2f,
+            WeaponAmmoType.Tomato => 2.4f,
             WeaponAmmoType.Watermelon => 1f,
             _ => 4.5f
         };
@@ -227,6 +240,38 @@ namespace AnimalBattleRoyale
             WeaponAmmoType.Watermelon => WatermelonMagazineCapacity,
             _ => SeedMagazineCapacity
         };
+
+        public static float ReloadSecondsForWeapon(WeaponAmmoType ammoType) => ammoType switch
+        {
+            WeaponAmmoType.Tomato => 2f,
+            WeaponAmmoType.Watermelon => 3f,
+            _ => 4f
+        };
+
+        public static WeaponAmmoType WeaponForSelectionSlot(int slot) => slot switch
+        {
+            0 => WeaponAmmoType.Tomato,
+            1 => WeaponAmmoType.Watermelon,
+            _ => WeaponAmmoType.Seed
+        };
+
+        private static int SelectionSlotForWeapon(WeaponAmmoType weapon) => weapon switch
+        {
+            WeaponAmmoType.Tomato => 0,
+            WeaponAmmoType.Watermelon => 1,
+            _ => 2
+        };
+
+        private void LoadStartingMagazines()
+        {
+            for (int slot = 0; slot < weaponReserveAmmo.Length; slot++)
+            {
+                WeaponAmmoType weapon = (WeaponAmmoType)slot;
+                int loadedRounds = MagazineCapacityFor(weapon);
+                weaponReserveAmmo[slot] = loadedRounds;
+                weaponMagazineAmmo[slot] = loadedRounds;
+            }
+        }
 
         private static int MaxAmmoFor(WeaponAmmoType ammoType) => ammoType switch
         {
@@ -288,7 +333,9 @@ namespace AnimalBattleRoyale
         public float AbilityCooldownRemainingFor(int slot)
         {
             if (slot < 0 || slot >= nextPowerTimes.Length) return 0f;
-            if (slot == 0 && animalType == AnimalType.Monkey && CanChainToAnotherVine) return 0f;
+            // The grapple is locomotion, so the monkey can reconnect after releasing instead
+            // of being grounded for the normal combat-ability cooldown.
+            if (slot == 0 && animalType == AnimalType.Monkey) return 0f;
             return Mathf.Max(0f, nextPowerTimes[slot] - Time.time);
         }
 
@@ -327,6 +374,7 @@ namespace AnimalBattleRoyale
             UpdateRangedReload();
             if (vineLeaping)
             {
+                HandleVineRetargetInput();
                 HandleVineLeap();
                 return;
             }
@@ -510,6 +558,9 @@ namespace AnimalBattleRoyale
                 case OnlineActionType.SelectWeapon:
                     TrySelectWeapon((WeaponAmmoType)Mathf.RoundToInt(direction.x));
                     break;
+                case OnlineActionType.Reload:
+                    BeginRangedReload(true);
+                    break;
             }
         }
 
@@ -529,9 +580,12 @@ namespace AnimalBattleRoyale
                 transform.position = Vector3.Lerp(transform.position, networkTargetPosition, 1f - Mathf.Exp(-14f * Time.deltaTime));
             }
             transform.rotation = Quaternion.Slerp(transform.rotation, networkTargetRotation, 1f - Mathf.Exp(-16f * Time.deltaTime));
-            float speed = Vector3.Distance(lastNetworkVisualPosition, transform.position) / Mathf.Max(0.001f, Time.deltaTime);
+            Vector3 visualDisplacement = transform.position - lastNetworkVisualPosition;
+            float speed = new Vector2(visualDisplacement.x, visualDisplacement.z).magnitude
+                          / Mathf.Max(0.001f, Time.deltaTime);
             bool moving = speed > 0.12f;
-            visualMotion?.SetLocomotion(moving, speed > stats.MoveSpeed * 1.15f, false);
+            visualMotion?.SetLocomotion(moving, speed > stats.MoveSpeed * 1.15f, false,
+                horizontalSpeed: speed, referenceWalkSpeed: stats.MoveSpeed);
             lastNetworkVisualPosition = transform.position;
         }
 
@@ -555,7 +609,6 @@ namespace AnimalBattleRoyale
             VineAnchor.DestroyThrown(heldVine);
             heldVine = null;
             targetVine = null;
-            vinesVisitedInChain = 0;
             characterController.enabled = true;
             characterController.radius = stats.ControllerRadius;
             characterController.height = stats.ControllerHeight;
@@ -565,13 +618,7 @@ namespace AnimalBattleRoyale
             Transform visualRoot = AnimalVisualFactory.Build(transform, type, stats.MainColor, stats.VisualScale);
             visualMotion = visualRoot != null ? visualRoot.GetComponent<AnimalVisualMotion>() : null;
             selectedWeapon = WeaponAmmoType.Tomato;
-            for (int slot = 0; slot < weaponReserveAmmo.Length; slot++)
-            {
-                weaponReserveAmmo[slot] = 0;
-                weaponMagazineAmmo[slot] = 0;
-            }
-            weaponReserveAmmo[(int)WeaponAmmoType.Tomato] = TomatoMaxAmmo;
-            weaponMagazineAmmo[(int)WeaponAmmoType.Tomato] = TomatoMagazineCapacity;
+            LoadStartingMagazines();
             rangedReloading = false;
             rangedReloadEndsAt = 0f;
             health.Initialize(stats.MaxHealth, this);
@@ -618,6 +665,10 @@ namespace AnimalBattleRoyale
             bool rangedAttackRequested = GameSettings.RangedFireMode == RangedFireMode.Automatic
                 ? GameInput.RangedAttackHeld()
                 : GameInput.RangedAttackPressed();
+            if (GameInput.ReloadPressed() && BeginRangedReload(true))
+            {
+                OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.Reload, Vector3.zero);
+            }
             if (rangedAttackRequested)
             {
                 Vector3 direction = GetRangedAttackDirection(movement);
@@ -632,7 +683,11 @@ namespace AnimalBattleRoyale
             }
             if (GameInput.AbilityOnePressed())
             {
-                Vector3 direction = GetAttackDirection(movement);
+                // Grapple replication needs the center-camera ray, not the direction the
+                // monkey happens to be walking, so remote peers hit the same aimed surface.
+                Vector3 direction = animalType == AnimalType.Monkey
+                    ? ViewAimDirection
+                    : GetAttackDirection(movement);
                 OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.Ability, direction);
                 TryUsePower(0, direction);
             }
@@ -647,10 +702,11 @@ namespace AnimalBattleRoyale
                 }
             }
             int weaponSelection = GameInput.ReadWeaponSelection();
-            if (weaponSelection >= 0 && TrySelectWeapon((WeaponAmmoType)weaponSelection))
+            WeaponAmmoType requestedWeapon = WeaponForSelectionSlot(weaponSelection);
+            if (weaponSelection >= 0 && TrySelectWeapon(requestedWeapon))
             {
                 OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.SelectWeapon,
-                    new Vector3(weaponSelection, 0f, 0f));
+                    new Vector3((int)requestedWeapon, 0f, 0f));
             }
             int weaponScroll = GameInput.ReadWeaponScroll();
             if (weaponScroll != 0 && TryCycleWeapon(weaponScroll))
@@ -660,14 +716,34 @@ namespace AnimalBattleRoyale
             }
         }
 
+        // The normal input path is skipped while the grapple owns movement, so Q has to be
+        // sampled here as well. A successful throw replaces the current target immediately;
+        // a missed ray leaves the current vine untouched.
+        private void HandleVineRetargetInput()
+        {
+            if (!isLocalPlayer || animalType != AnimalType.Monkey
+                || !GameInput.AbilityOnePressed()) return;
+
+            Vector3 direction = ViewAimDirection;
+            OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.Ability, direction);
+            TryUsePower(0, direction);
+        }
+
         private const int WeaponTypeCount = 3;
 
         /// <summary>Cycles among all three weapons; +1 = next, -1 = previous, wrapping around.</summary>
         private bool TryCycleWeapon(int direction)
         {
-            int current = (int)selectedWeapon;
-            int next = ((current + direction) % WeaponTypeCount + WeaponTypeCount) % WeaponTypeCount;
-            return TrySelectWeapon((WeaponAmmoType)next);
+            int current = SelectionSlotForWeapon(selectedWeapon);
+            int step = direction >= 0 ? 1 : -1;
+            for (int offset = 1; offset <= WeaponTypeCount; offset++)
+            {
+                int next = ((current + step * offset) % WeaponTypeCount + WeaponTypeCount)
+                           % WeaponTypeCount;
+                WeaponAmmoType candidate = WeaponForSelectionSlot(next);
+                if (HasAmmoFor(candidate)) return TrySelectWeapon(candidate);
+            }
+            return false;
         }
 
         private void HandleAIInput()
@@ -727,12 +803,6 @@ namespace AnimalBattleRoyale
                 verticalVelocity.y = stats.JumpForce;
                 wasGroundedForLandingSfx = false;
             }
-            // Passed explicitly (not inferred from grounded changing next frame) so the jump
-            // animation trigger fires the same frame the jump input is processed, not a frame
-            // late.
-            visualMotion?.SetLocomotion(direction.sqrMagnitude > 0.01f || abilityDashing,
-                sprint || abilityDashing, !grounded, verticalVelocity.y, gliding, jumped);
-
             bool wading = CentralLake.TryGetWaterAt(transform.position, out float waterSurfaceHeight,
                 out float waterMovementMultiplier);
             bool swimming = wading
@@ -800,6 +870,13 @@ namespace AnimalBattleRoyale
 
             Vector3 horizontal = abilityDashing ? dashDirection * abilityDashSpeed
                 : movementDirection * speed;
+
+            // Feed the effective horizontal speed to the visual instead of only the sprint
+            // flag. The running pose reuses the walk cycle and speeds it up in proportion to
+            // the distance covered, including modifiers such as aiming, slows and water.
+            visualMotion?.SetLocomotion(direction.sqrMagnitude > 0.01f || abilityDashing,
+                sprint || abilityDashing, !grounded, verticalVelocity.y, gliding, jumped,
+                horizontal.magnitude, stats.MoveSpeed);
             if (abilityDashing && Time.time >= nextAbilityDamage)
             {
                 nextAbilityDamage = Time.time + 0.24f;
@@ -962,14 +1039,20 @@ namespace AnimalBattleRoyale
             return true;
         }
 
-        private void BeginRangedReload()
+        private bool BeginRangedReload(bool allowPartialMagazine = false)
         {
-            if (rangedReloading || SelectedMagazineAmmo > 0 || SelectedReserveAmmo <= 0) return;
+            int capacity = MagazineCapacityFor(CurrentWeaponAmmo);
+            if (rangedReloading || SelectedReserveAmmo <= 0
+                || SelectedMagazineAmmo >= capacity
+                || (SelectedMagazineAmmo > 0 && !allowPartialMagazine)
+                || RangedReserveAmmo <= 0)
+                return false;
             rangedReloading = true;
-            rangedReloadEndsAt = Time.time + ServerGameTuning.RangedReloadSeconds;
-            // The authored clip is two seconds long, matching the default reload time.
-            // Keep it local so simultaneous bot reloads do not clutter the player's mix.
-            if (isLocalPlayer) CombatFeedback.PlayWeaponReload(transform.position);
+            rangedReloadEndsAt = Time.time + ReloadSecondsForWeapon(CurrentWeaponAmmo);
+            // Each ammo type uses the exact duration of its authored reload recording.
+            // Keep playback local so simultaneous bot reloads do not clutter the player's mix.
+            if (isLocalPlayer) CombatFeedback.PlayWeaponReload(transform.position, CurrentWeaponAmmo);
+            return true;
         }
 
         private void UpdateRangedReload()
@@ -1020,7 +1103,7 @@ namespace AnimalBattleRoyale
         private void TryUsePower(int slot, Vector3 direction)
         {
             if (BattleRoyaleManager.Instance != null && !BattleRoyaleManager.Instance.CombatEnabled) return;
-            if (slot != 0 || vineLeaping) return;
+            if (slot != 0 || (vineLeaping && animalType != AnimalType.Monkey)) return;
 
             // A second Q while charging ends the run early instead of queuing a new charge.
             if (animalType == AnimalType.Cow && cowCharging)
@@ -1030,10 +1113,11 @@ namespace AnimalBattleRoyale
                 return;
             }
 
-            bool chainingVine = animalType == AnimalType.Monkey && hangingVine;
+            bool monkeyGrapple = animalType == AnimalType.Monkey;
+            bool chainingVine = monkeyGrapple && (hangingVine || vineLeaping);
             if (chainingVine && !CanChainToAnotherVine) return;
-            if (!chainingVine && Time.time < nextPowerTimes[0]) return;
-            if (!chainingVine) nextPowerTimes[0] = Time.time + stats.AbilityCooldowns[0];
+            if (!monkeyGrapple && Time.time < nextPowerTimes[0]) return;
+            if (!monkeyGrapple) nextPowerTimes[0] = Time.time + stats.AbilityCooldowns[0];
             lastPowerSlot = 0;
             direction = direction.sqrMagnitude > 0.01f ? direction.normalized : transform.forward;
             CombatFeedback.PlayPower(animalType, 0, transform.position);
@@ -1066,10 +1150,10 @@ namespace AnimalBattleRoyale
                     AttackVfx.CreateBurst(transform.position + Vector3.up * 0.4f, new Color(0.85f, 0.8f, 0.66f), 1.8f);
                     break;
                 case AnimalType.Monkey:
-                    // The first Q throws a vine at whatever tree is aimed at (Spider-Man
-                    // style grappling); additional Q presses can chain up to four trees total.
+                    // The center-camera ray can anchor to any surface or another animal;
+                    // additional Q presses retarget the grapple without touching the ground.
                     bool wasHangingVine = hangingVine;
-                    if (!VineAnchor.TryThrowVine(this) && !wasHangingVine)
+                    if (!VineAnchor.TryThrowVine(this, direction) && !wasHangingVine)
                     {
                         verticalVelocity.y = 9f;
                         extraVelocity += new Vector3(direction.x, 0f, direction.z).normalized * 9f;
@@ -1295,7 +1379,6 @@ namespace AnimalBattleRoyale
             VineAnchor.DestroyThrown(heldVine);
             heldVine = null;
             targetVine = null;
-            vinesVisitedInChain = 0;
             visualMotion?.SetVineHanging(false);
             if (characterController != null) characterController.enabled = true;
             verticalVelocity.y = Mathf.Max(verticalVelocity.y, upwardSpeed);
@@ -1311,7 +1394,17 @@ namespace AnimalBattleRoyale
             int max = MaxAmmoFor(type);
             int current = weaponReserveAmmo[(int)type];
             if (current >= max) return false;
+            bool currentSelectionEmpty = SelectedReserveAmmo <= 0;
             weaponReserveAmmo[(int)type] = Mathf.Min(max, current + amount);
+
+            // If the equipped type is empty, collecting another type equips it immediately
+            // so the newly found ammunition is useful without a separate 1/2/3 key press.
+            if (currentSelectionEmpty && type != CurrentWeaponAmmo)
+            {
+                selectedWeapon = type;
+                rangedReloading = false;
+                rangedReloadEndsAt = 0f;
+            }
             if (type == CurrentWeaponAmmo && SelectedMagazineAmmo <= 0) BeginRangedReload();
             AttackVfx.CreateBurst(transform.position + Vector3.up * 0.6f, new Color(1f, 0.76f, 0.18f), 1.25f);
             return true;
@@ -1325,34 +1418,45 @@ namespace AnimalBattleRoyale
         {
             if (animalType != AnimalType.Monkey || vine == null || defeated || hangingVine || vineLeaping) return false;
             if (!VineAnchor.IsWithinUseRange(this, vine)) return false;
-            vinesVisitedInChain = 1;
             return BeginVineLeap(vine);
         }
 
         public bool TryLaunchToVine(Transform vine)
         {
-            if (vine == null || vine == heldVine || !CanChainToAnotherVine || vineLeaping) return false;
+            if (vine == null || vine == heldVine || vine == targetVine
+                || !CanChainToAnotherVine) return false;
             if (!VineAnchor.IsWithinUseRange(this, vine)) return false;
-            vinesVisitedInChain++;
             return BeginVineLeap(vine);
         }
 
         private bool BeginVineLeap(Transform vine)
         {
             if (vine == null) return false;
+            bool retargetingDuringLeap = vineLeaping;
+            Transform departingVine = retargetingDuringLeap ? targetVine : heldVine;
+            Vector3 carriedVelocity = retargetingDuringLeap
+                ? Vector3.ClampMagnitude(vineLeapVelocity, VineLeapSpeed)
+                : Vector3.zero;
+
             targetVine = vine;
             vineLeapStart = transform.position;
-            vineLeapEnd = vine.position - Vector3.up * (stats.ControllerHeight * 0.82f);
+            VineAnchor vineAnchor = vine.GetComponent<VineAnchor>();
+            vineLeapEnd = GetVinePullDestination(vineAnchor, vine.position);
             float distance = Vector3.Distance(vineLeapStart, vineLeapEnd);
-            float duration = Mathf.Clamp(distance / VineLeapSpeed, 0.24f, 0.55f);
+            float duration = Mathf.Clamp(distance / VineLeapSpeed, 0.2f, 2.4f);
             vineLeapStartedAt = Time.time;
             vineLeapEndsAt = Time.time + duration;
-            vineLeapArcHeight = Mathf.Clamp(distance * 0.16f, 0.8f, 2.2f);
+            vineLeapSideOffset = Vector3.zero;
+            previousVineLeapPosition = transform.position;
+            Vector3 directVelocity = (vineLeapEnd - vineLeapStart) / duration;
+            vineLeapStartVelocity = retargetingDuringLeap ? carriedVelocity : directVelocity;
+            vineLeapVelocity = vineLeapStartVelocity;
             vineLeaping = true;
             hangingVine = false;
-            // Leaving this vine for good (either chaining onward or this is the very first
-            // grab, where heldVine is already null) — tear down the one we're leaving.
-            VineAnchor.DestroyThrown(heldVine);
+            // Only tear down the old strand after the new one is valid and owns the target.
+            // This makes a missed Q harmless and a successful Q look like an instantaneous
+            // web-to-web handoff instead of briefly leaving the monkey without a grapple.
+            VineAnchor.DestroyThrown(departingVine);
             heldVine = null;
             flyingUntil = 0f;
             verticalVelocity = Vector3.zero;
@@ -1364,7 +1468,21 @@ namespace AnimalBattleRoyale
             if (flatDirection.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(flatDirection.normalized, Vector3.up);
             AttackVfx.CreateBurst(transform.position + Vector3.up * 0.5f, new Color(0.55f, 0.85f, 0.3f), 1.1f);
             visualMotion?.TriggerPower(0);
+            visualMotion?.SetVineHanging(true, ShouldGrabWithLeftHand(vine));
             return true;
+        }
+
+        private Vector3 GetVinePullDestination(VineAnchor vineAnchor, Vector3 fallbackPoint)
+        {
+            Vector3 attachmentPoint = vineAnchor != null ? vineAnchor.AttachmentPosition : fallbackPoint;
+            Vector3 surfaceNormal = vineAnchor != null ? vineAnchor.AttachmentNormal : Vector3.up;
+            if (surfaceNormal.sqrMagnitude < 0.01f) surfaceNormal = Vector3.up;
+            // Stop outside the hit collider so reenabling CharacterController cannot eject
+            // the monkey sideways from an overlapping wall, tree or another animal.
+            float surfaceClearance = stats.ControllerRadius + 0.22f;
+            float verticalDrop = stats.ControllerHeight * 0.32f;
+            return attachmentPoint + surfaceNormal.normalized * surfaceClearance
+                   - Vector3.up * verticalDrop;
         }
 
         private void HandleVineLeap()
@@ -1373,25 +1491,70 @@ namespace AnimalBattleRoyale
             {
                 vineLeaping = false;
                 if (characterController != null) characterController.enabled = true;
+                visualMotion?.SetVineHanging(false);
                 return;
             }
 
             float duration = Mathf.Max(0.01f, vineLeapEndsAt - vineLeapStartedAt);
             float progress = Mathf.Clamp01((Time.time - vineLeapStartedAt) / duration);
-            Vector3 position = Vector3.Lerp(vineLeapStart, vineLeapEnd, progress);
-            position += Vector3.up * (Mathf.Sin(progress * Mathf.PI) * vineLeapArcHeight);
+            VineAnchor vineAnchor = targetVine.GetComponent<VineAnchor>();
+            vineLeapEnd = GetVinePullDestination(vineAnchor, targetVine.position);
+
+            // A/D bends the route sideways while the grapple continues pulling toward its
+            // attachment. The offset fades back into the destination near the end so the
+            // monkey still reaches the aimed point instead of missing the surface.
+            if (isLocalPlayer)
+            {
+                float lateralInput = GameInput.ReadMovement().x;
+                Vector3 cameraRight = cameraTransform != null ? cameraTransform.right : transform.right;
+                cameraRight.y = 0f;
+                if (cameraRight.sqrMagnitude > 0.01f)
+                {
+                    vineLeapSideOffset += cameraRight.normalized * lateralInput
+                                          * VineSideControlSpeed * Time.deltaTime;
+                    vineLeapSideOffset = Vector3.ClampMagnitude(vineLeapSideOffset,
+                        VineMaximumSideOffset);
+                }
+            }
+
+            float sideInfluence = Mathf.Sin(progress * Mathf.PI);
+            Vector3 directVelocity = (vineLeapEnd - vineLeapStart) / duration;
+            // Blend the velocity carried from the previous strand into the new route. The
+            // correction is strongest at release and fades completely at the destination,
+            // preventing a sharp direction snap when Q switches grapple points mid-flight.
+            Vector3 velocityCorrection = Vector3.ClampMagnitude(
+                (vineLeapStartVelocity - directVelocity) * duration,
+                VineRetargetMomentumCorrection);
+            float velocityInfluence = progress * (1f - progress) * (1f - progress);
+            Vector3 position = Vector3.Lerp(vineLeapStart, vineLeapEnd, progress)
+                               + velocityCorrection * velocityInfluence
+                               + vineLeapSideOffset * sideInfluence;
+            vineLeapVelocity = (position - previousVineLeapPosition)
+                               / Mathf.Max(0.001f, Time.deltaTime);
+            previousVineLeapPosition = position;
             transform.position = position;
+            vineAnchor?.SetGrappleVisualEndPoint(transform.position
+                + Vector3.up * (stats.ControllerHeight * 0.82f));
+            visualMotion?.SetHandAimTarget(vineAnchor != null
+                ? vineAnchor.AttachmentPosition
+                : targetVine.position);
             visualMotion?.SetLocomotion(true, true, true);
             if (progress < 1f) return;
 
             transform.position = vineLeapEnd;
-            heldVine = targetVine;
+            Vector3 exitHorizontal = Vector3.ClampMagnitude(
+                Vector3.ProjectOnPlane(vineLeapVelocity, Vector3.up), 6f);
+            verticalVelocity.y = Mathf.Clamp(vineLeapVelocity.y, -2f, 4f);
+            extraVelocity = exitHorizontal;
+            VineAnchor.DestroyThrown(targetVine);
+            heldVine = null;
             targetVine = null;
             vineLeaping = false;
-            hangingVine = true;
+            hangingVine = false;
             if (characterController != null) characterController.enabled = true;
-            AttackVfx.CreateBurst(heldVine.position, new Color(0.55f, 0.85f, 0.3f), 1.1f);
-            visualMotion?.SetVineHanging(true, ShouldGrabWithLeftHand(heldVine));
+            AttackVfx.CreateBurst(transform.position + Vector3.up * 0.4f,
+                new Color(0.55f, 0.85f, 0.3f), 0.8f);
+            visualMotion?.SetVineHanging(false);
         }
 
         // Which hand visually grips the vine depends on which side it's on relative to
@@ -1410,13 +1573,14 @@ namespace AnimalBattleRoyale
             VineAnchor.DestroyThrown(heldVine);
             heldVine = null;
             targetVine = null;
-            vinesVisitedInChain = 0;
             visualMotion?.SetVineHanging(false);
             Vector3 flat = new Vector3(direction.x, 0f, direction.z);
             Vector3 forward = flat.sqrMagnitude > 0.01f ? flat.normalized : transform.forward;
-            verticalVelocity.y = VineLaunchUp + Mathf.Max(0f, carriedSwingVelocity.y * 0.35f);
+            Vector3 carriedHorizontal = Vector3.ClampMagnitude(
+                Vector3.ProjectOnPlane(carriedSwingVelocity, Vector3.up), 18f);
+            verticalVelocity.y = VineLaunchUp + Mathf.Clamp(carriedSwingVelocity.y * 0.35f, 0f, 6f);
             extraVelocity += forward * VineLaunchForward
-                             + Vector3.ProjectOnPlane(carriedSwingVelocity, Vector3.up) * 0.8f;
+                             + carriedHorizontal * 0.8f;
             AttackVfx.CreateBurst(transform.position + Vector3.up * 0.6f, new Color(0.5f, 0.9f, 0.35f), 1.2f);
             return true;
         }
@@ -1471,7 +1635,6 @@ namespace AnimalBattleRoyale
             VineAnchor.DestroyThrown(heldVine);
             heldVine = null;
             targetVine = null;
-            vinesVisitedInChain = 0;
             visualMotion?.SetVineHanging(false);
             if (characterController != null) characterController.enabled = true;
             burrowed = false;
@@ -1492,11 +1655,8 @@ namespace AnimalBattleRoyale
             foreach (Collider collider in GetComponentsInChildren<Collider>()) if (collider != null) collider.enabled = true;
 
             health.Initialize(stats.MaxHealth, this);
-            for (int slot = 0; slot < WeaponTypeCount; slot++)
-            {
-                weaponReserveAmmo[slot] = MaxAmmoFor((WeaponAmmoType)slot);
-                weaponMagazineAmmo[slot] = MagazineCapacityFor((WeaponAmmoType)slot);
-            }
+            selectedWeapon = WeaponAmmoType.Tomato;
+            LoadStartingMagazines();
             rangedReloading = false;
             rangedReloadEndsAt = 0f;
             SafeZoneController safeZone = SafeZoneController.Instance;

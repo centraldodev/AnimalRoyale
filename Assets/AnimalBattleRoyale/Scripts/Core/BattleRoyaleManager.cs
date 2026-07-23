@@ -10,9 +10,9 @@ namespace AnimalBattleRoyale
         private const int MinimapArrowDirectionCount = 36;
         private const float RespawnCountdownSeconds = 3f;
         // Top of the right-side column (minimap, then the time/alive/elims strip, then
-        // zone/objective panels, then weapon selector below). Nudged down from the old 58f
-        // so the pause menu's hamburger button — now pinned fully into the top-right corner —
-        // has clearance above it.
+        // zone/objective panels). The ammo selector now lives horizontally in the footer.
+        // Nudged down from the old 58f so the pause menu's hamburger button — now pinned
+        // fully into the top-right corner — has clearance above it.
         private const float RightColumnTopY = 66f;
         // Height reserved for the TEMPO/VIVOS/ELIMS strip now sitting under the minimap
         // (moved from above it), plus the gap below it before the next panel.
@@ -39,8 +39,9 @@ namespace AnimalBattleRoyale
         private readonly Texture[] animalPortraits = new Texture[AnimalRoster.Count];
         private readonly Texture2D[] weaponIconsColor = new Texture2D[3];
         private readonly Texture2D[] weaponIconsGray = new Texture2D[3];
+        private readonly Texture2D[] weaponIconsHorizontalColor = new Texture2D[3];
+        private readonly Texture2D[] weaponIconsHorizontalGray = new Texture2D[3];
         private readonly Dictionary<string, Texture2D> abilityIconCache = new Dictionary<string, Texture2D>();
-        private Texture2D ammoBulletIcon;
         private Texture2D ammoReloadIcon;
         // OnGUI can fire several times per rendered frame (Layout/Repaint/input events), and
         // these particular labels get re-formatted on every single one of those calls even
@@ -373,11 +374,9 @@ namespace AnimalBattleRoyale
             if (RespawnSecondsRemaining > 0f) DrawRespawnCountdown();
 
             string contextHint = LocalPlayer != null && LocalPlayer.IsVineLeaping
-                ? $"SALTANDO PARA O CIPÓ {LocalPlayer.VinesVisitedInChain}/{ThirdPersonAnimalController.MaxVinesPerChain}"
+                ? $"PUXANDO PELO CIPÓ — {movementKeys} controla o desvio lateral"
                 : LocalPlayer != null && LocalPlayer.IsHangingVine
-                    ? LocalPlayer.CanChainToAnotherVine
-                        ? $"CIPÓ {LocalPlayer.VinesVisitedInChain}/{ThirdPersonAnimalController.MaxVinesPerChain} — {movementKeys} balança • mire no próximo e pressione {abilityKey} • {jumpKey} solta"
-                        : $"LIMITE {ThirdPersonAnimalController.MaxVinesPerChain}/{ThirdPersonAnimalController.MaxVinesPerChain} — {movementKeys} balança • {jumpKey} salta"
+                    ? $"CIPÓ — {movementKeys} balança • mire em qualquer superfície e pressione {abilityKey} • {jumpKey} solta"
                 : LocalPlayer != null && LocalPlayer.IsFlying
                     ? $"SALTO PLANADO {LocalPlayer.GlideSecondsRemaining:0.0}s — segure {rangedKey} para atirar"
                 : LocalPlayer != null && LocalPlayer.IsInAntTunnel
@@ -595,14 +594,26 @@ namespace AnimalBattleRoyale
             return animalPortraits[index];
         }
 
-        private Texture GetWeaponIcon(WeaponAmmoType weapon, bool unlocked)
+        private Texture2D GetWeaponIcon(WeaponAmmoType weapon, bool unlocked)
         {
-            Texture2D[] cache = unlocked ? weaponIconsColor : weaponIconsGray;
             int index = (int)weapon;
-            if (cache[index] != null) return cache[index];
-            string suffix = unlocked ? string.Empty : "_Locked";
-            cache[index] = Resources.Load<Texture2D>($"UI/WeaponIcons/{weapon}{suffix}");
-            return cache[index];
+            if (weaponIconsColor[index] == null)
+                weaponIconsColor[index] = Resources.Load<Texture2D>($"UI/WeaponIcons/{weapon}");
+            Texture2D source = weaponIconsColor[index];
+            if (!unlocked && source != null)
+            {
+                if (weaponIconsGray[index] == null)
+                    weaponIconsGray[index] = GenerateGrayscale(source);
+                source = weaponIconsGray[index];
+            }
+            if (source == null || weapon == WeaponAmmoType.Watermelon) return source;
+
+            Texture2D[] horizontalCache = unlocked
+                ? weaponIconsHorizontalColor
+                : weaponIconsHorizontalGray;
+            if (horizontalCache[index] == null)
+                horizontalCache[index] = GenerateQuarterTurn(source);
+            return horizontalCache[index];
         }
 
         private void DrawStatBar(Rect rect, float normalized, float trailNormalized, Color fillColor, string label, string value)
@@ -698,9 +709,14 @@ namespace AnimalBattleRoyale
 
         private static readonly WeaponAmmoType[] WeaponSelectorSlots =
         {
-            WeaponAmmoType.Seed, WeaponAmmoType.Tomato, WeaponAmmoType.Watermelon
+            WeaponAmmoType.Tomato, WeaponAmmoType.Watermelon, WeaponAmmoType.Seed
         };
-        private static readonly string[] WeaponSelectorKeys = { "1", "2", "3" };
+        private static readonly GameInputAction[] WeaponSelectorActions =
+        {
+            GameInputAction.WeaponPrimary,
+            GameInputAction.WeaponSecondary,
+            GameInputAction.WeaponThird
+        };
 
         // Re-enabled alongside RangedCombatEnabled in ThirdPersonAnimalController.
         private const bool WeaponSelectorEnabled = true;
@@ -709,61 +725,57 @@ namespace AnimalBattleRoyale
         {
             if (!WeaponSelectorEnabled || LocalPlayer == null) return;
             bool mobileControls = MobileInputController.ControlsEnabled;
-            float iconSize = mobileControls ? 78f : 64f;
-            const float textHeight = 16f;
+            float desiredIconSize = mobileControls ? 70f : 64f;
+            float spacing = mobileControls ? 12f : 14f;
+            const float textHeight = 18f;
             const float textGap = 4f;
-            const float spacing = 14f;
 
+            GetAbilityAndAmmoBarRects(out _, out _, out Rect ability2Rect);
+            float availableLeft = ability2Rect.xMax + 18f;
+            float availableRight = viewWidth - 20f;
+            float availableWidth = Mathf.Max(0f, availableRight - availableLeft);
+            float iconSize = Mathf.Min(desiredIconSize,
+                Mathf.Max(36f, (availableWidth - spacing * (WeaponSelectorSlots.Length - 1)) / WeaponSelectorSlots.Length));
+            float rowWidth = iconSize * WeaponSelectorSlots.Length + spacing * (WeaponSelectorSlots.Length - 1);
             float rowHeight = iconSize + textGap + textHeight;
-            float columnHeight = rowHeight * WeaponSelectorSlots.Length + spacing * (WeaponSelectorSlots.Length - 1);
 
-            float startX;
-            float startY;
-            if (mobileControls)
-            {
-                // Keep weapon selection on the right, beside the minimap, while
-                // reserving the lower-right corner for the fire joystick and its
-                // four action buttons.
-                startX = viewWidth - 20f - iconSize - 210f;
-                startY = 72f;
-            }
-            else
-            {
-                // Below the whole right-side info column (minimap, then the zone
-                // and objective panels) on desktop.
-                float minimapSize = Mathf.Clamp(viewHeight * 0.29f, 190f, 232f);
-                float stackBottom = RightColumnTopY + minimapSize + 29f + MatchCountersStripHeight + MatchCountersStripGap + 86f + 70f;
-                startX = viewWidth - 20f - iconSize;
-                startY = stackBottom + 16f;
-            }
+            // Center the horizontal ammo strip in the footer space between the E
+            // ability and the right edge. On touch layouts that same horizontal
+            // position is kept, but the strip moves just above the action-button
+            // row so it cannot cover the fire joystick.
+            float startX = availableLeft + (availableWidth - rowWidth) * 0.5f;
+            float startY = mobileControls
+                ? Mathf.Max(72f, viewHeight - 360f)
+                : ability2Rect.center.y - iconSize * 0.5f;
 
             float touchPadding = mobileControls ? 6f : 0f;
             WeaponSelectorScreenRect = new Rect((startX - touchPadding) * uiScale,
                 (startY - touchPadding) * uiScale,
-                (iconSize + touchPadding * 2f) * uiScale,
-                (columnHeight + touchPadding * 2f) * uiScale);
+                (rowWidth + touchPadding * 2f) * uiScale,
+                (rowHeight + touchPadding * 2f) * uiScale);
 
-            // All three are always selectable — this is now just a backpack readout (which
-            // ammo type is active, and how much of each has been collected), not an
-            // unlock/progression ladder.
-            const float sideLabelWidth = 54f;
+            // Empty types remain visible as grayscale collection goals. As soon as a pickup
+            // adds at least one round, its full-color icon becomes selectable by click/tap
+            // or the matching 1/2/3 shortcut.
             for (int i = 0; i < WeaponSelectorSlots.Length; i++)
             {
                 WeaponAmmoType weapon = WeaponSelectorSlots[i];
+                int reserve = LocalPlayer.ReserveAmmoFor(weapon);
+                bool available = reserve > 0;
                 bool selected = LocalPlayer.CurrentWeaponAmmo == weapon;
-                float y = startY + i * (rowHeight + spacing);
-                Rect slot = new Rect(startX, y, iconSize, iconSize);
+                float x = startX + i * (iconSize + spacing);
+                Rect slot = new Rect(x, startY, iconSize, iconSize);
                 Rect touchSlot = mobileControls
                     ? new Rect(slot.x - touchPadding, slot.y - touchPadding,
                         slot.width + touchPadding * 2f, slot.height + touchPadding * 2f)
                     : slot;
 
-                if (!selected && GUI.Button(touchSlot, GUIContent.none, GUIStyle.none))
+                if (available && !selected && GUI.Button(touchSlot, GUIContent.none, GUIStyle.none))
                 {
                     SelectWeaponFromHud(weapon);
                 }
 
-                Texture icon = GetWeaponIcon(weapon, true);
+                Texture icon = GetWeaponIcon(weapon, available);
                 if (icon != null)
                 {
                     Rect iconRect = selected ? new Rect(slot.x - 10f, slot.y - 10f, slot.width + 20f, slot.height + 20f) : slot;
@@ -774,15 +786,22 @@ namespace AnimalBattleRoyale
                     DrawRoundedRect(slot, ThirdPersonAnimalController.ColorForWeapon(weapon));
                 }
 
-                string label = WeaponSelectorKeys[i];
-                Color color = selected ? new Color(1f, 0.92f, 0.35f, 1f) : new Color(0.4f, 0.95f, 0.6f, 1f);
-                Rect textRect = new Rect(slot.x - 8f, slot.yMax + textGap, iconSize + 16f, textHeight);
-                DrawOutlinedLabel(textRect, label, color);
+                string label = GameInputBindings.GetDisplayName(WeaponSelectorActions[i]);
+                Color color = !available ? new Color(0.55f, 0.58f, 0.58f, 1f)
+                    : selected ? new Color(1f, 0.92f, 0.35f, 1f)
+                    : new Color(0.4f, 0.95f, 0.6f, 1f);
+                float keyWidth = Mathf.Clamp(
+                    weaponLockStyle.CalcSize(new GUIContent(label)).x + 12f,
+                    24f, iconSize - 4f);
+                Rect keyRect = new Rect(slot.x + 2f, slot.y + 2f, keyWidth, 20f);
+                DrawKeycapIcon(keyRect, label, color, available);
 
-                // "Backpack" count — how many of this ammo type are carried right now.
-                int reserve = LocalPlayer.ReserveAmmoFor(weapon);
-                Rect countRect = new Rect(slot.x - sideLabelWidth - 6f, slot.y, sideLabelWidth, iconSize);
-                DrawOutlinedLabel(countRect, reserve.ToString(), new Color(0.85f, 0.9f, 0.92f, 1f));
+                // Current collection and its cap stay visible together: 10/20, 60/120, etc.
+                Rect countRect = new Rect(slot.x - 10f, slot.yMax + textGap, iconSize + 20f, textHeight);
+                DrawOutlinedLabel(countRect,
+                    $"{reserve}/{ThirdPersonAnimalController.MaxAmmoForWeapon(weapon)}",
+                    available ? new Color(0.85f, 0.9f, 0.92f, 1f)
+                        : new Color(0.48f, 0.5f, 0.5f, 1f));
             }
         }
 
@@ -818,17 +837,22 @@ namespace AnimalBattleRoyale
         private const float AmmoIconSize = 140f;
         private const float AbilityAmmoGap = 22f;
 
-        private void DrawAbilityAndAmmoBar()
+        private void GetAbilityAndAmmoBarRects(out Rect ability1Rect, out Rect ammoRect, out Rect ability2Rect)
         {
-            if (LocalPlayer == null) return;
-
             float totalWidth = AbilityIconSize + AbilityAmmoGap + AmmoIconSize + AbilityAmmoGap + AbilityIconSize;
             float startX = viewWidth * 0.5f - totalWidth * 0.5f;
             float centerY = viewHeight - 34f - AmmoIconSize * 0.5f;
 
-            Rect ability1Rect = new Rect(startX, centerY - AbilityIconSize * 0.5f, AbilityIconSize, AbilityIconSize);
-            Rect ammoRect = new Rect(ability1Rect.xMax + AbilityAmmoGap, centerY - AmmoIconSize * 0.5f, AmmoIconSize, AmmoIconSize);
-            Rect ability2Rect = new Rect(ammoRect.xMax + AbilityAmmoGap, centerY - AbilityIconSize * 0.5f, AbilityIconSize, AbilityIconSize);
+            ability1Rect = new Rect(startX, centerY - AbilityIconSize * 0.5f, AbilityIconSize, AbilityIconSize);
+            ammoRect = new Rect(ability1Rect.xMax + AbilityAmmoGap, centerY - AmmoIconSize * 0.5f, AmmoIconSize, AmmoIconSize);
+            ability2Rect = new Rect(ammoRect.xMax + AbilityAmmoGap, centerY - AbilityIconSize * 0.5f, AbilityIconSize, AbilityIconSize);
+        }
+
+        private void DrawAbilityAndAmmoBar()
+        {
+            if (LocalPlayer == null) return;
+
+            GetAbilityAndAmmoBarRects(out Rect ability1Rect, out Rect ammoRect, out Rect ability2Rect);
 
             string abilityKey = MobileInputController.ControlsEnabled ? "P" : GameInputBindings.GetDisplayName(GameInputAction.Ability);
             DrawAbilitySlot(ability1Rect, 0, abilityKey);
@@ -933,7 +957,9 @@ namespace AnimalBattleRoyale
                 magazineText = cachedMagazineText;
             }
             cachedReloadingState = reloading;
-            DrawIconValueRow(magazineRow, GetAmmoBulletIcon(), magazineText, textColor, abilityCountdownStyle, magazineRow.height);
+            DrawIconValueRow(magazineRow,
+                GetWeaponIcon(LocalPlayer.CurrentWeaponAmmo, !empty),
+                magazineText, textColor, abilityCountdownStyle, magazineRow.height);
             if (!empty && !reloading)
             {
                 if (reserve != cachedReserveAmmo)
@@ -948,7 +974,8 @@ namespace AnimalBattleRoyale
         // Icon + number pair, centered as one group within rowRect (icon on the left of its
         // matching value) instead of a bare number, matching the bullet/reload art dropped
         // in for the ammo shield.
-        private void DrawIconValueRow(Rect rowRect, Texture2D icon, string text, Color textColor, GUIStyle style, float iconSize)
+        private void DrawIconValueRow(Rect rowRect, Texture2D icon, string text, Color textColor,
+            GUIStyle style, float iconSize)
         {
             Vector2 textSize = style.CalcSize(new GUIContent(text));
             float gap = icon != null ? 6f : 0f;
@@ -983,12 +1010,6 @@ namespace AnimalBattleRoyale
             Texture2D gray = GenerateGrayscale(color);
             abilityIconCache[cacheKey] = gray;
             return gray;
-        }
-
-        private Texture2D GetAmmoBulletIcon()
-        {
-            if (ammoBulletIcon == null) ammoBulletIcon = Resources.Load<Texture2D>("UI/Abilities/AmmoBulletIcon");
-            return ammoBulletIcon;
         }
 
         private Texture2D GetAmmoReloadIcon()
@@ -1027,6 +1048,47 @@ namespace AnimalBattleRoyale
             {
                 // Texture isn't readable (import settings not applied yet) — fall back to
                 // the color version rather than throwing every OnGUI frame.
+                return source;
+            }
+        }
+
+        private static Texture2D GenerateQuarterTurn(Texture2D source)
+        {
+            if (source == null) return null;
+            try
+            {
+                Color32[] sourcePixels = source.GetPixels32();
+                Color32[] rotatedPixels = new Color32[sourcePixels.Length];
+                int rotatedWidth = source.height;
+                int rotatedHeight = source.width;
+
+                // Counter-clockwise quarter turn: the tip that points upward in the supplied
+                // walnut/tomato art ends up pointing left, matching the watermelon cartridge.
+                for (int y = 0; y < source.height; y++)
+                {
+                    for (int x = 0; x < source.width; x++)
+                    {
+                        int rotatedX = source.height - 1 - y;
+                        int rotatedY = x;
+                        rotatedPixels[rotatedY * rotatedWidth + rotatedX] =
+                            sourcePixels[y * source.width + x];
+                    }
+                }
+
+                Texture2D rotated = new Texture2D(rotatedWidth, rotatedHeight, TextureFormat.RGBA32, false)
+                {
+                    name = source.name + "_Horizontal",
+                    filterMode = source.filterMode,
+                    wrapMode = source.wrapMode
+                };
+                rotated.SetPixels32(rotatedPixels);
+                rotated.Apply();
+                return rotated;
+            }
+            catch (UnityException)
+            {
+                // A vertical icon is preferable to an invisible one if an import setting
+                // temporarily prevents pixel access.
                 return source;
             }
         }
@@ -1141,8 +1203,8 @@ namespace AnimalBattleRoyale
                     ? "PODER"
                     : GameInputBindings.GetDisplayName(GameInputAction.Ability);
                 string vineAction = LocalPlayer != null && LocalPlayer.IsHangingVine
-                    ? $"{abilityInput}  PRÓXIMO CIPÓ  {LocalPlayer.VinesVisitedInChain + 1}/{ThirdPersonAnimalController.MaxVinesPerChain}"
-                    : $"{abilityInput}  AGARRAR CIPÓ  1/{ThirdPersonAnimalController.MaxVinesPerChain}";
+                    ? $"{abilityInput}  PRENDER NO NOVO ALVO"
+                    : $"{abilityInput}  LANÇAR CIPÓ";
                 GUI.Label(prompt, vineAction, centeredStyle);
             }
             else if (LocalPlayer != null)

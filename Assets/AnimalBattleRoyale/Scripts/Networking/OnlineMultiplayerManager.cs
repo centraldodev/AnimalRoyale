@@ -18,7 +18,8 @@ namespace AnimalBattleRoyale
         MeleeAttack,
         Ability,
         Consume,
-        SelectWeapon
+        SelectWeapon,
+        Reload
     }
 
     public readonly struct NetworkSpawnDefinition
