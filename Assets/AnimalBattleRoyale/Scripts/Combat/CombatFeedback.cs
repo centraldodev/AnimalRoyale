@@ -21,6 +21,7 @@ namespace AnimalBattleRoyale
         public static void PlayPower(AnimalType type, int slot, Vector3 position)
         {
             if (type == AnimalType.Tiger) PlayTigerPounce(position);
+            else if (type == AnimalType.Monkey) PlayMonkeyVine(position);
             else if (type == AnimalType.Eagle) PlayEagleFlight(position);
             else if (type == AnimalType.Cow) PlayCowCharge(position);
         }
@@ -50,13 +51,16 @@ namespace AnimalBattleRoyale
             PlaySfx(position, "LongJump", 0.42f, 0.96f, 1.04f, 32f, 0.85f, 0.14f, 3);
 
         public static void PlayTigerPounce(Vector3 position) =>
-            PlaySfx(position, "TigerPounce", 0.48f, 0.96f, 1.04f, 40f, 0.85f, 0.14f, 2);
+            PlaySfx(position, "AbilityTigerQ", 0.52f, 0.98f, 1.02f, 42f, 0.85f, 0.14f, 2);
+
+        public static void PlayMonkeyVine(Vector3 position) =>
+            PlaySfx(position, "AbilityMonkeyQ", 0.5f, 0.98f, 1.02f, 42f, 0.85f, 0.12f, 2);
 
         public static void PlayEagleFlight(Vector3 position) =>
             PlaySfx(position, "EagleFlight", 0.48f, 0.97f, 1.03f, 40f, 0.9f, 0.4f, 2);
 
         public static void PlayCowCharge(Vector3 position) =>
-            PlaySfx(position, "CowCharge", 0.5f, 0.97f, 1.03f, 40f, 0.9f, 1.5f, 2);
+            PlaySfx(position, "AbilityCowQ", 0.54f, 0.98f, 1.02f, 44f, 0.9f, 1.5f, 2);
 
         public static void PlayCowImpact(Vector3 position) =>
             PlaySfx(position, "CowImpact", 0.55f, 0.95f, 1.05f, 34f, 0.9f, 0.08f, 4);

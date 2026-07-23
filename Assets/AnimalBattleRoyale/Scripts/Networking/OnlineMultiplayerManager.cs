@@ -133,7 +133,6 @@ namespace AnimalBattleRoyale
 
             Instance = this;
             EnsureNetworkStack();
-            EnsureLanDiscovery();
         }
 
         public void Initialize(GameBootstrap gameBootstrap)

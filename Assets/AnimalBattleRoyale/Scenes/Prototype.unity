@@ -196,15 +196,23 @@ MonoBehaviour:
   anthillMinimumSpacing: 26
   mountainCount: 26
   rangedSupplyCount: 60
-  foodPickupCount: 30
+  foodPickupCount: 60
   weaponCrystalCount: 40
-  pickupMinimumSpacing: 12
+  pickupMinimumSpacing: 50
   houseCount: 16
   houseMinimumSpacing: 22
   eagleMountainCount: 8
   useNatureStarterVegetation: 1
   natureTreeShare: 0.22
   natureBushShare: 0.4
+  natureStarterBushCount: 560
+  natureStarterBushDiffuseTextures:
+  - {fileID: 2800000, guid: f09d087d144fc6f4a8b97c748f7e48f1, type: 3}
+  - {fileID: 2800000, guid: 4fde83dbcc90ddf4496b7d4b4a533032, type: 3}
+  - {fileID: 2800000, guid: bafd27072aee8654485c538f80de7dd8, type: 3}
+  - {fileID: 2800000, guid: 1bc291dddd73b3546b8d909b1c407553, type: 3}
+  - {fileID: 2800000, guid: 99594b157f839144d8c0e173b04dc37a, type: 3}
+  - {fileID: 2800000, guid: c40a1e1e56a4e2a48880f0c13f4af075, type: 3}
   flowerPatchCount: 340
   waterfallCount: 2
   skyCloudCount: 22

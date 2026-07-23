@@ -15,24 +15,24 @@ namespace AnimalBattleRoyale
         // Watermelon's splash radius was widened (was 3.4) so it reads as more of an area
         // weapon now that the seed slot is the dedicated precision option.
         public const float WatermelonExplosionRadius = 5f;
-        public const float SeedDamage = 6f;
-        public const float TomatoDamage = 12f;
-        public const float WatermelonDamage = 15f;
+        public const float SeedDamage = 50f;
+        public const float TomatoDamage = 100f / 6f;
+        public const float WatermelonDamage = 100f / 3f;
+        private const float TomatoFullDamageRange = 5f;
+        private const float TomatoMediumDamageRange = 20f;
+        private const float WatermelonFullDamageRange = 3f;
+        private const float WatermelonMediumDamageRange = 10f;
+        private const float WatermelonLongRangeDamage = 1f;
         // Global travel-only boost: projectiles reach the aimed point twice as fast without
         // changing fire cadence, damage, range lifetime, magazine size or reload timing.
         private const float ProjectileTravelSpeedMultiplier = 2f;
-        // Headshots (any ammo) deal double damage. The seed slot ("nozes" — the long-range
-        // precision weapon) additionally instant-kills on a headshot, matching a sniper's
-        // one-shot identity; tomato/watermelon headshots just get the damage multiplier.
-        private const float HeadshotDamageMultiplier = 2f;
+        // Only the walnut precision round can headshot: 50 body damage becomes 100.
+        private const float SeedHeadshotDamageMultiplier = 2f;
+        private const float LethalDamageEpsilon = 0.001f;
         // Top fraction of the target's controller height counted as the head — these are
         // chibi characters with proportionally huge heads, so this sits fairly high but not
         // razor-thin at the very top.
         private const float HeadshotHeightFraction = 0.72f;
-        // Large enough to guarantee a kill after Health.TakeDamage's own modifiers (spawn
-        // protection/resistance) rather than exactly matching current HP, so spawn protection
-        // still correctly blocks it instead of being bypassed.
-        private const float HeadshotInstakillDamage = 9999f;
         // Cow keeps the same seed/tomato/watermelon damage tiers under the hood — only the
         // projectile's look is swapped to milk.
         public static readonly Color MilkColor = new Color(0.96f, 0.95f, 0.9f);
@@ -51,6 +51,7 @@ namespace AnimalBattleRoyale
         private TrailRenderer trailRenderer;
         private bool visualBuilt;
         private int poolKey;
+        private Vector3 launchPosition;
         private Vector3 velocity;
         private float gravity;
         private float damage;
@@ -196,6 +197,7 @@ namespace AnimalBattleRoyale
             if (source.AnimalType == AnimalType.Cow) impactColor = MilkColor;
 
             transform.position = GetLaunchPosition(source, direction);
+            launchPosition = transform.position;
             transform.rotation = Quaternion.identity;
             velocity = direction * speed + Vector3.up * lift;
             expiresAt = Time.time + ServerGameTuning.ProjectileRangeSeconds;
@@ -286,11 +288,12 @@ namespace AnimalBattleRoyale
         private void DamageDirectTarget(Health target, Vector3 hitPoint)
         {
             if (!CanDamage(target)) return;
-            bool headshot = IsHeadshot(target, hitPoint);
-            float appliedDamage = headshot ? damage * HeadshotDamageMultiplier : damage;
-            // Seed ("nozes") is the precision long-range slot — a headshot with it kills
-            // outright instead of just doubling damage, matching a sniper round.
-            if (headshot && ammoType == WeaponAmmoType.Seed) appliedDamage = HeadshotInstakillDamage;
+            bool headshot = ammoType == WeaponAmmoType.Seed && IsHeadshot(target, hitPoint);
+            float distanceAdjustedDamage = DamageAtDistance(hitPoint);
+            float appliedDamage = headshot
+                ? distanceAdjustedDamage * SeedHeadshotDamageMultiplier
+                : distanceAdjustedDamage;
+            appliedDamage = SnapLethalDamage(target, appliedDamage);
             target.TakeDamage(appliedDamage, owner);
             CombatFeedback.NotifyHit(owner.AnimalType, hitPoint, appliedDamage);
             if (target.Owner == null) return;
@@ -321,11 +324,12 @@ namespace AnimalBattleRoyale
                 Health target = candidate != null ? candidate.GetComponentInParent<Health>() : null;
                 if (!CanDamage(target) || !areaHitTargets.Add(target)) continue;
 
-                target.TakeDamage(damage, owner);
                 Vector3 targetPoint = target.Owner != null
                     ? target.Owner.transform.position + Vector3.up * (target.Owner.Stats.ControllerHeight * 0.45f)
                     : target.transform.position;
-                CombatFeedback.NotifyHit(owner.AnimalType, targetPoint, damage);
+                float appliedDamage = SnapLethalDamage(target, DamageAtDistance(targetPoint));
+                target.TakeDamage(appliedDamage, owner);
+                CombatFeedback.NotifyHit(owner.AnimalType, targetPoint, appliedDamage);
                 if (target.Owner == null) continue;
 
                 Vector3 knockback = target.Owner.transform.position - center;
@@ -335,6 +339,36 @@ namespace AnimalBattleRoyale
                 target.Owner.ReceiveKnockback(knockback.normalized * 5.4f);
             }
             areaHitTargets.Clear();
+        }
+
+        private float DamageAtDistance(Vector3 hitPosition)
+        {
+            // Walnut rounds are the precision option and deliberately keep their full
+            // body/headshot damage at every range.
+            if (ammoType == WeaponAmmoType.Seed) return damage;
+
+            float distance = Vector3.Distance(launchPosition, hitPosition);
+            if (ammoType == WeaponAmmoType.Watermelon)
+            {
+                if (distance <= WatermelonFullDamageRange) return damage;
+                if (distance <= WatermelonMediumDamageRange) return damage * 0.5f;
+                return WatermelonLongRangeDamage;
+            }
+
+            if (distance <= TomatoFullDamageRange) return damage;
+            if (distance <= TomatoMediumDamageRange) return damage * (2f / 3f);
+            return damage * (1f / 3f);
+        }
+
+        private static float SnapLethalDamage(Health target, float appliedDamage)
+        {
+            // 100/6 and 100/3 cannot be represented exactly as floats. Snap only the tiny
+            // rounding remainder on the final hit so six tomatoes or three watermelons kill
+            // a 100-health target instead of leaving an invisible fraction of one HP.
+            float remaining = target.CurrentHealth - appliedDamage;
+            return remaining > 0f && remaining <= LethalDamageEpsilon
+                ? target.CurrentHealth
+                : appliedDamage;
         }
 
         private bool CanDamage(Health target)
@@ -593,7 +627,8 @@ namespace AnimalBattleRoyale
             if (labelObject != null) labelObject.SetActive(false);
             if (highlightObject != null) highlightObject.SetActive(false);
             CombatFeedback.PlayAmmoPickup(transform.position);
-            Countdown.Spawn(transform.position, RespawnSeconds, SupplyColor(), SupplyLabel());
+            Countdown.Spawn(transform.position, RespawnSeconds,
+                SupplyPrimaryColor(), SupplySecondaryColor(), SupplyLabel());
             return true;
         }
 
@@ -607,7 +642,9 @@ namespace AnimalBattleRoyale
                 if (visual != null) visual.gameObject.SetActive(true);
                 if (labelObject != null) labelObject.SetActive(true);
                 if (highlightObject != null) highlightObject.SetActive(true);
-                AttackVfx.CreateBurst(transform.position + Vector3.up * 0.35f, SupplyColor(), 1f);
+                AttackVfx.CreateBurst(transform.position + Vector3.up * 0.35f, SupplyPrimaryColor(), 1f);
+                if (HasSecondaryColor())
+                    AttackVfx.CreateBurst(transform.position + Vector3.up * 0.48f, SupplySecondaryColor(), 0.78f);
             }
 
             if (visual != null)
@@ -637,8 +674,13 @@ namespace AnimalBattleRoyale
             visualBasePosition = instance.transform.localPosition;
             visual = instance.transform;
 
-            CollectibleHighlight highlight = CollectibleHighlight.Attach(transform, SupplyColor(), 1.02f, 0.02f);
-            highlightObject = highlight != null ? highlight.gameObject : null;
+            GameObject effects = new GameObject("SupplyEffects");
+            effects.transform.SetParent(transform, false);
+            CollectibleHighlight.Attach(effects.transform, SupplyPrimaryColor(), 1.02f, 0.02f);
+            if (HasSecondaryColor())
+                CollectibleHighlight.Attach(effects.transform, SupplySecondaryColor(), 1.24f, 0.1f);
+            PickupGlowLight.Attach(effects.transform, SupplyPrimaryColor(), SupplySecondaryColor(), 5f, 1.2f);
+            highlightObject = effects;
 
             labelObject = new GameObject("SupplyLabel");
             labelObject.transform.SetParent(transform, false);
@@ -649,7 +691,7 @@ namespace AnimalBattleRoyale
             text.alignment = TextAlignment.Center;
             text.characterSize = 0.043f;
             text.fontSize = 48;
-            text.color = SupplyColor();
+            text.color = SupplyPrimaryColor();
             labelObject.AddComponent<PickupLabel>();
         }
 
@@ -973,9 +1015,26 @@ namespace AnimalBattleRoyale
             return "+" + PickupAmount();
         }
 
-        private Color SupplyColor()
+        private Color SupplyPrimaryColor()
         {
-            return ThirdPersonAnimalController.ColorForWeapon(ammoType);
+            return ammoType switch
+            {
+                WeaponAmmoType.Tomato => new Color(0.96f, 0.12f, 0.055f),
+                WeaponAmmoType.Watermelon => new Color(0.96f, 0.12f, 0.055f),
+                _ => new Color(0.82f, 0.7f, 0.42f)
+            };
+        }
+
+        private Color SupplySecondaryColor()
+        {
+            return ammoType == WeaponAmmoType.Watermelon
+                ? new Color(0.18f, 0.82f, 0.2f)
+                : SupplyPrimaryColor();
+        }
+
+        private bool HasSecondaryColor()
+        {
+            return ammoType == WeaponAmmoType.Watermelon;
         }
     }
 }

@@ -15,6 +15,9 @@ namespace AnimalBattleRoyale
         private const float TreeGroundEmbedRatio = 0.035f;
         private static readonly Dictionary<string, GameObject> NewNaturePrefabCache =
             new Dictionary<string, GameObject>();
+        private static readonly Dictionary<Texture2D, Material> NatureStarterBushMaterialCache =
+            new Dictionary<Texture2D, Material>();
+        private static Mesh natureStarterBushFallbackMesh;
 
         private static readonly string[] NewTreePrefabs =
         {
@@ -266,10 +269,11 @@ namespace AnimalBattleRoyale
 
             System.Random random = new System.Random(unchecked(seed ^ 0x274B91D3));
             int trees = SpawnNewTrees(natureRoot, random);
+            int bushes = SpawnNatureStarterBushes(natureRoot, random);
             int mushrooms = SpawnNewMushrooms(natureRoot, random);
             CreateCartoonMeadow(natureRoot, random, out int grassTufts, out int flowers);
 
-            Debug.Log($"[Jungle] Novo ambiente natural: {trees} arvores, {mushrooms} cogumelos, " +
+            Debug.Log($"[Jungle] Novo ambiente natural: {trees} arvores, {bushes} arbustos, {mushrooms} cogumelos, " +
                       $"{grassTufts} tufos de grama e {flowers} flores cartoon; " +
                       "nova cachoeira e ponte modular do lago ativas.");
         }
@@ -556,6 +560,185 @@ namespace AnimalBattleRoyale
             }
 
             return created;
+        }
+
+        private int SpawnNatureStarterBushes(Transform parent, System.Random random)
+        {
+            if (!useNatureStarterVegetation
+                || natureStarterBushCount <= 0
+                || natureStarterBushDiffuseTextures == null
+                || natureStarterBushDiffuseTextures.Length == 0)
+                return 0;
+
+            Transform bushesRoot = new GameObject("NatureStarterBushes").transform;
+            bushesRoot.SetParent(parent, false);
+            int created = 0;
+            int maximumAttempts = Mathf.Max(64, natureStarterBushCount * 3);
+
+            for (int attempt = 0; attempt < maximumAttempts && created < natureStarterBushCount; attempt++)
+            {
+                if (!TryFindNaturePosition(random, lakeRadius + 5.5f, mapSize * 0.47f, out Vector3 position))
+                    continue;
+
+                Vector2 planar = new Vector2(position.x, position.z);
+                if (!IsLakesideTreePositionAllowed(planar)) continue;
+
+                // The six Unity 5 Tree Creator prefabs deserialize as the obsolete
+                // "Prefab" reference type in Unity 6 and cannot be assigned to GameObject.
+                // Cycle their original foliage textures instead and build compatible
+                // lightweight geometry directly at runtime.
+                int prefabIndex = created % natureStarterBushDiffuseTextures.Length;
+                Texture2D diffuse = natureStarterBushDiffuseTextures[prefabIndex];
+                if (diffuse == null)
+                {
+                    for (int offset = 1; offset < natureStarterBushDiffuseTextures.Length; offset++)
+                    {
+                        int candidateIndex = (prefabIndex + offset)
+                                             % natureStarterBushDiffuseTextures.Length;
+                        if (natureStarterBushDiffuseTextures[candidateIndex] == null) continue;
+                        prefabIndex = candidateIndex;
+                        diffuse = natureStarterBushDiffuseTextures[candidateIndex];
+                        break;
+                    }
+                }
+                if (diffuse == null) break;
+
+                GameObject bush = new GameObject("NatureStarterBush");
+                bush.transform.SetParent(bushesRoot, false);
+                bush.name = $"NatureStarterBush_{prefabIndex + 1:00}_{created + 1:000}";
+                bush.transform.position = position;
+                bush.transform.rotation = Quaternion.Euler(0f, NextNatureFloat(random, 0f, 360f), 0f);
+                bush.transform.localScale = Vector3.one * NextNatureFloat(random, 0.68f, 1.16f);
+
+                AddNatureStarterBushFallbackGeometry(bush, diffuse);
+                ApplyNatureStarterBushMaterial(bush, diffuse);
+                ApplyNatureRendererSettings(bush, false);
+                foreach (Collider collider in bush.GetComponentsInChildren<Collider>(true))
+                    if (collider != null) Object.Destroy(collider);
+
+                SetVisualOnGround(bush, CalculateRenderedGroundHeight(position.x, position.z), 0.025f);
+                ConfigureVisualOptimization(bush, 0.012f);
+                bush.isStatic = true;
+                created++;
+            }
+
+            if (created < natureStarterBushCount)
+                Debug.LogWarning($"[Jungle] Apenas {created}/{natureStarterBushCount} arbustos puderam ser posicionados.");
+            StaticBatchingUtility.Combine(bushesRoot.gameObject);
+            return created;
+        }
+
+        private static void AddNatureStarterBushFallbackGeometry(GameObject bush, Texture2D diffuse)
+        {
+            if (bush == null) return;
+
+            GameObject foliage = new GameObject("Unity6BushFallback");
+            foliage.transform.SetParent(bush.transform, false);
+            MeshFilter meshFilter = foliage.AddComponent<MeshFilter>();
+            meshFilter.sharedMesh = GetNatureStarterBushFallbackMesh();
+            MeshRenderer renderer = foliage.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = GetNatureStarterBushMaterial(diffuse);
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = true;
+        }
+
+        private static Mesh GetNatureStarterBushFallbackMesh()
+        {
+            if (natureStarterBushFallbackMesh != null) return natureStarterBushFallbackMesh;
+
+            const int planeCount = 3;
+            const float halfWidth = 0.82f;
+            const float height = 1.7f;
+            Vector3[] vertices = new Vector3[planeCount * 4];
+            Vector2[] uvs = new Vector2[planeCount * 4];
+            int[] triangles = new int[planeCount * 6];
+
+            for (int plane = 0; plane < planeCount; plane++)
+            {
+                float angle = plane * Mathf.PI / planeCount;
+                Vector3 width = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * halfWidth;
+                int vertex = plane * 4;
+                vertices[vertex] = -width;
+                vertices[vertex + 1] = -width + Vector3.up * height;
+                vertices[vertex + 2] = width + Vector3.up * height;
+                vertices[vertex + 3] = width;
+
+                // The legacy atlas keeps bark on the left and the complete leafy bush on
+                // the right, so the fallback cards sample only the foliage half.
+                uvs[vertex] = new Vector2(0.5f, 0f);
+                uvs[vertex + 1] = new Vector2(0.5f, 1f);
+                uvs[vertex + 2] = new Vector2(1f, 1f);
+                uvs[vertex + 3] = new Vector2(1f, 0f);
+
+                int triangle = plane * 6;
+                triangles[triangle] = vertex;
+                triangles[triangle + 1] = vertex + 1;
+                triangles[triangle + 2] = vertex + 2;
+                triangles[triangle + 3] = vertex;
+                triangles[triangle + 4] = vertex + 2;
+                triangles[triangle + 5] = vertex + 3;
+            }
+
+            natureStarterBushFallbackMesh = new Mesh
+            {
+                name = "NatureStarterBush_Unity6Fallback",
+                vertices = vertices,
+                uv = uvs,
+                triangles = triangles,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            natureStarterBushFallbackMesh.RecalculateNormals();
+            natureStarterBushFallbackMesh.RecalculateBounds();
+            natureStarterBushFallbackMesh.UploadMeshData(true);
+            return natureStarterBushFallbackMesh;
+        }
+
+        private static void ApplyNatureStarterBushMaterial(GameObject bush, Texture2D diffuse)
+        {
+            if (bush == null || diffuse == null) return;
+
+            Material material = GetNatureStarterBushMaterial(diffuse);
+            if (material == null) return;
+
+            foreach (Renderer renderer in bush.GetComponentsInChildren<Renderer>(true))
+            {
+                Material[] materials = renderer.sharedMaterials;
+                for (int index = 0; index < materials.Length; index++) materials[index] = material;
+                renderer.sharedMaterials = materials;
+            }
+        }
+
+        private static Material GetNatureStarterBushMaterial(Texture2D diffuse)
+        {
+            if (diffuse == null) return null;
+            if (NatureStarterBushMaterialCache.TryGetValue(diffuse, out Material cached)
+                && cached != null)
+                return cached;
+
+            Color brightFoliage = new Color(1.28f, 1.42f, 1.2f, 1f);
+            Material material = new Material(ShaderLibrary.Lit)
+            {
+                name = diffuse.name + "_NatureStarterBush_Runtime",
+                color = brightFoliage,
+                enableInstancing = true,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", diffuse);
+            if (material.HasProperty("_MainTex")) material.SetTexture("_MainTex", diffuse);
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", brightFoliage);
+            if (material.HasProperty("_Color")) material.SetColor("_Color", brightFoliage);
+            if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 0f);
+            if (material.HasProperty("_AlphaClip")) material.SetFloat("_AlphaClip", 1f);
+            if (material.HasProperty("_Cutoff")) material.SetFloat("_Cutoff", 0.28f);
+            if (material.HasProperty("_Cull")) material.SetFloat("_Cull", (float)CullMode.Off);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.06f);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.06f);
+            material.EnableKeyword("_ALPHATEST_ON");
+            material.DisableKeyword("_ALPHABLEND_ON");
+            material.SetOverrideTag("RenderType", "TransparentCutout");
+            material.renderQueue = (int)RenderQueue.AlphaTest;
+            NatureStarterBushMaterialCache[diffuse] = material;
+            return material;
         }
 
         private bool IsLakesideTreePositionAllowed(Vector2 position)

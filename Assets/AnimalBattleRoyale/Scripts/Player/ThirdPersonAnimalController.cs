@@ -36,6 +36,16 @@ namespace AnimalBattleRoyale
         private JungleGenerator jungle;
         private AudioSource undergroundWalkSource;
         private float nextGroundCheckTime;
+        private float nextStuckCheckTime;
+        private float lastStuckSampleTime;
+        private float obstructedSeconds;
+        private float immobileSeconds;
+        private Vector3 lastStuckSamplePosition;
+        private Vector3 lastKnownSafePosition;
+        private Vector3 lastRequestedMoveDirection;
+        private bool stuckSampleInitialized;
+        private bool hasLastKnownSafePosition;
+        private bool movementRequestedSinceStuckCheck;
         private bool wasGroundedForLandingSfx = true;
         private Vector3 verticalVelocity;
         private Vector3 extraVelocity;
@@ -74,6 +84,8 @@ namespace AnimalBattleRoyale
         private float spawnProtectedUntil;
         private bool tigerPouncing;
         private float tigerPounceStartedAt;
+        private Vector3 tigerPounceVelocity;
+        private Vector3 tigerPounceFallbackAimDirection;
         private float flyingUntil;
         private Vector3 eagleGlideDirection;
         private Transform heldVine;
@@ -103,8 +115,9 @@ namespace AnimalBattleRoyale
         private const float AntClimbJumpOffSpeed = 5f;
         private const float AntTunnelAimExitRange = 45f;
         private const float TigerPounceMaxRange = 50f;
-        private const float TigerPounceMinDuration = 0.22f;
         private const float TigerPounceMaxDuration = 2.1f;
+        private const float TigerPounceCollisionGrace = 0.09f;
+        private const float TigerPounceLaunchLift = 0.18f;
         private bool networkProxy;
         private Vector3 networkTargetPosition;
         private Quaternion networkTargetRotation;
@@ -112,6 +125,9 @@ namespace AnimalBattleRoyale
 
         public const int MaxLives = 3;
         private const float SpawnProtectionSeconds = 2.5f;
+        private const float StuckCheckInterval = 0.35f;
+        private const float ObstructedRecoveryDelay = 0.7f;
+        private const float ImmobileRecoveryDelay = 2.1f;
 
         private const float VineLeapSpeed = 22f;
         private const float VineSideControlSpeed = 8f;
@@ -130,7 +146,7 @@ namespace AnimalBattleRoyale
         private const float CowChargeTurnRateDegreesPerSecond = 220f;
         private static readonly Color CowChargeColor = new Color(0.75f, 0.55f, 0.32f);
         private const float EagleGlideTurnRateDegreesPerSecond = 260f;
-        private const float TigerPounceTurnRateDegreesPerSecond = 280f;
+        private const float TigerPounceTurnRateDegreesPerSecond = 420f;
 
         public AnimalType AnimalType => animalType;
         public AnimalStats Stats { get { EnsureRuntimeReferences(); return stats; } }
@@ -390,7 +406,7 @@ namespace AnimalBattleRoyale
             }
             if (burrowed) { HandleBurrowed(); return; }
             if (climbingTree) { HandleClimbingTree(); return; }
-            RecoverIfBelowTerrain();
+            RecoverIfBelowTerrainOrStuck();
             if (isLocalPlayer) HandleLocalInput();
             else HandleAIInput();
         }
@@ -604,6 +620,10 @@ namespace AnimalBattleRoyale
             animalType = type;
             stats = AnimalDefinition.Get(type);
             EnsureRuntimeReferences();
+            tigerPouncing = false;
+            tigerPounceVelocity = Vector3.zero;
+            abilityDashUntil = 0f;
+            cowCharging = false;
             vineLeaping = false;
             hangingVine = false;
             VineAnchor.DestroyThrown(heldVine);
@@ -629,27 +649,141 @@ namespace AnimalBattleRoyale
         {
             if (terrain == null) return;
             jungle = terrain;
-            Vector3 safePosition = terrain.GetGroundPosition(transform.position, clearance);
+            Vector3 safePosition;
+            if (!terrain.TryFindSafeAnimalPosition(transform.position, stats.ControllerRadius,
+                    stats.ControllerHeight, out safePosition, 18f, transform))
+                safePosition = terrain.GetGroundPosition(transform.position, clearance);
             bool wasEnabled = characterController != null && characterController.enabled;
             if (wasEnabled) characterController.enabled = false;
             transform.position = safePosition;
             verticalVelocity = Vector3.zero;
             if (wasEnabled) characterController.enabled = true;
+            lastKnownSafePosition = safePosition;
+            hasLastKnownSafePosition = true;
+            ResetStuckDetection();
         }
 
-        private void RecoverIfBelowTerrain()
+        private void RecoverIfBelowTerrainOrStuck()
         {
             if (jungle == null) return;
-            if (Time.time < nextGroundCheckTime) return;
-            nextGroundCheckTime = Time.time + 0.1f;
+            if (Time.time >= nextGroundCheckTime)
+            {
+                nextGroundCheckTime = Time.time + 0.1f;
+                // Cheap height check first; only perform a complete safe-position search
+                // when the animal actually fell through the rendered terrain.
+                float groundHeight = jungle.GroundHeightAt(transform.position);
+                if (transform.position.y < groundHeight - 1f)
+                {
+                    SnapToTerrain(jungle);
+                    return;
+                }
+            }
 
-            // Cheap procedural height check first; only pay for the raycast-accurate
-            // GetGroundPosition when the character is actually near/under the terrain.
-            float approxGroundHeight = jungle.GroundHeightAt(transform.position);
-            if (transform.position.y >= approxGroundHeight - 1f) return;
+            if (hangingVine || IsFlying || tigerPouncing || cowCharging
+                || Time.time < abilityDashUntil)
+            {
+                ResetStuckDetection();
+                return;
+            }
+            if (Time.time < nextStuckCheckTime) return;
 
-            Vector3 safePosition = jungle.GetGroundPosition(transform.position);
-            if (transform.position.y < safePosition.y - 0.5f) SnapToTerrain(jungle);
+            float now = Time.time;
+            float elapsed = stuckSampleInitialized
+                ? Mathf.Max(0.01f, now - lastStuckSampleTime)
+                : StuckCheckInterval;
+            nextStuckCheckTime = now + StuckCheckInterval;
+            lastStuckSampleTime = now;
+
+            Vector3 current = transform.position;
+            Vector3 planarDelta = current - lastStuckSamplePosition;
+            planarDelta.y = 0f;
+            bool moved = planarDelta.sqrMagnitude >= 0.08f * 0.08f;
+            bool grounded = characterController != null && characterController.isGrounded;
+            float inset = -Mathf.Min(0.07f, stats.ControllerRadius * 0.18f);
+            bool positionClear = jungle.IsAnimalPositionClear(current, stats.ControllerRadius,
+                stats.ControllerHeight, transform, inset);
+
+            if (!stuckSampleInitialized)
+            {
+                stuckSampleInitialized = true;
+                lastStuckSamplePosition = current;
+                if (positionClear && grounded)
+                {
+                    lastKnownSafePosition = current;
+                    hasLastKnownSafePosition = true;
+                }
+                movementRequestedSinceStuckCheck = false;
+                return;
+            }
+
+            if (positionClear)
+            {
+                obstructedSeconds = 0f;
+                if (grounded && (moved || !hasLastKnownSafePosition))
+                {
+                    lastKnownSafePosition = current;
+                    hasLastKnownSafePosition = true;
+                }
+            }
+            else
+            {
+                obstructedSeconds += elapsed;
+            }
+
+            if (movementRequestedSinceStuckCheck && grounded && !moved)
+                immobileSeconds += elapsed;
+            else
+                immobileSeconds = 0f;
+
+            lastStuckSamplePosition = current;
+            movementRequestedSinceStuckCheck = false;
+            if (obstructedSeconds < ObstructedRecoveryDelay
+                && immobileSeconds < ImmobileRecoveryDelay)
+                return;
+
+            Vector3 rescuePosition = default;
+            bool foundRescue = false;
+            if (hasLastKnownSafePosition)
+            {
+                Vector3 toLastSafe = lastKnownSafePosition - current;
+                toLastSafe.y = 0f;
+                foundRescue = toLastSafe.sqrMagnitude >= 0.35f * 0.35f
+                              && toLastSafe.sqrMagnitude <= 12f * 12f
+                              && jungle.IsAnimalPositionClear(lastKnownSafePosition,
+                                  stats.ControllerRadius, stats.ControllerHeight, transform, 0.16f);
+                if (foundRescue) rescuePosition = lastKnownSafePosition;
+            }
+
+            if (!foundRescue)
+            {
+                Vector3 searchOrigin = current;
+                Vector3 requestedFlat = new Vector3(
+                    lastRequestedMoveDirection.x, 0f, lastRequestedMoveDirection.z);
+                if (immobileSeconds >= ImmobileRecoveryDelay && requestedFlat.sqrMagnitude > 0.01f)
+                    searchOrigin -= requestedFlat.normalized * Mathf.Max(1.5f, stats.ControllerRadius * 2.5f);
+
+                foundRescue = jungle.TryFindSafeAnimalPosition(searchOrigin,
+                    stats.ControllerRadius, stats.ControllerHeight, out rescuePosition, 14f, transform);
+            }
+
+            if (foundRescue)
+            {
+                TeleportTo(rescuePosition);
+                lastKnownSafePosition = rescuePosition;
+                hasLastKnownSafePosition = true;
+                AttackVfx.CreateBurst(rescuePosition + Vector3.up * 0.45f,
+                    new Color(0.35f, 0.9f, 0.55f), 0.9f);
+            }
+            ResetStuckDetection();
+        }
+
+        private void ResetStuckDetection()
+        {
+            obstructedSeconds = 0f;
+            immobileSeconds = 0f;
+            stuckSampleInitialized = false;
+            movementRequestedSinceStuckCheck = false;
+            nextStuckCheckTime = Time.time + StuckCheckInterval;
         }
 
         private void HandleLocalInput()
@@ -685,7 +819,7 @@ namespace AnimalBattleRoyale
             {
                 // Grapple replication needs the center-camera ray, not the direction the
                 // monkey happens to be walking, so remote peers hit the same aimed surface.
-                Vector3 direction = animalType == AnimalType.Monkey
+                Vector3 direction = animalType == AnimalType.Monkey || animalType == AnimalType.Tiger
                     ? ViewAimDirection
                     : GetAttackDirection(movement);
                 OnlineMultiplayerManager.Instance?.ReportAction(OnlineActionType.Ability, direction);
@@ -763,6 +897,11 @@ namespace AnimalBattleRoyale
         private void SimulateMovement(Vector3 direction, bool sprint, bool jumpPressed,
             Vector2 rawInput = default, bool useStrafing = false)
         {
+            if (direction.sqrMagnitude > 0.01f)
+            {
+                movementRequestedSinceStuckCheck = true;
+                lastRequestedMoveDirection = direction.normalized;
+            }
             if (hangingVine)
             {
                 HandleHangingMovement(direction, jumpPressed);
@@ -784,18 +923,11 @@ namespace AnimalBattleRoyale
             if (grounded && !wasGroundedForLandingSfx) CombatFeedback.PlayJump(transform.position);
             wasGroundedForLandingSfx = grounded;
             if (grounded && IsFlying && verticalVelocity.y < 0f) flyingUntil = 0f;
-            // Ends the pounce on actually touching ground again (not on a fixed timer),
-            // so the leap can be cut short by a wall or a shorter-than-planned fall.
-            if (tigerPouncing && grounded && Time.time > tigerPounceStartedAt + 0.15f)
-            {
-                tigerPouncing = false;
-                abilityDashUntil = Time.time;
-                DamageTigerPounceImpact();
-            }
             bool gliding = IsFlying;
             bool abilityDashing = Time.time < abilityDashUntil;
             if (cowCharging && !abilityDashing) cowCharging = false;
-            if (tigerPouncing && !abilityDashing) tigerPouncing = false;
+            if (tigerPouncing && !abilityDashing) EndTigerPounce(null, transform.position);
+            abilityDashing = Time.time < abilityDashUntil;
             if (grounded && verticalVelocity.y < 0f && !gliding) verticalVelocity.y = -2f;
             bool jumped = jumpPressed && grounded && !gliding;
             if (jumped)
@@ -845,16 +977,18 @@ namespace AnimalBattleRoyale
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
             }
 
-            // Cow's charge and the tiger's pounce steer toward wherever the camera is aiming
-            // instead of holding the direction they were started in, so neither is a rigid
-            // straight line/fixed arc.
-            if (abilityDashing && (cowCharging || tigerPouncing))
+            // The tiger follows the full 3D center-camera ray, including its vertical
+            // component. The cow remains a ground charge and only steers horizontally.
+            if (abilityDashing && tigerPouncing)
+            {
+                UpdateTigerPounceGuidance();
+            }
+            else if (abilityDashing && cowCharging)
             {
                 Vector3 aimFlat = new Vector3(ViewAimDirection.x, 0f, ViewAimDirection.z);
                 if (aimFlat.sqrMagnitude > 0.01f)
                 {
-                    float turnRate = tigerPouncing ? TigerPounceTurnRateDegreesPerSecond : CowChargeTurnRateDegreesPerSecond;
-                    float maxRadians = turnRate * Mathf.Deg2Rad * Time.deltaTime;
+                    float maxRadians = CowChargeTurnRateDegreesPerSecond * Mathf.Deg2Rad * Time.deltaTime;
                     dashDirection = Vector3.RotateTowards(dashDirection, aimFlat.normalized, maxRadians, 0f).normalized;
                     transform.rotation = Quaternion.LookRotation(dashDirection, Vector3.up);
                 }
@@ -868,8 +1002,9 @@ namespace AnimalBattleRoyale
             else if (wading && !(ForestMissionDirector.Instance != null && ForestMissionDirector.Instance.LakePassageOpen))
                 speed *= waterMovementMultiplier;
 
-            Vector3 horizontal = abilityDashing ? dashDirection * abilityDashSpeed
-                : movementDirection * speed;
+            Vector3 horizontal = tigerPouncing
+                ? new Vector3(tigerPounceVelocity.x, 0f, tigerPounceVelocity.z)
+                : abilityDashing ? dashDirection * abilityDashSpeed : movementDirection * speed;
 
             // Feed the effective horizontal speed to the visual instead of only the sprint
             // flag. The running pose reuses the walk cycle and speeds it up in proportion to
@@ -883,7 +1018,11 @@ namespace AnimalBattleRoyale
                 DamageArea(abilityRadius, abilityDamage, abilityKnockback, dashDirection, abilityColor, abilitySlow);
             }
 
-            if (gliding)
+            if (tigerPouncing)
+            {
+                verticalVelocity.y = tigerPounceVelocity.y;
+            }
+            else if (gliding)
             {
                 // Salto longo: sobe uma vez e plana suavemente, sem subida manual.
                 verticalVelocity.y = Mathf.Max(ServerGameTuning.EagleMaximumFallSpeed,
@@ -898,7 +1037,27 @@ namespace AnimalBattleRoyale
             else verticalVelocity.y += gravity * ServerGameTuning.JumpGravityMultiplier * Time.deltaTime;
 
             extraVelocity = Vector3.Lerp(extraVelocity, Vector3.zero, 4.5f * Time.deltaTime);
-            characterController.Move((horizontal + verticalVelocity + extraVelocity) * Time.deltaTime);
+            CollisionFlags collisionFlags =
+                characterController.Move((horizontal + verticalVelocity + extraVelocity) * Time.deltaTime);
+            if (tigerPouncing && Time.time >= tigerPounceStartedAt + TigerPounceCollisionGrace
+                && collisionFlags != CollisionFlags.None)
+            {
+                EndTigerPounce(null, transform.position);
+            }
+        }
+
+        private void OnControllerColliderHit(ControllerColliderHit hit)
+        {
+            if (!tigerPouncing || hit == null || hit.collider == null) return;
+
+            Transform hitTransform = hit.collider.transform;
+            if (hitTransform == transform || hitTransform.IsChildOf(transform)) return;
+
+            Health target = hit.collider.GetComponentInParent<Health>();
+            bool hitAnimal = target != null && target != health && !target.IsDead && target.Owner != null;
+            if (!hitAnimal && Time.time < tigerPounceStartedAt + TigerPounceCollisionGrace) return;
+
+            EndTigerPounce(hitAnimal ? target : null, hit.point);
         }
 
         private void HandleHangingMovement(Vector3 swingDirection, bool releasePressed)
@@ -1133,9 +1292,9 @@ namespace AnimalBattleRoyale
             switch (animalType)
             {
                 case AnimalType.Tiger:
-                    // Bote certeiro: pula exatamente para onde a câmera está mirando
-                    // (inclusive para cima/baixo) em vez de só avançar na direção do movimento.
-                    BeginTigerPounce();
+                    // Bote guiado: enquanto estiver no ar, o destino acompanha continuamente
+                    // o centro da mira em vez de ficar travado no ponto inicial.
+                    BeginTigerPounce(direction);
                     break;
                 case AnimalType.Ant:
                     // Climbing trees/rocks is disabled for now — tunnel entry only.
@@ -1244,13 +1403,64 @@ namespace AnimalBattleRoyale
             }
         }
 
-        /// <summary>Rays out from the camera's aim (now free to point anywhere, including straight
-        /// up) to find exactly where the tiger should land, then leaps there on a fixed arc.</summary>
-        private void BeginTigerPounce()
+        /// <summary>Starts a guided 3D pounce. Its destination is recomputed from the
+        /// center-camera aim every frame, so moving the reticle also redirects the tiger.</summary>
+        private void BeginTigerPounce(Vector3 initialAimDirection)
         {
-            Vector3 aimOrigin = cameraTransform != null ? cameraTransform.position : transform.position + Vector3.up;
-            Vector3 aimDirection = ViewAimDirection;
+            tigerPounceFallbackAimDirection = initialAimDirection.sqrMagnitude > 0.001f
+                ? initialAimDirection.normalized
+                : transform.forward;
+            Vector3 guidedDirection = GetTigerPounceAimDirection();
+            guidedDirection = (guidedDirection + Vector3.up * TigerPounceLaunchLift).normalized;
 
+            tigerPounceStartedAt = Time.time;
+            tigerPouncing = true;
+            tigerPounceVelocity = guidedDirection * ServerGameTuning.TigerLeapSpeed;
+
+            Vector3 flatDirection = new Vector3(guidedDirection.x, 0f, guidedDirection.z);
+            if (flatDirection.sqrMagnitude < 0.01f) flatDirection = transform.forward;
+            BeginDash(flatDirection, TigerPounceMaxDuration, ServerGameTuning.TigerLeapSpeed,
+                0f, 0f, 0f, 1f, new Color(1f, 0.5f, 0.12f));
+            verticalVelocity.y = tigerPounceVelocity.y;
+            extraVelocity = Vector3.zero;
+
+            AttackVfx.CreateBurst(transform.position + Vector3.up * 0.2f,
+                new Color(1f, 0.5f, 0.12f), 1.4f);
+        }
+
+        private void UpdateTigerPounceGuidance()
+        {
+            Vector3 desiredDirection = GetTigerPounceAimDirection();
+            float launchBlend = Mathf.Clamp01(1f - (Time.time - tigerPounceStartedAt) / 0.28f);
+            desiredDirection =
+                (desiredDirection + Vector3.up * TigerPounceLaunchLift * launchBlend).normalized;
+
+            Vector3 currentDirection = tigerPounceVelocity.sqrMagnitude > 0.001f
+                ? tigerPounceVelocity.normalized
+                : desiredDirection;
+            float maxRadians = TigerPounceTurnRateDegreesPerSecond * Mathf.Deg2Rad * Time.deltaTime;
+            tigerPounceVelocity = Vector3.RotateTowards(currentDirection, desiredDirection,
+                maxRadians, 0f).normalized * ServerGameTuning.TigerLeapSpeed;
+
+            Vector3 flatDirection = new Vector3(tigerPounceVelocity.x, 0f, tigerPounceVelocity.z);
+            if (flatDirection.sqrMagnitude > 0.01f)
+            {
+                dashDirection = flatDirection.normalized;
+                transform.rotation = Quaternion.LookRotation(dashDirection, Vector3.up);
+            }
+        }
+
+        private Vector3 GetTigerPounceAimDirection()
+        {
+            Vector3 aimDirection = cameraTransform != null
+                ? ViewAimDirection
+                : tigerPounceFallbackAimDirection;
+            if (aimDirection.sqrMagnitude < 0.001f) aimDirection = transform.forward;
+            aimDirection.Normalize();
+
+            Vector3 aimOrigin = cameraTransform != null
+                ? cameraTransform.position
+                : transform.position + Vector3.up * (stats.ControllerHeight * 0.5f);
             float targetDistance = TigerPounceMaxRange;
             int hitCount = Physics.RaycastNonAlloc(new Ray(aimOrigin, aimDirection), rangedAimHits,
                 TigerPounceMaxRange, ~0, QueryTriggerInteraction.Ignore);
@@ -1263,55 +1473,39 @@ namespace AnimalBattleRoyale
                 if (hit.distance < targetDistance) targetDistance = hit.distance;
             }
 
-            // Only used to size the initial leap (duration/arc height) — the pounce then
-            // steers toward wherever the camera is aiming and lands wherever gravity and
-            // collision take it, just like the cow's charge and the eagle's glide.
-            float distance = targetDistance;
-            float duration = Mathf.Clamp(distance / ServerGameTuning.TigerLeapSpeed, TigerPounceMinDuration, TigerPounceMaxDuration);
-            float arcHeight = Mathf.Clamp(distance * 0.22f, 1.2f, 4.5f);
-            tigerPounceStartedAt = Time.time;
-            tigerPouncing = true;
-
-            Vector3 flatDirection = new Vector3(aimDirection.x, 0f, aimDirection.z);
-            if (flatDirection.sqrMagnitude < 0.01f) flatDirection = transform.forward;
-            flatDirection.Normalize();
-
-            // Horizontal motion reuses the same steerable-dash fields as the cow's charge
-            // (radius/damage/knockback zeroed — the pounce only hits on landing, via
-            // DamageTigerPounceImpact); vertical motion reuses normal jump gravity so the
-            // arc rises and falls naturally and can be blocked by terrain mid-flight.
-            BeginDash(flatDirection, duration, ServerGameTuning.TigerLeapSpeed, 0f, 0f, 0f, 1f,
-                new Color(1f, 0.5f, 0.12f));
-            float gravityMagnitude = Mathf.Abs(gravity) * ServerGameTuning.JumpGravityMultiplier;
-            verticalVelocity.y = Mathf.Sqrt(Mathf.Max(0.1f, 2f * gravityMagnitude * arcHeight));
-            extraVelocity = Vector3.zero;
-
-            AttackVfx.CreateBurst(transform.position + Vector3.up * 0.2f, new Color(1f, 0.5f, 0.12f), 1.4f);
+            Vector3 targetPoint = aimOrigin + aimDirection * targetDistance;
+            Vector3 tigerCenter = transform.position + Vector3.up * (stats.ControllerHeight * 0.5f);
+            Vector3 direction = targetPoint - tigerCenter;
+            return direction.sqrMagnitude > 0.001f ? direction.normalized : aimDirection;
         }
 
-        // Low damage on impact only, once, on whatever the tiger actually landed on —
-        // this is a positioning tool first and a knockdown hit second.
-        private void DamageTigerPounceImpact()
+        private void EndTigerPounce(Health hitAnimal, Vector3 impactPoint)
         {
-            AttackVfx.CreateBurst(transform.position + Vector3.up * 0.2f, new Color(1f, 0.5f, 0.12f), 1.6f);
-            Vector3 impactCenter = transform.position + Vector3.up * (stats.ControllerHeight * 0.5f);
-            int hitCount = Physics.OverlapSphereNonAlloc(impactCenter, ServerGameTuning.TigerLeapHitRadius,
-                combatHits, ~0, QueryTriggerInteraction.Ignore);
-            for (int i = 0; i < hitCount; i++)
-            {
-                Health target = combatHits[i].GetComponentInParent<Health>();
-                if (target == null || target == health || target.IsDead || target.Owner == null) continue;
-                if (target.Owner.IsBurrowed || target.Owner.IsSpawnProtected) continue;
+            if (!tigerPouncing) return;
 
-                Vector3 pushDirection = target.transform.position - transform.position;
-                pushDirection.y = 0f;
-                if (pushDirection.sqrMagnitude < 0.01f) pushDirection = transform.forward;
-                else pushDirection.Normalize();
+            tigerPouncing = false;
+            abilityDashUntil = Time.time;
+            tigerPounceVelocity = Vector3.zero;
+            verticalVelocity.y = 0f;
+            extraVelocity = Vector3.zero;
+            visualMotion?.SetLocomotion(false, false, false);
+            AttackVfx.CreateBurst(impactPoint + Vector3.up * 0.15f,
+                new Color(1f, 0.5f, 0.12f), 1.6f);
 
-                target.TakeDamage(ServerGameTuning.TigerLeapDamage, this);
-                CombatFeedback.NotifyHit(AnimalType.Tiger, target.transform.position, ServerGameTuning.TigerLeapDamage);
-                target.Owner.ReceiveKnockback((pushDirection + Vector3.up * 0.18f).normalized * ServerGameTuning.TigerLeapKnockback);
-            }
+            if (hitAnimal == null || hitAnimal == health || hitAnimal.IsDead
+                || hitAnimal.Owner == null || hitAnimal.Owner.IsBurrowed
+                || hitAnimal.Owner.IsSpawnProtected) return;
+
+            Vector3 pushDirection = hitAnimal.transform.position - transform.position;
+            pushDirection.y = 0f;
+            if (pushDirection.sqrMagnitude < 0.01f) pushDirection = transform.forward;
+            else pushDirection.Normalize();
+
+            hitAnimal.TakeDamage(ServerGameTuning.TigerLeapDamage, this);
+            CombatFeedback.NotifyHit(AnimalType.Tiger, hitAnimal.transform.position,
+                ServerGameTuning.TigerLeapDamage);
+            hitAnimal.Owner.ReceiveKnockback((pushDirection + Vector3.up * 0.18f).normalized
+                * ServerGameTuning.TigerLeapKnockback);
         }
 
         private void PerformMeleeAttack(Vector3 direction, float damage, float range, float knockback, Color color, float visualSize)
@@ -1371,6 +1565,7 @@ namespace AnimalBattleRoyale
             if (flatDirection.sqrMagnitude < 0.01f) flatDirection = transform.forward;
 
             tigerPouncing = false;
+            tigerPounceVelocity = Vector3.zero;
             flyingUntil = 0f;
             abilityDashUntil = 0f;
             cowCharging = false;
@@ -1629,6 +1824,9 @@ namespace AnimalBattleRoyale
             EnsureRuntimeReferences();
             defeated = false;
             tigerPouncing = false;
+            tigerPounceVelocity = Vector3.zero;
+            abilityDashUntil = 0f;
+            cowCharging = false;
             flyingUntil = 0f;
             vineLeaping = false;
             hangingVine = false;

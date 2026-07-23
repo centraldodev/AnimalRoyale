@@ -16,7 +16,7 @@ namespace AnimalBattleRoyale
         public const float DefaultTigerLeapSpeed = 25f;
         public const float DefaultTigerLeapUpSpeed = 9.2f;
         public const float DefaultTigerLeapHitRadius = 1.25f;
-        public const float DefaultTigerLeapDamage = 10f;
+        public const float DefaultTigerLeapDamage = 20f;
         public const float DefaultTigerLeapKnockback = 12f;
 
         public const float DefaultProjectileSpeed = 33f;

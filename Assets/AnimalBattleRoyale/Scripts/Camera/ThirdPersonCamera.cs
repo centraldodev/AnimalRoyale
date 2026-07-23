@@ -82,7 +82,9 @@ namespace AnimalBattleRoyale
             if (Cursor.lockState == CursorLockMode.Locked || MobileInputController.ControlsEnabled)
             {
                 Vector2 look = GameInput.ReadLook();
-                float sensitivityMultiplier = GameSettings.MouseSensitivity;
+                float sensitivityMultiplier = aiming
+                    ? GameSettings.AimMouseSensitivity
+                    : GameSettings.MouseSensitivity;
                 yaw += look.x * sensitivity * sensitivityMultiplier;
                 pitch -= look.y * sensitivity * sensitivityMultiplier;
                 pitch = Mathf.Clamp(pitch, minPitch, maxPitch);

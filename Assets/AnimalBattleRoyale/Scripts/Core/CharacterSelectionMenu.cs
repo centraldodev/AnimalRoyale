@@ -41,7 +41,6 @@ namespace AnimalBattleRoyale
             animalPreview.Initialize(selected, 640, 960, false);
             ThirdPersonCamera.SetCursorLocked(false);
             OnlineMultiplayerManager.Instance?.SetLocalSelection(selected);
-            OnlineMultiplayerManager.Instance?.RefreshLanFriends();
         }
 
         private void Update()
@@ -125,24 +124,16 @@ namespace AnimalBattleRoyale
             Rect startButton = new Rect(previewRect.center.x - startWidth * 0.5f,
                 viewHeight - 150f, startWidth, 68f);
             OnlineMultiplayerManager online = OnlineMultiplayerManager.Instance;
-            bool waitingForFriend = online != null && online.IsWaitingForLanFriend;
-            string startLabel = waitingForFriend
-                ? $"AGUARDANDO AMIGO — {online.LanInviteWaitSeconds}s"
-                : online != null && online.IsClientOnly
-                    ? "PRONTO — AGUARDAR LÍDER"
-                    : "INICIAR PARTIDA";
+            string startLabel = online != null && online.IsClientOnly
+                ? "PRONTO — AGUARDAR LÍDER"
+                : "INICIAR PARTIDA";
             bool hovered = startButton.Contains(Event.current.mousePosition);
             DrawPanel(startButton,
-                waitingForFriend
-                    ? new Color(0.29f, 0.31f, 0.18f, 1f)
-                    : hovered ? new Color(1f, 0.57f, 0.025f, 1f) : new Color(0.94f, 0.43f, 0.015f, 1f),
-                waitingForFriend
-                    ? new Color(0.54f, 0.58f, 0.3f, 1f)
-                    : hovered ? new Color(1f, 0.95f, 0.52f, 1f) : new Color(1f, 0.68f, 0.08f, 1f),
-                !waitingForFriend && hovered ? 3f : 2f);
+                hovered ? new Color(1f, 0.57f, 0.025f, 1f) : new Color(0.94f, 0.43f, 0.015f, 1f),
+                hovered ? new Color(1f, 0.95f, 0.52f, 1f) : new Color(1f, 0.68f, 0.08f, 1f),
+                hovered ? 3f : 2f);
             GUI.Label(startButton, startLabel, playButtonStyle);
-            if (!animalDropdownOpen && !waitingForFriend
-                                    && GUI.Button(startButton, GUIContent.none, GUIStyle.none)) StartMatch();
+            if (!animalDropdownOpen && GUI.Button(startButton, GUIContent.none, GUIStyle.none)) StartMatch();
 
             if (online != null && (online.IsConnected || online.IsBusy)
                                && !string.IsNullOrEmpty(online.Status))
@@ -221,29 +212,29 @@ namespace AnimalBattleRoyale
             DrawPanel(room, new Color(0.02f, 0.085f, 0.06f, 0.7f),
                 new Color(0.44f, 0.78f, 0.3f, 1f), 1f);
             GUI.Label(new Rect(room.x + 14f, room.y + 5f, room.width - 28f, 28f),
-                online != null && online.IsConnected ? "SALA LOCAL — GRUPO ATIVO" : "SALA ATUAL — SOMENTE VOCÊ",
+                online != null && online.IsConnected ? "SALA ONLINE — GRUPO ATIVO" : "SALA ATUAL — SOMENTE VOCÊ",
                 roomStyle);
             GUI.Label(new Rect(room.x + 14f, room.y + 35f, room.width - 28f, 25f),
                 $"{friends} AMIGO(S)  •  {bots} BOT(S)  •  TOTAL {target}", centeredStyle);
 
             Rect viewport = new Rect(panel.x + 14f, panel.y + 139f, panel.width - 28f, panel.height - 153f);
-            int peerCount = online != null ? online.LanFriends.Count : 0;
-            float contentHeight = 962f + 210f + GameInputBindings.Definitions.Count * 58f
-                                        + Mathf.Max(0, peerCount - 1) * 68f;
+            float contentHeight = 962f + GameInputBindings.Definitions.Count * 58f;
             Rect content = new Rect(0f, 0f, viewport.width - 20f, contentHeight);
             settingsScroll = GUI.BeginScrollView(viewport, settingsScroll, content);
 
             float y = 0f;
-            y = DrawLanSection(content.width, y, online);
             y = DrawOnlineSection(content.width, y, online);
             y = DrawSliderSetting(content.width, y, "VOLUME GERAL",
                 GameSettings.MasterVolume, 0f, 1f, value => GameSettings.MasterVolume = value, true);
             y = DrawSliderSetting(content.width, y, "EFEITOS E AMBIENTE",
                 GameSettings.EffectsAmbientVolume, 0f, 1f,
                 value => GameSettings.EffectsAmbientVolume = value, true);
-            y = DrawSliderSetting(content.width, y, "SENSIBILIDADE DA CÂMERA",
+            y = DrawSliderSetting(content.width, y, "SENSIBILIDADE DA CÂMERA / MIRA PRIMÁRIA",
                 GameSettings.MouseSensitivity, GameSettings.MinMouseSensitivity, GameSettings.MaxMouseSensitivity,
                 value => GameSettings.MouseSensitivity = value, false);
+            y = DrawSliderSetting(content.width, y, "SENSIBILIDADE DA MIRA SECUNDÁRIA",
+                GameSettings.AimMouseSensitivity, GameSettings.MinMouseSensitivity, GameSettings.MaxMouseSensitivity,
+                value => GameSettings.AimMouseSensitivity = value, false);
             y = DrawChoiceSetting(content.width, y, "LADO DO PERSONAGEM",
                 "ESQUERDA", GameSettings.CharacterSide == CharacterScreenSide.Left,
                 () => GameSettings.CharacterSide = CharacterScreenSide.Left,
@@ -288,76 +279,6 @@ namespace AnimalBattleRoyale
             GUI.EndScrollView();
         }
 
-        private float DrawLanSection(float width, float y, OnlineMultiplayerManager online)
-        {
-            int count = online != null ? online.LanFriends.Count : 0;
-            float rowsHeight = Mathf.Max(54f, count * 68f);
-            bool showNetworkStatus = online != null && (online.IsConnected || online.IsBusy || count > 0);
-            Rect section = new Rect(8f, y, width - 16f,
-                (showNetworkStatus ? 126f : 96f) + rowsHeight);
-            DrawPanel(section, new Color(0.015f, 0.07f, 0.052f, 0.7f),
-                new Color(0.18f, 0.34f, 0.22f, 1f), 1f);
-            GUI.Label(new Rect(section.x + 14f, section.y + 9f, section.width - 132f, 28f),
-                "ACHAR AMIGO NA REDE LOCAL", sectionTitleStyle);
-
-            Rect refresh = new Rect(section.xMax - 112f, section.y + 7f, 98f, 32f);
-            if (DrawButton(refresh, online != null && online.IsLanRefreshing ? "BUSCANDO..." : "ATUALIZAR",
-                    new Color(0.07f, 0.2f, 0.14f, 1f)))
-                online?.RefreshLanFriends();
-
-            GUI.Label(new Rect(section.x + 14f, section.y + 42f, section.width - 28f, 36f),
-                "Mostra jogadores com o jogo aberto na mesma rede Wi-Fi.", smallStyle);
-
-            float rowY = section.y + 82f;
-            if (online == null)
-            {
-                GUI.Label(new Rect(section.x + 14f, rowY, section.width - 28f, 44f),
-                    "REDE LOCAL INDISPONÍVEL", centeredStyle);
-            }
-            else if (count == 0)
-            {
-                GUI.Label(new Rect(section.x + 14f, rowY, section.width - 28f, 48f),
-                    online.IsLanRefreshing ? "PROCURANDO NA REDE..." : "NENHUM AMIGO ENCONTRADO — CLIQUE EM ATUALIZAR",
-                    smallStyle);
-            }
-            else
-            {
-                for (int i = 0; i < count; i++)
-                {
-                    LanPeerInfo peer = online.LanFriends[i];
-                    Rect row = new Rect(section.x + 10f, rowY + i * 68f, section.width - 20f, 60f);
-                    DrawPanel(row, new Color(0.018f, 0.095f, 0.068f, 0.7f),
-                        new Color(0.2f, 0.42f, 0.27f, 1f), 1f);
-                    GUI.Label(new Rect(row.x + 12f, row.y + 5f, row.width - 130f, 25f),
-                        peer.DisplayName.ToUpperInvariant(), labelStyle);
-                    string peerState = peer.IsInLobby
-                        ? $"GRUPO COM {peer.HumanCount} JOGADOR(ES)"
-                        : "DISPONÍVEL NA REDE";
-                    GUI.Label(new Rect(row.x + 12f, row.y + 30f, row.width - 130f, 20f), peerState, smallStyle);
-
-                    Rect invite = new Rect(row.xMax - 112f, row.y + 12f, 100f, 35f);
-                    bool canInvite = online.CanInviteLanFriends && peer.IsJoinable;
-                    string inviteLabel = canInvite
-                        ? "CONVIDAR"
-                        : online.IsBusy ? "AGUARDE"
-                        : online.IsClientOnly ? "SÓ O LÍDER"
-                        : peer.IsInLobby ? "EM GRUPO" : "INDISPONÍVEL";
-                    if (DrawButton(invite, inviteLabel,
-                            canInvite
-                                ? new Color(0.2f, 0.52f, 0.21f, 1f)
-                                : new Color(0.12f, 0.18f, 0.14f, 1f)) && canInvite)
-                        online.InviteLanFriend(peer.PeerId);
-                }
-            }
-
-            if (showNetworkStatus)
-            {
-                GUI.Label(new Rect(section.x + 14f, section.yMax - 34f, section.width - 28f, 25f),
-                    online.Status, smallStyle);
-            }
-            return section.yMax + 12f;
-        }
-
         private float DrawOnlineSection(float width, float y, OnlineMultiplayerManager online)
         {
             bool canStart = online != null && !online.IsBusy && !online.MatchStarted && !online.IsConnected;
@@ -367,9 +288,9 @@ namespace AnimalBattleRoyale
             DrawPanel(section, new Color(0.015f, 0.07f, 0.052f, 0.7f),
                 new Color(0.18f, 0.34f, 0.22f, 1f), 1f);
             GUI.Label(new Rect(section.x + 14f, section.y + 9f, section.width - 28f, 28f),
-                "JOGAR PELA INTERNET", sectionTitleStyle);
+                "JOGAR ONLINE", sectionTitleStyle);
             GUI.Label(new Rect(section.x + 14f, section.y + 36f, section.width - 28f, 34f),
-                "Funciona com amigos em qualquer rede, sem precisar estar no mesmo Wi-Fi.", smallStyle);
+                "Crie uma sala para jogar online e compartilhe o código com seus amigos.", smallStyle);
 
             if (online == null)
             {

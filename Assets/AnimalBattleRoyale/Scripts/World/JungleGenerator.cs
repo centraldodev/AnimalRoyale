@@ -35,8 +35,10 @@ namespace AnimalBattleRoyale
         [SerializeField, Range(0, 48)] private int mountainCount = 26;
         // Combined ammunition pool: 50% tomato, 30% watermelon and 20% walnut.
         [SerializeField, Range(0, 150)] private int rangedSupplyCount = 60;
-        [SerializeField, Range(0, 100)] private int foodPickupCount = 30;
-        [SerializeField, Range(4f, 80f)] private float pickupMinimumSpacing = 18f;
+        // Keep healing availability equal to the 60 ammunition spawns.
+        [SerializeField, Range(0, 100)] private int foodPickupCount = 60;
+        // Spacing within the same category. Ammo and healing use independent layouts.
+        [SerializeField, Range(4f, 80f)] private float pickupMinimumSpacing = 50f;
         [SerializeField, Range(0, 40)] private int houseCount = 16;
         [SerializeField, Range(12f, 40f)] private float houseMinimumSpacing = 22f;
         [SerializeField, Range(0, 16)] private int eagleMountainCount = 8;
@@ -45,6 +47,8 @@ namespace AnimalBattleRoyale
         [SerializeField] private bool useNatureStarterVegetation = true;
         [SerializeField, Range(0f, 0.5f)] private float natureTreeShare = 0.22f;
         [SerializeField, Range(0f, 0.75f)] private float natureBushShare = 0.4f;
+        [SerializeField, Range(0, 1200)] private int natureStarterBushCount = 560;
+        [SerializeField] private Texture2D[] natureStarterBushDiffuseTextures;
 
         [Header("Stylized Details")]
         [SerializeField, Range(0, 500)] private int flowerPatchCount = 340;
@@ -78,6 +82,7 @@ namespace AnimalBattleRoyale
         private static Mesh cachedBackdropMountainMesh;
         private static Mesh cachedLakeDiscMesh;
         private static Mesh cachedLakeShoreMesh;
+        private readonly Collider[] safePositionOverlaps = new Collider[64];
         private readonly List<TrailRoute> trailRoutes = new List<TrailRoute>();
         private readonly List<Vector3> anthillPlanarPositions = new List<Vector3>();
         private readonly List<Vector3> housePlanarPositions = new List<Vector3>();
@@ -85,6 +90,7 @@ namespace AnimalBattleRoyale
         private const float LakesideHouseRadiusOffset = 7.2f;
         private const float HeroLakeRockAngleDegrees = 42f;
         private const float HeroLakeRockRadiusOffset = 5.4f;
+        private const float CrossCategoryPickupMinimumSpacing = 10f;
         private static readonly Vector2 AnthillFlatInnerExtents = new Vector2(2.6f, 2.6f);
         private static readonly Vector2 AnthillFlatOuterExtents = new Vector2(6.5f, 6.5f);
         private static readonly Vector2 HouseFlatInnerExtents = new Vector2(6.4f, 5.4f);
@@ -96,7 +102,7 @@ namespace AnimalBattleRoyale
 
         public float GroundHeightAt(Vector3 worldPosition)
         {
-            return CalculateGroundHeight(worldPosition.x, worldPosition.z);
+            return CalculateRenderedGroundHeight(worldPosition.x, worldPosition.z);
         }
 
         /// <summary>
@@ -121,6 +127,76 @@ namespace AnimalBattleRoyale
             }
 
             return new Vector3(planarPosition.x, GroundHeightAt(planarPosition) + clearance, planarPosition.z);
+        }
+
+        /// <summary>
+        /// Finds the nearest grounded point that can contain the animal's complete controller
+        /// capsule without touching scenery. Used for first spawn, respawn and anti-stuck rescue.
+        /// </summary>
+        public bool TryFindSafeAnimalPosition(Vector3 desiredWorldPosition, float controllerRadius,
+            float controllerHeight, out Vector3 safePosition, float searchRadius = 18f,
+            Transform ignoredRoot = null)
+        {
+            Physics.SyncTransforms();
+            safePosition = GetGroundPosition(desiredWorldPosition);
+            const float spawnClearance = 0.2f;
+            if (IsAnimalPositionClear(safePosition, controllerRadius, controllerHeight,
+                    ignoredRoot, spawnClearance))
+                return true;
+
+            float step = Mathf.Max(1.5f, (controllerRadius + spawnClearance) * 2.5f);
+            int ringCount = Mathf.Max(1, Mathf.CeilToInt(searchRadius / step));
+            float phase = Mathf.Repeat(
+                desiredWorldPosition.x * 0.173f + desiredWorldPosition.z * 0.117f,
+                Mathf.PI * 2f);
+
+            for (int ring = 1; ring <= ringCount; ring++)
+            {
+                float distance = Mathf.Min(searchRadius, ring * step);
+                int samples = Mathf.Max(8, Mathf.CeilToInt(Mathf.PI * 2f * distance / step));
+                for (int sample = 0; sample < samples; sample++)
+                {
+                    float angle = phase + sample * Mathf.PI * 2f / samples
+                                  + (ring & 1) * Mathf.PI / samples;
+                    Vector3 candidate = desiredWorldPosition + new Vector3(
+                        Mathf.Cos(angle) * distance, 0f, Mathf.Sin(angle) * distance);
+                    candidate = GetGroundPosition(candidate);
+                    if (!IsAnimalPositionClear(candidate, controllerRadius, controllerHeight,
+                            ignoredRoot, spawnClearance))
+                        continue;
+
+                    safePosition = candidate;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public bool IsAnimalPositionClear(Vector3 rootPosition, float controllerRadius,
+            float controllerHeight, Transform ignoredRoot = null, float extraClearance = 0f)
+        {
+            float radius = Mathf.Max(0.08f, controllerRadius + extraClearance);
+            float height = Mathf.Max(controllerHeight + extraClearance * 2f, radius * 2f);
+            Vector3 bottom = rootPosition + Vector3.up * radius;
+            Vector3 top = rootPosition + Vector3.up * (height - radius);
+            int overlapCount = Physics.OverlapCapsuleNonAlloc(
+                bottom, top, radius, safePositionOverlaps, ~0, QueryTriggerInteraction.Ignore);
+
+            // A full buffer means there may be more unexamined blockers, so fail safely.
+            if (overlapCount >= safePositionOverlaps.Length) return false;
+            for (int index = 0; index < overlapCount; index++)
+            {
+                Collider obstacle = safePositionOverlaps[index];
+                safePositionOverlaps[index] = null;
+                if (obstacle == null || obstacle == groundCollider || !obstacle.enabled) continue;
+                if (ignoredRoot != null && obstacle.transform.IsChildOf(ignoredRoot)) continue;
+                // A bridge deck or other walkable support may touch the capsule exactly at
+                // the feet. Only geometry extending into the animal's body is an obstruction.
+                if (obstacle.bounds.max.y <= rootPosition.y + 0.2f) continue;
+                return false;
+            }
+            return true;
         }
 
         public Vector3 GetShoreSpawnPosition(float angleDegrees = 220f, float clearance = 0.12f)
@@ -382,27 +458,30 @@ namespace AnimalBattleRoyale
                 AntTunnelEntrance.Create(position, moundMaterial, moundDarkMaterial).transform.SetParent(standaloneEntrancesRoot, true);
             }
 
-            // Ammo and food pickups share one spacing list so neither kind spawns within
-            // pickupMinimumSpacing of the other, regardless of type.
-            List<Vector3> pickupPositions = new List<Vector3>(rangedSupplyCount + foodPickupCount);
+            // Same-category spacing is 50 m, but ammo and healing use independent layouts.
+            // This stops the larger ammo pool from consuming all good positions before
+            // healing is placed. Between the two different categories only 10 m is required.
+            List<Vector3> ammoPositions = BuildPickupSpawnPositions(
+                rangedSupplyCount, 12f, pickupMinimumSpacing, null, 0f, 0f);
 
             Transform rangedSuppliesRoot = new GameObject("RangedAmmoSupplies").transform;
             rangedSuppliesRoot.SetParent(parent, false);
             List<WeaponAmmoType> ammoSpawnDeck = BuildAmmoSpawnDeck(rangedSupplyCount);
             for (int i = 0; i < rangedSupplyCount; i++)
             {
-                Vector3 position = RandomSpacedMapPosition(12f, pickupMinimumSpacing, pickupPositions);
-                pickupPositions.Add(position);
+                Vector3 position = ammoPositions[i];
                 WeaponAmmoType type = ammoSpawnDeck[i];
                 RangedAmmoPickup.Create(position, type).transform.SetParent(rangedSuppliesRoot, true);
             }
 
             Transform foodPickupsRoot = new GameObject("FoodPickups").transform;
             foodPickupsRoot.SetParent(parent, false);
+            List<Vector3> foodPositions = BuildPickupSpawnPositions(
+                foodPickupCount, 9f, pickupMinimumSpacing, ammoPositions,
+                CrossCategoryPickupMinimumSpacing, 0.5f);
             for (int i = 0; i < foodPickupCount; i++)
             {
-                Vector3 position = RandomSpacedMapPosition(9f, pickupMinimumSpacing, pickupPositions);
-                pickupPositions.Add(position);
+                Vector3 position = foodPositions[i];
                 FoodPickup.Create(position, RandomFoodKind()).transform.SetParent(foodPickupsRoot, true);
             }
 
@@ -2156,7 +2235,7 @@ namespace AnimalBattleRoyale
                 attempts++;
             } while ((point.magnitude < requiredClearRadius || IsNearTrail(point, trailClearance)) && attempts < 50);
 
-            return new Vector3(point.x, CalculateGroundHeight(point.x, point.y), point.y);
+            return new Vector3(point.x, CalculateRenderedGroundHeight(point.x, point.y), point.y);
         }
 
         // Weighted so the common kinds dominate and GoldenFruit stays a rare, better find.
@@ -2191,6 +2270,108 @@ namespace AnimalBattleRoyale
 
             // Dense custom maps may not fit the requested spacing. In that case, use the
             // best of the sampled positions rather than grouping entrances arbitrarily.
+            return bestCandidate;
+        }
+
+        private List<Vector3> BuildPickupSpawnPositions(int count, float centerClearRadius,
+            float sameCategorySpacing, IReadOnlyList<Vector3> otherCategoryPositions,
+            float crossCategorySpacing, float horizontalPhase)
+        {
+            List<Vector3> candidates = new List<Vector3>();
+            List<Vector3> selected = new List<Vector3>(Mathf.Max(0, count));
+            if (count <= 0) return selected;
+
+            // A staggered grid preserves the requested minimum exactly even with 60 ammo
+            // spawns. Pure random rejection becomes saturated well before that on this map
+            // and silently returns positions closer than the configured distance.
+            float spacing = Mathf.Max(4f, sameCategorySpacing) + 0.1f;
+            float rowSpacing = spacing * Mathf.Sqrt(3f) * 0.5f;
+            float half = mapSize * 0.5f - 3f;
+            float requiredCenterRadius = Mathf.Max(centerClearRadius, lakeRadius + 4f);
+            float requiredCenterRadiusSqr = requiredCenterRadius * requiredCenterRadius;
+            float crossSpacingSqr = crossCategorySpacing * crossCategorySpacing;
+            int minimumRow = Mathf.FloorToInt(-half / rowSpacing) - 1;
+            int maximumRow = Mathf.CeilToInt(half / rowSpacing) + 1;
+
+            for (int row = minimumRow; row <= maximumRow; row++)
+            {
+                float z = row * rowSpacing;
+                if (Mathf.Abs(z) > half) continue;
+                float rowOffset = ((row & 1) == 0 ? 0f : spacing * 0.5f)
+                                  + spacing * horizontalPhase;
+                int minimumColumn = Mathf.FloorToInt((-half - rowOffset) / spacing);
+                int maximumColumn = Mathf.CeilToInt((half - rowOffset) / spacing);
+                for (int column = minimumColumn; column <= maximumColumn; column++)
+                {
+                    float x = column * spacing + rowOffset;
+                    if (Mathf.Abs(x) > half) continue;
+                    Vector2 planar = new Vector2(x, z);
+                    if (planar.sqrMagnitude < requiredCenterRadiusSqr) continue;
+
+                    Vector3 candidate = new Vector3(
+                        x, CalculateRenderedGroundHeight(x, z), z);
+                    if (crossCategorySpacing > 0f
+                        && NearestPlanarDistanceSqr(candidate, otherCategoryPositions)
+                        < crossSpacingSqr)
+                        continue;
+                    candidates.Add(candidate);
+                }
+            }
+
+            for (int index = candidates.Count - 1; index > 0; index--)
+            {
+                int swapIndex = Random.Range(0, index + 1);
+                (candidates[index], candidates[swapIndex]) =
+                    (candidates[swapIndex], candidates[index]);
+            }
+
+            int latticeCount = Mathf.Min(count, candidates.Count);
+            for (int index = 0; index < latticeCount; index++) selected.Add(candidates[index]);
+
+            // Supports custom smaller maps or larger Inspector counts while still choosing
+            // the best available legal point. The standard 360 m map has enough lattice
+            // positions for all 60 ammo and 50 healing spawns without entering this branch.
+            while (selected.Count < count)
+            {
+                selected.Add(RandomSpacedPickupPosition(centerClearRadius,
+                    sameCategorySpacing, selected, otherCategoryPositions,
+                    crossCategorySpacing));
+            }
+            return selected;
+        }
+
+        private Vector3 RandomSpacedPickupPosition(float centerClearRadius,
+            float sameCategorySpacing, IReadOnlyList<Vector3> sameCategoryPositions,
+            IReadOnlyList<Vector3> otherCategoryPositions, float crossCategorySpacing)
+        {
+            const int maximumAttempts = 768;
+            float sameSpacingSqr = sameCategorySpacing * sameCategorySpacing;
+            float crossSpacingSqr = crossCategorySpacing * crossCategorySpacing;
+            Vector3 bestCandidate = RandomMapPosition(centerClearRadius);
+            float bestScore = float.NegativeInfinity;
+
+            for (int attempt = 0; attempt < maximumAttempts; attempt++)
+            {
+                Vector3 candidate = attempt == 0
+                    ? bestCandidate
+                    : RandomMapPosition(centerClearRadius);
+                float sameDistanceSqr =
+                    NearestPlanarDistanceSqr(candidate, sameCategoryPositions);
+                float crossDistanceSqr =
+                    NearestPlanarDistanceSqr(candidate, otherCategoryPositions);
+                if (sameDistanceSqr >= sameSpacingSqr
+                    && (crossCategorySpacing <= 0f || crossDistanceSqr >= crossSpacingSqr))
+                    return candidate;
+
+                float sameScore = sameDistanceSqr / Mathf.Max(0.01f, sameSpacingSqr);
+                float crossScore = crossCategorySpacing <= 0f
+                    ? float.PositiveInfinity
+                    : crossDistanceSqr / Mathf.Max(0.01f, crossSpacingSqr);
+                float score = Mathf.Min(sameScore, crossScore);
+                if (score <= bestScore) continue;
+                bestScore = score;
+                bestCandidate = candidate;
+            }
             return bestCandidate;
         }
 

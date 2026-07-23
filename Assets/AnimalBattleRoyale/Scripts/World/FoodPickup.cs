@@ -16,6 +16,7 @@ namespace AnimalBattleRoyale
     public sealed class FoodPickup : MonoBehaviour
     {
         private const float RespawnSeconds = Countdown.DurationSeconds;
+        private const float GroundClearance = 0.08f;
         private static readonly List<FoodPickup> activePickups = new List<FoodPickup>();
         private static readonly Dictionary<int, Material> sharedMaterials = new Dictionary<int, Material>();
         private static JungleGenerator cachedJungle;
@@ -23,6 +24,7 @@ namespace AnimalBattleRoyale
         private static GameObject cachedCuraPrefab;
         private static bool curaPrefabLookedUp;
         private static Material cachedCuraMaterial;
+        private static readonly Color HealingGreen = new Color(0.16f, 0.88f, 0.28f);
         private FoodKind foodKind;
         private Color effectColor;
         private bool available = true;
@@ -31,6 +33,9 @@ namespace AnimalBattleRoyale
         private Transform display;
         private GameObject labelObject;
         private GameObject highlightObject;
+
+        public static IReadOnlyList<FoodPickup> ActivePickups => activePickups;
+        public bool IsAvailable => available;
 
         private void Awake()
         {
@@ -56,7 +61,7 @@ namespace AnimalBattleRoyale
             root.transform.position = position;
             FoodPickup pickup = root.AddComponent<FoodPickup>();
             pickup.foodKind = kind;
-            pickup.effectColor = FoodColor(kind);
+            pickup.effectColor = HealingGreen;
             pickup.BuildVisual();
             pickup.SnapVisualToGround(position.y);
             return pickup;
@@ -137,9 +142,12 @@ namespace AnimalBattleRoyale
                     case FoodKind.GoldenFruit: BuildFruitBundle(display); break;
                 }
             }
-            CollectibleHighlight highlight = CollectibleHighlight.Attach(transform, effectColor,
-                foodKind == FoodKind.GoldenFruit ? 1.15f : 0.92f, -0.28f);
-            highlightObject = highlight != null ? highlight.gameObject : null;
+            GameObject effects = new GameObject("HealingEffects");
+            effects.transform.SetParent(transform, false);
+            CollectibleHighlight.Attach(effects.transform, effectColor,
+                foodKind == FoodKind.GoldenFruit ? 1.38f : 1.18f, 0.08f);
+            PickupGlowLight.Attach(effects.transform, effectColor, effectColor, 5.2f, 1.25f);
+            highlightObject = effects;
             CreateLabel();
         }
 
@@ -171,7 +179,7 @@ namespace AnimalBattleRoyale
             // The source FBX's authored scale isn't guaranteed; rescale to a known
             // footprint here so SnapVisualToGround (called by Create right after) has
             // sane bounds to work with instead of whatever raw size the import came in at.
-            ImportedPropVisual.NormalizeScale(instance, 0.5f, out _);
+            ImportedPropVisual.NormalizeScale(instance, 0.72f, out _);
             return true;
         }
 
@@ -217,7 +225,7 @@ namespace AnimalBattleRoyale
             }
 
             if (!hasVisualBounds) return;
-            transform.position += Vector3.up * (groundHeight - visualBounds.min.y - 0.015f);
+            transform.position += Vector3.up * (groundHeight + GroundClearance - visualBounds.min.y);
         }
 
         private static void BuildNectarFlower(Transform parent)
@@ -352,18 +360,6 @@ namespace AnimalBattleRoyale
             };
         }
 
-        private static Color FoodColor(FoodKind kind)
-        {
-            return kind switch
-            {
-                FoodKind.Fruit => new Color(1f, 0.84f, 0.14f),
-                FoodKind.Nectar => new Color(0.95f, 0.35f, 0.12f),
-                FoodKind.Fish => new Color(0.24f, 0.72f, 0.94f),
-                FoodKind.Meat => new Color(0.9f, 0.08f, 0.06f),
-                FoodKind.GoldenFruit => new Color(1f, 0.72f, 0.05f),
-                _ => Color.white
-            };
-        }
     }
 
     public sealed class PickupLabel : MonoBehaviour

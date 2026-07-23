@@ -125,7 +125,7 @@ namespace AnimalBattleRoyale
                 || !renderTexture.IsCreated()) return;
 
             previewCamera.targetTexture = renderTexture;
-            previewCamera.Render();
+            AnimalPreviewLighting.RenderWithNeutralEnvironment(previewCamera);
         }
 
         private void EnsureReady()
@@ -173,10 +173,13 @@ namespace AnimalBattleRoyale
             previewCamera.nearClipPlane = 0.03f;
             previewCamera.allowHDR = true;
             previewCamera.allowMSAA = true;
-            CartoonColorGrading.Ensure(previewCamera, 1.3f, 1.08f, 0.96f);
+            // Keep the package texture close to its authored color. The static jungle
+            // background is already color graded, so grading this isolated render again
+            // made white fur cyan and pushed every animal toward blue/green.
+            CartoonColorGrading.Ensure(previewCamera, 1f, 1f, 1f);
 
-            keyLight = CreateSpotLight("PreviewKeyLight", new Color(1f, 0.94f, 0.84f), 6f, 58f);
-            fillLight = CreateSpotLight("PreviewFillLight", new Color(0.68f, 0.82f, 1f), 3f, 68f);
+            keyLight = CreateSpotLight("PreviewKeyLight", new Color(1f, 0.97f, 0.92f), 4.6f, 58f);
+            fillLight = CreateSpotLight("PreviewFillLight", new Color(1f, 0.99f, 0.96f), 1.45f, 68f);
             return true;
         }
 
@@ -404,6 +407,48 @@ namespace AnimalBattleRoyale
             if (target == null) return;
             if (Application.isPlaying) Destroy(target);
             else DestroyImmediate(target);
+        }
+    }
+
+    /// <summary>
+    /// Renders animal portraits without inheriting the jungle's blue sky and green ground
+    /// ambient colors. Global render settings are restored immediately after the synchronous
+    /// camera render, so the actual map keeps its existing lighting.
+    /// </summary>
+    internal static class AnimalPreviewLighting
+    {
+        public static void RenderWithNeutralEnvironment(Camera camera)
+        {
+            if (camera == null) return;
+
+            AmbientMode previousMode = RenderSettings.ambientMode;
+            Color previousAmbientLight = RenderSettings.ambientLight;
+            Color previousSky = RenderSettings.ambientSkyColor;
+            Color previousEquator = RenderSettings.ambientEquatorColor;
+            Color previousGround = RenderSettings.ambientGroundColor;
+            float previousAmbientIntensity = RenderSettings.ambientIntensity;
+            float previousReflectionIntensity = RenderSettings.reflectionIntensity;
+
+            try
+            {
+                RenderSettings.ambientMode = AmbientMode.Trilight;
+                RenderSettings.ambientSkyColor = new Color(0.58f, 0.58f, 0.58f);
+                RenderSettings.ambientEquatorColor = new Color(0.43f, 0.43f, 0.43f);
+                RenderSettings.ambientGroundColor = new Color(0.27f, 0.27f, 0.27f);
+                RenderSettings.ambientIntensity = 1f;
+                RenderSettings.reflectionIntensity = 0.3f;
+                camera.Render();
+            }
+            finally
+            {
+                RenderSettings.ambientMode = previousMode;
+                RenderSettings.ambientLight = previousAmbientLight;
+                RenderSettings.ambientSkyColor = previousSky;
+                RenderSettings.ambientEquatorColor = previousEquator;
+                RenderSettings.ambientGroundColor = previousGround;
+                RenderSettings.ambientIntensity = previousAmbientIntensity;
+                RenderSettings.reflectionIntensity = previousReflectionIntensity;
+            }
         }
     }
 }

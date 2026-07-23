@@ -221,7 +221,7 @@ namespace AnimalBattleRoyale
             Vector3 spawnPosition = jungle.GetShoreSpawnPosition();
             ThirdPersonAnimalController player = AnimalFactory.Create("Player", selectedAnimal, spawnPosition, true, cameraTransform);
             FaceMapCenter(player.transform);
-            AttackVfx.CreateBurst(spawnPosition + Vector3.up * 0.8f,
+            AttackVfx.CreateBurst(player.transform.position + Vector3.up * 0.8f,
                 Color.Lerp(AnimalDefinition.Get(selectedAnimal).MainColor, Color.white, 0.22f), 2.1f);
             return player;
         }
@@ -346,9 +346,9 @@ namespace AnimalBattleRoyale
                 AnimalType type = (AnimalType)Random.Range(0, AnimalRoster.Count);
                 ThirdPersonAnimalController bot = AnimalFactory.Create($"Bot_{i + 1}_{type}", type, position, false);
                 FaceMapCenter(bot.transform);
-                AttackVfx.CreateBurst(position + Vector3.up * 0.65f,
+                AttackVfx.CreateBurst(bot.transform.position + Vector3.up * 0.65f,
                     Color.Lerp(AnimalDefinition.Get(type).MainColor, Color.white, 0.18f), 1.45f);
-                occupiedSpawns.Add(position);
+                occupiedSpawns.Add(bot.transform.position);
             }
         }
 

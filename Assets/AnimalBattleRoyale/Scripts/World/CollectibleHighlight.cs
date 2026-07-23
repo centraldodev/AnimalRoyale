@@ -111,4 +111,65 @@ namespace AnimalBattleRoyale
             ringMaterial = new Material(shader) { color = Color.white, enableInstancing = true };
         }
     }
+
+    /// <summary>
+    /// Soft local illumination for active pickups. Lights outside the player's immediate
+    /// area are disabled so a map containing many supplies does not pay for every light.
+    /// </summary>
+    public sealed class PickupGlowLight : MonoBehaviour
+    {
+        private const float VisibleDistanceSqr = 48f * 48f;
+        private static Transform cachedViewer;
+        private static int nextUpdateGroup;
+
+        private Light glow;
+        private Color primaryColor;
+        private Color secondaryColor;
+        private float baseIntensity;
+        private float phaseOffset;
+        private int updateGroup;
+
+        public static PickupGlowLight Attach(Transform parent, Color primary, Color secondary,
+            float range = 5f, float intensity = 1.15f)
+        {
+            if (parent == null) return null;
+
+            GameObject lightObject = new GameObject("PickupGlowLight");
+            lightObject.transform.SetParent(parent, false);
+            lightObject.transform.localPosition = Vector3.up * 0.72f;
+
+            PickupGlowLight effect = lightObject.AddComponent<PickupGlowLight>();
+            effect.primaryColor = primary;
+            effect.secondaryColor = secondary;
+            effect.baseIntensity = Mathf.Max(0f, intensity);
+            effect.phaseOffset = Random.value * Mathf.PI * 2f;
+            effect.updateGroup = nextUpdateGroup++ & 3;
+
+            effect.glow = lightObject.AddComponent<Light>();
+            effect.glow.type = LightType.Point;
+            effect.glow.color = primary;
+            effect.glow.range = Mathf.Max(0.5f, range);
+            effect.glow.intensity = effect.baseIntensity;
+            effect.glow.bounceIntensity = 0f;
+            effect.glow.shadows = LightShadows.None;
+            effect.glow.renderMode = LightRenderMode.Auto;
+            return effect;
+        }
+
+        private void Update()
+        {
+            if ((Time.frameCount & 3) != updateGroup || glow == null) return;
+            if (cachedViewer == null && Camera.main != null) cachedViewer = Camera.main.transform;
+
+            bool shouldIlluminate = cachedViewer == null
+                                    || (cachedViewer.position - transform.position).sqrMagnitude <= VisibleDistanceSqr;
+            if (glow.enabled != shouldIlluminate) glow.enabled = shouldIlluminate;
+            if (!shouldIlluminate) return;
+
+            float pulse = (Mathf.Sin(Time.time * 3.2f + phaseOffset) + 1f) * 0.5f;
+            float colorBlend = (Mathf.Sin(Time.time * 1.65f + phaseOffset) + 1f) * 0.5f;
+            glow.color = Color.Lerp(primaryColor, secondaryColor, colorBlend);
+            glow.intensity = baseIntensity * Mathf.Lerp(0.78f, 1.12f, pulse);
+        }
+    }
 }

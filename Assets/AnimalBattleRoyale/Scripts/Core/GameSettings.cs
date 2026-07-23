@@ -17,6 +17,7 @@ namespace AnimalBattleRoyale
     public static class GameSettings
     {
         private const string MouseSensitivityKey = "Settings_MouseSensitivity";
+        private const string AimMouseSensitivityKey = "Settings_AimMouseSensitivity";
         private const string CharacterSideKey = "Settings_CharacterScreenSide";
         private const string AutomaticSprintKey = "Settings_AutomaticSprint";
         private const string RangedFireModeKey = "Settings_RangedFireMode";
@@ -26,6 +27,7 @@ namespace AnimalBattleRoyale
         public const float MinMouseSensitivity = 0.35f;
         public const float MaxMouseSensitivity = 2.5f;
         public const float DefaultMouseSensitivity = 1f;
+        public const float DefaultAimMouseSensitivity = 0.55f;
         public const CharacterScreenSide DefaultCharacterSide = CharacterScreenSide.Left;
         public const bool DefaultAutomaticSprint = true;
         public const RangedFireMode DefaultRangedFireMode = RangedFireMode.SingleShot;
@@ -73,6 +75,18 @@ namespace AnimalBattleRoyale
             }
         }
 
+        public static float AimMouseSensitivity
+        {
+            get => Mathf.Clamp(PlayerPrefs.GetFloat(AimMouseSensitivityKey, DefaultAimMouseSensitivity),
+                MinMouseSensitivity, MaxMouseSensitivity);
+            set
+            {
+                PlayerPrefs.SetFloat(AimMouseSensitivityKey,
+                    Mathf.Clamp(value, MinMouseSensitivity, MaxMouseSensitivity));
+                PlayerPrefs.Save();
+            }
+        }
+
         public static CharacterScreenSide CharacterSide
         {
             get => (CharacterScreenSide)Mathf.Clamp(PlayerPrefs.GetInt(CharacterSideKey, (int)DefaultCharacterSide), 0, 1);
@@ -109,6 +123,7 @@ namespace AnimalBattleRoyale
             MasterVolume = DefaultMasterVolume;
             EffectsAmbientVolume = DefaultEffectsAmbientVolume;
             MouseSensitivity = DefaultMouseSensitivity;
+            AimMouseSensitivity = DefaultAimMouseSensitivity;
             CharacterSide = DefaultCharacterSide;
             AutomaticSprint = DefaultAutomaticSprint;
             RangedFireMode = DefaultRangedFireMode;

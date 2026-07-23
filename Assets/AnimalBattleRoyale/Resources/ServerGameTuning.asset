@@ -16,7 +16,7 @@ MonoBehaviour:
   tigerLeapSpeed: 25
   tigerLeapUpSpeed: 9.2
   tigerLeapHitRadius: 1.25
-  tigerLeapDamage: 28
+  tigerLeapDamage: 20
   tigerLeapKnockback: 12
   projectileSpeed: 33
   projectileRangeSeconds: 4.5

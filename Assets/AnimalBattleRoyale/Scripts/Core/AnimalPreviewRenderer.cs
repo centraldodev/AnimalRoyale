@@ -60,7 +60,7 @@ namespace AnimalBattleRoyale
             };
             texture.Create();
             camera.targetTexture = texture;
-            camera.Render();
+            AnimalPreviewLighting.RenderWithNeutralEnvironment(camera);
             camera.targetTexture = null;
 
             model.SetActive(false);

@@ -9,6 +9,36 @@ namespace AnimalBattleRoyale
     public sealed class GameMenuController : MonoBehaviour
     {
         private enum MenuPage { Closed, Pause, Settings }
+        private enum SettingsCategory { Audio, Controls, Gameplay }
+        private enum ControlCategory { Movement, Combat, Interaction }
+
+        private static readonly GameInputAction[] MovementBindings =
+        {
+            GameInputAction.MoveForward,
+            GameInputAction.MoveBackward,
+            GameInputAction.MoveLeft,
+            GameInputAction.MoveRight,
+            GameInputAction.Jump,
+            GameInputAction.Sprint,
+            GameInputAction.Descend
+        };
+
+        private static readonly GameInputAction[] CombatBindings =
+        {
+            GameInputAction.RangedAttack,
+            GameInputAction.Reload,
+            GameInputAction.WeaponPrimary,
+            GameInputAction.WeaponSecondary,
+            GameInputAction.WeaponThird,
+            GameInputAction.MeleeAttack,
+            GameInputAction.Aim
+        };
+
+        private static readonly GameInputAction[] InteractionBindings =
+        {
+            GameInputAction.Ability,
+            GameInputAction.Consume
+        };
 
         public static GameMenuController Instance { get; private set; }
 
@@ -16,6 +46,8 @@ namespace AnimalBattleRoyale
         private bool inGame;
         private bool settingsOpenedFromGame;
         private GameInputAction? waitingForBinding;
+        private SettingsCategory settingsCategory = SettingsCategory.Controls;
+        private ControlCategory controlCategory = ControlCategory.Movement;
         private string bindingMessage = string.Empty;
         private float bindingMessageUntil;
         private GUIStyle titleStyle;
@@ -216,65 +248,183 @@ namespace AnimalBattleRoyale
             RuntimeGuiTheme.DrawPanel(panel, new Color(0.025f, 0.047f, 0.05f, 0.995f),
                 new Color(0.32f, 0.82f, 0.6f, 1f), 2f);
             GUI.Label(new Rect(panel.x + 28f, panel.y + 18f, panel.width - 56f, 38f), "CONFIGURAÇÕES", titleStyle);
+            string categoryHint = settingsCategory switch
+            {
+                SettingsCategory.Audio => "Ajuste o volume geral e a intensidade dos efeitos e do ambiente",
+                SettingsCategory.Gameplay => "Personalize câmera, personagem e comportamento durante a partida",
+                _ => mobile
+                    ? "Consulte os controles touchscreen usados durante a partida"
+                    : "Escolha uma categoria e clique em um atalho para trocar sua tecla"
+            };
             GUI.Label(new Rect(panel.x + 30f, panel.y + 55f, panel.width - 60f, 28f),
-                mobile
-                    ? "Arraste o lado direito para mirar e use os botões na tela"
-                    : waitingForBinding.HasValue
+                waitingForBinding.HasValue
                     ? "Pressione uma tecla ou botão do mouse • ESC cancela"
-                    : "Clique em um atalho para trocar sua tecla", subtitleStyle);
+                    : categoryHint, subtitleStyle);
 
-            int columns = mobile ? 2 : 3;
-            const float gap = 16f;
-            float contentX = panel.x + 30f;
-            float contentY = panel.y + 98f;
-            float columnWidth = (panel.width - 60f - gap) / columns;
-            float rowHeight = 58f;
-            float settingsY;
-            if (mobile)
-            {
-                Rect touchGuide = new Rect(contentX, contentY, panel.width - 60f, 88f);
-                RuntimeGuiTheme.DrawPanel(touchGuide, new Color(0.035f, 0.07f, 0.07f, 0.96f),
-                    new Color(0.18f, 0.62f, 0.46f, 1f), 1f, false);
-                GUI.Label(new Rect(touchGuide.x + 16f, touchGuide.y + 8f, touchGuide.width - 32f, 24f),
-                    "CONTROLES TOUCHSCREEN", buttonStyle);
-                GUI.Label(new Rect(touchGuide.x + 16f, touchGuide.y + 37f, touchGuide.width - 32f, 42f),
-                    "Metade esquerda: movimento WASD  •  Metade direita: câmera  •  Atirar: segure e arraste para atirar e mirar; fora do círculo, apenas câmera",
-                    centeredStyle);
-                settingsY = touchGuide.yMax + 12f;
-            }
-            else
-            {
-                IReadOnlyList<GameInputBindingDefinition> definitions = GameInputBindings.Definitions;
-                for (int index = 0; index < definitions.Count; index++)
-                {
-                    GameInputBindingDefinition definition = definitions[index];
-                    int column = index % columns;
-                    int row = index / columns;
-                    Rect rowRect = new Rect(contentX + column * (columnWidth + gap), contentY + row * rowHeight,
-                        columnWidth, 54f);
-                    DrawBindingRow(rowRect, definition);
-                }
+            const float tabGap = 10f;
+            Rect tabStrip = new Rect(panel.x + 30f, panel.y + 91f, panel.width - 60f, 42f);
+            float tabWidth = (tabStrip.width - tabGap * 2f) / 3f;
+            DrawSettingsCategoryTab(new Rect(tabStrip.x, tabStrip.y, tabWidth, tabStrip.height),
+                "ÁUDIO", SettingsCategory.Audio);
+            DrawSettingsCategoryTab(new Rect(tabStrip.x + tabWidth + tabGap, tabStrip.y, tabWidth, tabStrip.height),
+                "CONTROLES", SettingsCategory.Controls);
+            DrawSettingsCategoryTab(new Rect(tabStrip.x + (tabWidth + tabGap) * 2f, tabStrip.y, tabWidth, tabStrip.height),
+                "JOGABILIDADE", SettingsCategory.Gameplay);
 
-                settingsY = contentY + Mathf.CeilToInt(definitions.Count / (float)columns) * rowHeight + 4f;
+            float footerY = panel.yMax - 58f;
+            Rect content = new Rect(panel.x + 30f, tabStrip.yMax + 14f,
+                panel.width - 60f, footerY - tabStrip.yMax - 28f);
+            RuntimeGuiTheme.DrawPanel(content, new Color(0.018f, 0.038f, 0.04f, 0.96f),
+                new Color(0.1f, 0.26f, 0.22f, 1f), 1f, false);
+
+            switch (settingsCategory)
+            {
+                case SettingsCategory.Audio:
+                    DrawAudioSettings(content);
+                    break;
+                case SettingsCategory.Gameplay:
+                    GUI.Label(new Rect(content.x + 18f, content.y + 10f, content.width - 36f, 30f),
+                        "JOGABILIDADE", buttonStyle);
+                    DrawGameplaySettings(new Rect(content.x + 16f, content.y + 52f,
+                        content.width - 32f, 238f));
+                    break;
+                default:
+                    DrawControlsSettings(content, mobile);
+                    break;
             }
-            DrawGameplaySettings(new Rect(contentX, settingsY, panel.width - 60f, 156f));
 
             if (Time.unscaledTime < bindingMessageUntil)
             {
-                GUI.Label(new Rect(panel.x + 30f, panel.yMax - 84f, panel.width - 60f, 22f), bindingMessage, subtitleStyle);
+                GUI.Label(new Rect(content.x + 16f, content.yMax - 28f, content.width - 32f, 22f),
+                    bindingMessage, subtitleStyle);
             }
 
-            float footerY = panel.yMax - 58f;
             if (DrawMenuButton(new Rect(panel.x + 30f, footerY, 230f, 40f), "RESTAURAR PADRÕES",
                     new Color(0.34f, 0.25f, 0.12f)))
             {
                 GameInputBindings.RestoreDefaults();
                 GameSettings.RestoreDefaults();
-                bindingMessage = "ATALHOS PADRÃO RESTAURADOS";
+                bindingMessage = "CONFIGURAÇÕES PADRÃO RESTAURADAS";
                 bindingMessageUntil = Time.unscaledTime + 2f;
             }
             if (DrawMenuButton(new Rect(panel.xMax - 190f, footerY, 160f, 40f), "VOLTAR",
                     new Color(0.14f, 0.47f, 0.32f))) CloseSettings();
+        }
+
+        private void DrawSettingsCategoryTab(Rect rect, string text, SettingsCategory category)
+        {
+            bool selected = settingsCategory == category;
+            RuntimeGuiTheme.DrawPanel(rect,
+                selected ? new Color(0.16f, 0.56f, 0.36f, 1f) : new Color(0.045f, 0.1f, 0.095f, 1f),
+                selected ? Color.white : new Color(0.25f, 0.52f, 0.43f, 1f), 1f, false);
+            GUI.Label(rect, text, buttonStyle);
+            if (!GUI.Button(rect, GUIContent.none, GUIStyle.none)) return;
+            settingsCategory = category;
+            waitingForBinding = null;
+        }
+
+        private void DrawAudioSettings(Rect content)
+        {
+            GUI.Label(new Rect(content.x + 18f, content.y + 10f, content.width - 36f, 30f),
+                "ÁUDIO", buttonStyle);
+            const float gap = 16f;
+            float cardWidth = (content.width - 48f - gap) * 0.5f;
+            Rect master = new Rect(content.x + 16f, content.y + 58f, cardWidth, 116f);
+            Rect effects = new Rect(master.xMax + gap, master.y, cardWidth, master.height);
+            DrawVolumeControl(master, "VOLUME GERAL", GameSettings.MasterVolume,
+                value => GameSettings.MasterVolume = value);
+            DrawVolumeControl(effects, "EFEITOS E AMBIENTE", GameSettings.EffectsAmbientVolume,
+                value => GameSettings.EffectsAmbientVolume = value);
+
+            Rect note = new Rect(content.x + 16f, master.yMax + 18f, content.width - 32f, 74f);
+            RuntimeGuiTheme.DrawPanel(note, new Color(0.03f, 0.065f, 0.065f, 0.92f),
+                new Color(0.12f, 0.3f, 0.26f, 1f), 1f, false);
+            GUI.Label(new Rect(note.x + 18f, note.y + 8f, note.width - 36f, note.height - 16f),
+                "VOLUME GERAL controla toda a saída do jogo. EFEITOS E AMBIENTE ajusta tiros, recargas, coletas, animais e sons da floresta.",
+                centeredStyle);
+        }
+
+        private void DrawVolumeControl(Rect rect, string label, float value, Action<float> setValue)
+        {
+            RuntimeGuiTheme.DrawPanel(rect, new Color(0.035f, 0.07f, 0.07f, 0.96f),
+                new Color(0.18f, 0.46f, 0.37f, 1f), 1f, false);
+            GUI.Label(new Rect(rect.x + 14f, rect.y + 8f, rect.width - 28f, 26f),
+                $"{label}  {Mathf.RoundToInt(value * 100f)}%", labelStyle);
+            Rect slider = new Rect(rect.x + 18f, rect.y + 51f, rect.width - 36f, 28f);
+            float newValue = GUI.HorizontalSlider(slider, value, 0f, 1f);
+            if (!Mathf.Approximately(newValue, value)) setValue(newValue);
+            GUI.Label(new Rect(rect.x + 18f, rect.y + 79f, rect.width - 36f, 24f),
+                value <= 0.001f ? "MUDO" : value >= 0.999f ? "MÁXIMO" : "AJUSTE LIVRE",
+                centeredStyle);
+        }
+
+        private void DrawControlsSettings(Rect content, bool mobile)
+        {
+            GUI.Label(new Rect(content.x + 18f, content.y + 8f, content.width - 36f, 28f),
+                mobile ? "CONTROLES TOUCHSCREEN" : "ATALHOS DO TECLADO", buttonStyle);
+            if (mobile)
+            {
+                Rect guide = new Rect(content.x + 18f, content.y + 54f, content.width - 36f, 120f);
+                RuntimeGuiTheme.DrawPanel(guide, new Color(0.035f, 0.07f, 0.07f, 0.96f),
+                    new Color(0.18f, 0.62f, 0.46f, 1f), 1f, false);
+                GUI.Label(new Rect(guide.x + 18f, guide.y + 14f, guide.width - 36f, guide.height - 28f),
+                    "Metade esquerda: movimento • Metade direita: câmera\n"
+                    + "Botões de ação: atirar, bater, pular, habilidade e usar",
+                    centeredStyle);
+                return;
+            }
+
+            const float categoryGap = 10f;
+            Rect categoryStrip = new Rect(content.x + 16f, content.y + 44f, content.width - 32f, 36f);
+            float categoryWidth = (categoryStrip.width - categoryGap * 2f) / 3f;
+            DrawControlCategoryTab(new Rect(categoryStrip.x, categoryStrip.y, categoryWidth, categoryStrip.height),
+                "MOVIMENTO", ControlCategory.Movement);
+            DrawControlCategoryTab(new Rect(categoryStrip.x + categoryWidth + categoryGap, categoryStrip.y,
+                    categoryWidth, categoryStrip.height),
+                "COMBATE E MUNIÇÃO", ControlCategory.Combat);
+            DrawControlCategoryTab(new Rect(categoryStrip.x + (categoryWidth + categoryGap) * 2f, categoryStrip.y,
+                    categoryWidth, categoryStrip.height),
+                "INTERAÇÃO", ControlCategory.Interaction);
+
+            GameInputAction[] actions = controlCategory switch
+            {
+                ControlCategory.Combat => CombatBindings,
+                ControlCategory.Interaction => InteractionBindings,
+                _ => MovementBindings
+            };
+            const float rowGap = 10f;
+            const float columnGap = 14f;
+            float columnWidth = (content.width - 32f - columnGap) * 0.5f;
+            float startY = categoryStrip.yMax + 14f;
+            for (int index = 0; index < actions.Length; index++)
+            {
+                int column = index % 2;
+                int row = index / 2;
+                Rect rowRect = new Rect(content.x + 16f + column * (columnWidth + columnGap),
+                    startY + row * (52f + rowGap), columnWidth, 52f);
+                DrawBindingRow(rowRect, GetBindingDefinition(actions[index]));
+            }
+        }
+
+        private void DrawControlCategoryTab(Rect rect, string text, ControlCategory category)
+        {
+            bool selected = controlCategory == category;
+            RuntimeGuiTheme.DrawPanel(rect,
+                selected ? new Color(0.12f, 0.38f, 0.28f, 1f) : new Color(0.04f, 0.09f, 0.085f, 1f),
+                selected ? new Color(0.46f, 0.94f, 0.68f, 1f) : new Color(0.16f, 0.34f, 0.29f, 1f),
+                1f, false);
+            GUI.Label(rect, text, keyStyle);
+            if (!GUI.Button(rect, GUIContent.none, GUIStyle.none)) return;
+            controlCategory = category;
+            waitingForBinding = null;
+        }
+
+        private static GameInputBindingDefinition GetBindingDefinition(GameInputAction action)
+        {
+            IReadOnlyList<GameInputBindingDefinition> definitions = GameInputBindings.Definitions;
+            for (int i = 0; i < definitions.Count; i++)
+                if (definitions[i].Action == action) return definitions[i];
+            return default;
         }
 
         private void DrawGameplaySettings(Rect rect)
@@ -282,10 +432,12 @@ namespace AnimalBattleRoyale
             float halfWidth = (rect.width - 16f) * 0.5f;
             const float controlHeight = 74f;
             DrawSensitivityControl(new Rect(rect.x, rect.y, halfWidth, controlHeight));
-            DrawCharacterSideControl(new Rect(rect.x + halfWidth + 16f, rect.y, halfWidth, controlHeight));
-            DrawAutomaticSprintControl(new Rect(rect.x, rect.y + controlHeight + 8f, halfWidth, controlHeight));
-            DrawRangedFireModeControl(new Rect(rect.x + halfWidth + 16f, rect.y + controlHeight + 8f,
+            DrawAimSensitivityControl(new Rect(rect.x + halfWidth + 16f, rect.y, halfWidth, controlHeight));
+            DrawCharacterSideControl(new Rect(rect.x, rect.y + controlHeight + 8f, halfWidth, controlHeight));
+            DrawAutomaticSprintControl(new Rect(rect.x + halfWidth + 16f, rect.y + controlHeight + 8f,
                 halfWidth, controlHeight));
+            DrawRangedFireModeControl(new Rect(rect.x, rect.y + (controlHeight + 8f) * 2f,
+                rect.width, controlHeight));
         }
 
         private void DrawSensitivityControl(Rect rect)
@@ -293,7 +445,7 @@ namespace AnimalBattleRoyale
             RuntimeGuiTheme.DrawPanel(rect, new Color(0.035f, 0.07f, 0.07f, 0.96f),
                 new Color(0.14f, 0.27f, 0.25f, 1f), 1f, false);
             GUI.Label(new Rect(rect.x + 12f, rect.y + 4f, rect.width - 24f, 24f),
-                $"SENSIBILIDADE DA CÂMERA  {GameSettings.MouseSensitivity:0.00}x", labelStyle);
+                $"MIRA PRIMÁRIA / CÂMERA  {GameSettings.MouseSensitivity:0.00}x", labelStyle);
 
             Rect sliderRect = new Rect(rect.x + 14f, rect.y + 36f, rect.width - 28f, 24f);
             float previousValue = GameSettings.MouseSensitivity;
@@ -301,6 +453,21 @@ namespace AnimalBattleRoyale
                 GameSettings.MinMouseSensitivity, GameSettings.MaxMouseSensitivity);
             if (!Mathf.Approximately(value, previousValue))
                 GameSettings.MouseSensitivity = value;
+        }
+
+        private void DrawAimSensitivityControl(Rect rect)
+        {
+            RuntimeGuiTheme.DrawPanel(rect, new Color(0.035f, 0.07f, 0.07f, 0.96f),
+                new Color(0.14f, 0.27f, 0.25f, 1f), 1f, false);
+            GUI.Label(new Rect(rect.x + 12f, rect.y + 4f, rect.width - 24f, 24f),
+                $"MIRA SECUNDÁRIA  {GameSettings.AimMouseSensitivity:0.00}x", labelStyle);
+
+            Rect sliderRect = new Rect(rect.x + 14f, rect.y + 36f, rect.width - 28f, 24f);
+            float previousValue = GameSettings.AimMouseSensitivity;
+            float value = GUI.HorizontalSlider(sliderRect, previousValue,
+                GameSettings.MinMouseSensitivity, GameSettings.MaxMouseSensitivity);
+            if (!Mathf.Approximately(value, previousValue))
+                GameSettings.AimMouseSensitivity = value;
         }
 
         private void DrawCharacterSideControl(Rect rect)
