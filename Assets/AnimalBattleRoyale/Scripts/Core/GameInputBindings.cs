@@ -15,6 +15,7 @@ namespace AnimalBattleRoyale
         RangedAttack,
         MeleeAttack,
         Ability,
+        AbilitySecondary,
         Consume,
         Descend,
         Aim,
@@ -58,7 +59,8 @@ namespace AnimalBattleRoyale
             // Right mouse button moved from melee to aim (precision zoom for the sniper/nozes
             // ammo) — melee moved to V so the two don't fight over the same button.
             new GameInputBindingDefinition(GameInputAction.MeleeAttack, "BATER", KeyCode.V),
-            new GameInputBindingDefinition(GameInputAction.Ability, "HABILIDADE", KeyCode.Q),
+            new GameInputBindingDefinition(GameInputAction.Ability, "HABILIDADE DE MOVIMENTO", KeyCode.Q),
+            new GameInputBindingDefinition(GameInputAction.AbilitySecondary, "HABILIDADE SECUNDÁRIA", KeyCode.E),
             new GameInputBindingDefinition(GameInputAction.Consume, "COLETAR / USAR", KeyCode.F),
             new GameInputBindingDefinition(GameInputAction.Descend, "DESCER", KeyCode.LeftControl),
             new GameInputBindingDefinition(GameInputAction.Aim, "MIRAR DE PRECISÃO", KeyCode.Mouse1)

@@ -14,6 +14,7 @@ namespace AnimalBattleRoyale
         {
             Melee,
             Ability,
+            AbilitySecondary,
             Jump,
             Consume
         }
@@ -39,6 +40,7 @@ namespace AnimalBattleRoyale
         private Rect fireRect;
         private Rect meleeRect;
         private Rect abilityRect;
+        private Rect abilitySecondaryRect;
         private Rect jumpRect;
         private Rect consumeRect;
 
@@ -46,6 +48,7 @@ namespace AnimalBattleRoyale
         private bool fireHeld;
         private bool meleePressed;
         private bool abilityPressed;
+        private bool abilitySecondaryPressed;
         private bool jumpPressed;
         private bool jumpHeld;
         private bool consumePressed;
@@ -64,6 +67,7 @@ namespace AnimalBattleRoyale
         public static bool FireHeld => ControlsEnabled && instance.fireHeld;
         public static bool MeleePressed => ControlsEnabled && instance.meleePressed;
         public static bool AbilityPressed => ControlsEnabled && instance.abilityPressed;
+        public static bool AbilitySecondaryPressed => ControlsEnabled && instance.abilitySecondaryPressed;
         public static bool JumpPressed => ControlsEnabled && instance.jumpPressed;
         public static bool JumpHeld => ControlsEnabled && instance.jumpHeld;
         public static bool ConsumePressed => ControlsEnabled && instance.consumePressed;
@@ -192,6 +196,7 @@ namespace AnimalBattleRoyale
             firePressed = false;
             meleePressed = false;
             abilityPressed = false;
+            abilitySecondaryPressed = false;
             jumpPressed = false;
             consumePressed = false;
             fireHeld = false;
@@ -242,7 +247,8 @@ namespace AnimalBattleRoyale
             jumpRect = CenteredRect(new Vector2(rightActionX, actionY), secondaryButtonSize);
             meleeRect = CenteredRect(new Vector2(rightActionX - actionStep, actionY), secondaryButtonSize);
             consumeRect = CenteredRect(new Vector2(rightActionX - actionStep * 2f, actionY), secondaryButtonSize);
-            abilityRect = CenteredRect(new Vector2(rightActionX - actionStep * 3f, actionY), secondaryButtonSize);
+            abilitySecondaryRect = CenteredRect(new Vector2(rightActionX - actionStep * 3f, actionY), secondaryButtonSize);
+            abilityRect = CenteredRect(new Vector2(rightActionX - actionStep * 4f, actionY), secondaryButtonSize);
 
             // Keep the action row below notches and rounded screen corners.
             float minimumTop = safeTop + margin;
@@ -252,6 +258,7 @@ namespace AnimalBattleRoyale
                 jumpRect.y += correction;
                 meleeRect.y += correction;
                 consumeRect.y += correction;
+                abilitySecondaryRect.y += correction;
                 abilityRect.y += correction;
             }
         }
@@ -338,6 +345,7 @@ namespace AnimalBattleRoyale
         {
             if (meleeRect.Contains(position)) action = TouchAction.Melee;
             else if (abilityRect.Contains(position)) action = TouchAction.Ability;
+            else if (abilitySecondaryRect.Contains(position)) action = TouchAction.AbilitySecondary;
             else if (jumpRect.Contains(position)) action = TouchAction.Jump;
             else if (consumeRect.Contains(position)) action = TouchAction.Consume;
             else
@@ -357,6 +365,9 @@ namespace AnimalBattleRoyale
                     break;
                 case TouchAction.Ability:
                     abilityPressed |= pressedThisFrame;
+                    break;
+                case TouchAction.AbilitySecondary:
+                    abilitySecondaryPressed |= pressedThisFrame;
                     break;
                 case TouchAction.Jump:
                     jumpHeld = true;
@@ -389,7 +400,8 @@ namespace AnimalBattleRoyale
                 new Color(0.98f, 0.42f, 0.12f, 0.92f), true, true);
             DrawCircularActionButton(meleeRect, "BATER", meleePressed, new Color(0.86f, 0.26f, 0.16f, 0.88f));
             DrawCircularActionButton(jumpRect, "PULAR", jumpHeld, new Color(0.12f, 0.62f, 0.94f, 0.88f));
-            DrawHexActionButton(abilityRect, "HABILIDADE", abilityPressed, new Color(0.52f, 0.22f, 0.92f, 0.94f));
+            DrawHexActionButton(abilityRect, "Q", abilityPressed, new Color(0.52f, 0.22f, 0.92f, 0.94f));
+            DrawHexActionButton(abilitySecondaryRect, "E", abilitySecondaryPressed, new Color(0.15f, 0.78f, 0.52f, 0.94f));
             DrawHexActionButton(consumeRect, "USAR", consumePressed, new Color(0.15f, 0.72f, 0.42f, 0.9f));
         }
 

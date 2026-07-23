@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 namespace AnimalBattleRoyale
 {
@@ -13,12 +12,13 @@ namespace AnimalBattleRoyale
 
         private readonly Dictionary<ThirdPersonAnimalController, int> carried = new Dictionary<ThirdPersonAnimalController, int>();
         private JungleGenerator jungle;
-        private EscapePortal portal;
         private float nextSafetyCheck;
         private bool initialized;
         private int requiredDiamonds;
 
-        public Vector3 PortalPosition => portal != null ? portal.transform.position : Vector3.zero;
+        // Escape portal removed (see Initialize below); kept as a fixed point so the
+        // minimap and bot navigation, which still read this, have a stable target.
+        public Vector3 PortalPosition => Vector3.zero;
 
         private void Awake()
         {
@@ -136,42 +136,6 @@ namespace AnimalBattleRoyale
             return new Vector3(safePoint.x, position.y, safePoint.y);
         }
 
-        private Vector3 FindPortalPosition(out bool usesLakeAccess)
-        {
-            if (Random.value < 0.22f)
-            {
-                usesLakeAccess = true;
-                return new Vector3(0f, jungle.LakeSurfaceHeight + 0.05f, 0f);
-            }
-
-            usesLakeAccess = false;
-            float minRadius = jungle.MapSize * 0.23f;
-            float maxRadius = jungle.MapSize * 0.34f;
-            Vector3 fallback = jungle.GetGroundPosition(new Vector3(maxRadius, 0f, 0f), 0.08f);
-            for (int attempt = 0; attempt < 28; attempt++)
-            {
-                int sector = Random.Range(0, 8);
-                float angle = (sector * 45f + Random.Range(-14f, 14f)) * Mathf.Deg2Rad;
-                float radius = Random.Range(minRadius, maxRadius);
-                Vector3 candidate = jungle.GetGroundPosition(
-                    new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius), 0.08f);
-                fallback = candidate;
-                if (IsPortalAreaClear(candidate)) return candidate;
-            }
-            return fallback;
-        }
-
-        private static bool IsPortalAreaClear(Vector3 position)
-        {
-            Collider[] overlaps = Physics.OverlapSphere(position + Vector3.up * 1.8f, 4.5f, ~0, QueryTriggerInteraction.Ignore);
-            foreach (Collider overlap in overlaps)
-            {
-                if (overlap == null || !overlap.enabled || overlap.name == "RollingForestGround") continue;
-                return false;
-            }
-            return true;
-        }
-
         private static void SpawnDiamond(Vector3 position)
         {
             DiamondPickup.Create(position);
@@ -180,150 +144,6 @@ namespace AnimalBattleRoyale
         private void OnDestroy()
         {
             if (Instance == this) Instance = null;
-        }
-    }
-
-    /// <summary>Always-open portal; only a fighter carrying every match crystal can escape.</summary>
-    public sealed class EscapePortal : MonoBehaviour
-    {
-        private Transform ring;
-        private Transform core;
-        private TextMesh label;
-        private bool usesLakeAccess;
-
-        public static EscapePortal Create(Vector3 position, bool lakeAccess)
-        {
-            GameObject root = new GameObject("EscapePortal");
-            root.transform.position = position;
-            EscapePortal portal = root.AddComponent<EscapePortal>();
-            portal.usesLakeAccess = lakeAccess;
-            portal.BuildVisual();
-            return portal;
-        }
-
-        private void Update()
-        {
-            if (ring != null) ring.Rotate(0f, 26f * Time.deltaTime, 0f, Space.World);
-            if (core != null)
-            {
-                float pulse = 1f + Mathf.Sin(Time.time * 2.2f) * 0.08f;
-                core.localScale = new Vector3(0.18f, 2.15f * pulse, 2.15f * pulse);
-            }
-
-            BattleRoyaleManager manager = BattleRoyaleManager.Instance;
-            DiamondObjectiveManager objective = DiamondObjectiveManager.Instance;
-            if (manager == null || objective == null || manager.MatchFinished) return;
-            foreach (ThirdPersonAnimalController fighter in manager.Fighters)
-            {
-                if (fighter == null || fighter.Health.IsDead) continue;
-                Vector2 distance = new Vector2(fighter.transform.position.x - transform.position.x, fighter.transform.position.z - transform.position.z);
-                if (distance.sqrMagnitude <= 3.2f * 3.2f) objective.TryEscape(fighter);
-            }
-
-            if (label != null && manager.LocalPlayer != null)
-            {
-                int count = objective.GetCount(manager.LocalPlayer);
-                label.text = count >= DiamondObjectiveManager.RequiredDiamonds
-                    ? "PORTAL LIBERADO\nENTRE PARA ESCAPAR"
-                    : $"PORTAL BLOQUEADO\n{count}/{DiamondObjectiveManager.RequiredDiamonds} CRISTAIS";
-            }
-        }
-
-        private void LateUpdate()
-        {
-            Transform viewer = CameraCache.MainTransform;
-            if (label != null && viewer != null)
-            {
-                label.transform.rotation = Quaternion.LookRotation(label.transform.position - viewer.position);
-            }
-        }
-
-        private void BuildVisual()
-        {
-            Shader shader = ShaderLibrary.Lit;
-            Material stone = CreateMaterial(shader, new Color(0.16f, 0.2f, 0.28f), false);
-            Material rampStone = CreateMaterial(shader, new Color(0.24f, 0.28f, 0.35f), false);
-            Material glowBlue = CreateMaterial(shader, new Color(0.05f, 0.62f, 1f), true);
-            Material glowPurple = CreateMaterial(shader, new Color(0.5f, 0.12f, 1f), true);
-
-            GameObject baseObject = CreatePrimitive(transform, PrimitiveType.Cylinder, "PortalIsland",
-                new Vector3(0f, -0.42f, 0f), new Vector3(4.2f, 0.5f, 4.2f), stone);
-            baseObject.transform.localRotation = Quaternion.Euler(0f, 0f, 0f);
-            // The primitive capsule collider turns spherical under this squashed
-            // scale; a convex mesh collider matches the flat island exactly.
-            MeshCollider islandCollider = baseObject.AddComponent<MeshCollider>();
-            islandCollider.convex = true;
-
-            int rampCount = usesLakeAccess ? 8 : 4;
-            float outerDistance = usesLakeAccess ? 9f : 5.8f;
-            float outerHeight = usesLakeAccess ? -2.9f : -0.18f;
-            for (int i = 0; i < rampCount; i++)
-            {
-                float angle = i * Mathf.PI * 2f / rampCount;
-                Vector3 direction = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle));
-                Vector3 outerEnd = direction * outerDistance + Vector3.up * outerHeight;
-                Vector3 innerEnd = direction * 1.9f + Vector3.up * 0.1f;
-                Vector3 slope = innerEnd - outerEnd;
-                GameObject ramp = CreatePrimitive(transform, PrimitiveType.Cube, "PortalRamp",
-                    (outerEnd + innerEnd) * 0.5f, new Vector3(3.4f, 0.3f, slope.magnitude + 0.6f),
-                    rampStone, keepCollider: true);
-                ramp.transform.localRotation = Quaternion.LookRotation(slope.normalized, Vector3.up);
-            }
-
-            ring = new GameObject("PortalRing").transform;
-            ring.SetParent(transform, false);
-            ring.localPosition = Vector3.up * 2.55f;
-            const int segments = 30;
-            for (int i = 0; i < segments; i++)
-            {
-                float angle = i * Mathf.PI * 2f / segments;
-                Vector3 point = new Vector3(Mathf.Cos(angle) * 2.6f, Mathf.Sin(angle) * 2.6f, 0f);
-                CreatePrimitive(ring, PrimitiveType.Sphere, "PortalRune", point, Vector3.one * 0.34f,
-                    i % 2 == 0 ? glowBlue : glowPurple);
-            }
-
-            GameObject coreObject = CreatePrimitive(transform, PrimitiveType.Sphere, "PortalEnergy",
-                Vector3.up * 2.55f, new Vector3(0.18f, 2.15f, 2.15f), glowPurple);
-            core = coreObject.transform;
-
-            GameObject labelObject = new GameObject("PortalLabel");
-            labelObject.transform.SetParent(transform, false);
-            labelObject.transform.localPosition = Vector3.up * 5.9f;
-            label = labelObject.AddComponent<TextMesh>();
-            label.text = "PORTAL BLOQUEADO\n0/0 CRISTAIS";
-            label.anchor = TextAnchor.MiddleCenter;
-            label.alignment = TextAlignment.Center;
-            label.characterSize = 0.065f;
-            label.fontSize = 54;
-            label.color = new Color(0.48f, 0.9f, 1f);
-        }
-
-        private static GameObject CreatePrimitive(Transform parent, PrimitiveType type, string name,
-            Vector3 position, Vector3 scale, Material material, bool keepCollider = false)
-        {
-            GameObject part = GameObject.CreatePrimitive(type);
-            part.name = name;
-            part.transform.SetParent(parent, false);
-            part.transform.localPosition = position;
-            part.transform.localScale = scale;
-            Renderer renderer = part.GetComponent<Renderer>();
-            renderer.sharedMaterial = material;
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            Collider collider = part.GetComponent<Collider>();
-            if (collider != null) collider.enabled = keepCollider;
-            return part;
-        }
-
-        private static Material CreateMaterial(Shader shader, Color color, bool emissive)
-        {
-            Material material = new Material(shader) { color = color, enableInstancing = true };
-            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
-            if (emissive && material.HasProperty("_EmissionColor"))
-            {
-                material.EnableKeyword("_EMISSION");
-                material.SetColor("_EmissionColor", color * 1.7f);
-            }
-            return material;
         }
     }
 }

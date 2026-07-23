@@ -194,11 +194,15 @@ namespace AnimalBattleRoyale
 
         public static bool AbilityTwoPressed()
         {
-            if (MobileInputController.ControlsEnabled) return false;
+            if (GameplayInputBlocked) return false;
+            if (MobileInputController.ControlsEnabled) return MobileInputController.AbilitySecondaryPressed;
 #if ENABLE_INPUT_SYSTEM
-            return Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.AbilitySecondary)
+                   || (Gamepad.current != null && Gamepad.current.buttonNorth.wasPressedThisFrame)
+                   || MobileInputController.AbilitySecondaryPressed;
 #else
-            return Input.GetKeyDown(KeyCode.E);
+            return GameInputBindings.WasPressedThisFrame(GameInputAction.AbilitySecondary)
+                   || MobileInputController.AbilitySecondaryPressed;
 #endif
         }
 
@@ -229,8 +233,7 @@ namespace AnimalBattleRoyale
 
         public static bool AttackModeTogglePressed() => MeleeAttackPressed();
 
-        /// <summary>Held to enter precision-aim (zoomed) mode — only meaningful with the
-        /// long-range "nozes" ammo selected, checked by the caller.</summary>
+        /// <summary>Held to enter the secondary, zoomed aiming mode for any ammo type.</summary>
         public static bool AimHeld()
         {
             if (GameplayInputBlocked) return false;

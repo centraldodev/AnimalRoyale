@@ -274,175 +274,7 @@ namespace AnimalBattleRoyale
             CreateCartoonMeadow(natureRoot, random, out int grassTufts, out int flowers);
 
             Debug.Log($"[Jungle] Novo ambiente natural: {trees} arvores, {bushes} arbustos, {mushrooms} cogumelos, " +
-                      $"{grassTufts} tufos de grama e {flowers} flores cartoon; " +
-                      "nova cachoeira e ponte modular do lago ativas.");
-        }
-
-        private void CreateLakeBridge(Transform parent)
-        {
-            float shoreDistance = lakeRadius + 7f;
-            Vector3 start = new Vector3(-shoreDistance, 0f, -7f);
-            Vector3 end = new Vector3(shoreDistance, 0f, -7f);
-            start.y = Mathf.Max(CalculateGroundHeight(start.x, start.z) + 0.38f, lakeSurfaceHeight + 1.05f);
-            end.y = Mathf.Max(CalculateGroundHeight(end.x, end.z) + 0.38f, lakeSurfaceHeight + 1.05f);
-
-            float midpointHeight = (start.y + end.y) * 0.5f;
-            float availableClearance = midpointHeight - (lakeSurfaceHeight + 0.82f);
-            float sagDepth = Mathf.Clamp(availableClearance, 0.25f, 0.85f);
-            SpawnModularBridge(parent, "RopeBridge", "LakeCrossingBridge", start, end,
-                Vector3.Distance(start, end) + 2f, 10f, -sagDepth, 1.1f, 4.4f);
-        }
-
-        private void CreateElevatedBridgeLandmark(Transform parent)
-        {
-            Vector3 leftHill = new Vector3(52f, 0f, 104f);
-            Vector3 rightHill = new Vector3(102f, 0f, 104f);
-            leftHill.y = CalculateGroundHeight(leftHill.x, leftHill.z) - 0.65f;
-            rightHill.y = CalculateGroundHeight(rightHill.x, rightHill.z) - 0.65f;
-
-            SpawnScaledPrefab(parent, LoadNewRockPrefab("GreenRockyHill"), "BridgeHill_Left",
-                leftHill, Quaternion.Euler(0f, 24f, 0f), Vector3.one * 34f);
-            SpawnScaledPrefab(parent, LoadNewRockPrefab("GreenRockyHill"), "BridgeHill_Right",
-                rightHill, Quaternion.Euler(0f, 204f, 0f), Vector3.one * 34f);
-
-            float deckHeight = (leftHill.y + rightHill.y) * 0.5f + 9.2f;
-            Vector3 start = new Vector3(66f, deckHeight, 104f);
-            Vector3 end = new Vector3(88f, deckHeight, 104f);
-            SpawnModularBridge(parent, "WoodenRopeBridge", "MountainCrossingBridge", start, end,
-                30f, 9f, 0.85f, 1.1f, 4.4f);
-        }
-
-        private void SpawnModularBridge(Transform parent, string prefabName, string instanceName,
-            Vector3 start, Vector3 end, float targetLength, float preferredUniformScale,
-            float curveHeight, float visualVerticalOffset, float walkwayWidth)
-        {
-            GameObject leftPrefab = LoadNewNaturePrefab(prefabName + "Left");
-            GameObject middlePrefab = LoadNewNaturePrefab(prefabName + "Middle");
-            GameObject rightPrefab = LoadNewNaturePrefab(prefabName + "Right");
-            if (leftPrefab == null || middlePrefab == null || rightPrefab == null) return;
-
-            Vector3 direction = end - start;
-            Vector3 horizontalDirection = new Vector3(direction.x, 0f, direction.z).normalized;
-            Quaternion rotation = Quaternion.FromToRotation(Vector3.right, horizontalDirection);
-            Transform bridgeRoot = new GameObject(instanceName).transform;
-            bridgeRoot.SetParent(parent, false);
-            bridgeRoot.position = (start + end) * 0.5f - Vector3.up * visualVerticalOffset;
-            bridgeRoot.rotation = rotation;
-
-            Bounds leftBounds = CalculatePrefabMeshBounds(leftPrefab);
-            Bounds middleBounds = CalculatePrefabMeshBounds(middlePrefab);
-            Bounds rightBounds = CalculatePrefabMeshBounds(rightPrefab);
-            float preferredNormalizedLength = targetLength / Mathf.Max(preferredUniformScale, 0.001f);
-            int middleCount = Mathf.Clamp(Mathf.RoundToInt(
-                (preferredNormalizedLength - leftBounds.size.x - rightBounds.size.x)
-                / Mathf.Max(middleBounds.size.x, 0.001f)), 1, 96);
-            float normalizedLength = leftBounds.size.x + rightBounds.size.x + middleBounds.size.x * middleCount;
-            const float seamOverlap = 0.12f;
-            float uniformScale = (targetLength + seamOverlap * (middleCount + 1))
-                                 / Mathf.Max(normalizedLength, 0.001f);
-
-            float cursor = -targetLength * 0.5f;
-            cursor = PlaceBridgePart(bridgeRoot, leftPrefab, leftBounds, "LeftEnd", cursor,
-                targetLength, uniformScale, start.y, end.y, curveHeight, seamOverlap);
-            for (int index = 0; index < middleCount; index++)
-            {
-                cursor = PlaceBridgePart(bridgeRoot, middlePrefab, middleBounds, $"Middle_{index + 1:00}", cursor,
-                    targetLength, uniformScale, start.y, end.y, curveHeight, seamOverlap);
-            }
-            PlaceBridgePart(bridgeRoot, rightPrefab, rightBounds, "RightEnd", cursor,
-                targetLength, uniformScale, start.y, end.y, curveHeight, 0f);
-
-            Transform walkwayRoot = new GameObject(instanceName + "_WalkableSurface").transform;
-            walkwayRoot.SetParent(parent, false);
-            const int segments = 12;
-            for (int index = 0; index < segments; index++)
-            {
-                float startProgress = index / (float)segments;
-                float endProgress = (index + 1) / (float)segments;
-                Vector3 segmentStart = EvaluateBridgePoint(start, end, startProgress, curveHeight);
-                Vector3 segmentEnd = EvaluateBridgePoint(start, end, endProgress, curveHeight);
-                CreateWalkableBridgeSegment(walkwayRoot, index, segmentStart, segmentEnd, walkwayWidth);
-            }
-        }
-
-        private static float PlaceBridgePart(Transform parent, GameObject prefab, Bounds bounds, string name,
-            float cursor, float targetLength, float uniformScale, float startHeight, float endHeight,
-            float curveHeight, float seamOverlap)
-        {
-            float worldLength = bounds.size.x * uniformScale;
-            float centerAlongBridge = cursor + worldLength * 0.5f;
-            float progress = Mathf.Clamp01(centerAlongBridge / targetLength + 0.5f);
-            float linearHeight = Mathf.Lerp(startHeight, endHeight, progress) - (startHeight + endHeight) * 0.5f;
-            float curvedHeight = Mathf.Sin(progress * Mathf.PI) * curveHeight;
-
-            GameObject part = Instantiate(prefab, parent);
-            part.name = name;
-            part.transform.localRotation = Quaternion.identity;
-            part.transform.localScale = Vector3.one * uniformScale;
-            part.transform.localPosition = new Vector3(
-                cursor - bounds.min.x * uniformScale,
-                linearHeight + curvedHeight,
-                0f);
-            return cursor + worldLength - seamOverlap;
-        }
-
-        private static Bounds CalculatePrefabMeshBounds(GameObject prefab)
-        {
-            MeshFilter[] filters = prefab.GetComponentsInChildren<MeshFilter>(true);
-            bool initialized = false;
-            Bounds result = default;
-            Matrix4x4 rootInverse = prefab.transform.worldToLocalMatrix;
-            foreach (MeshFilter filter in filters)
-            {
-                if (filter.sharedMesh == null) continue;
-                Matrix4x4 matrix = rootInverse * filter.transform.localToWorldMatrix;
-                Bounds meshBounds = filter.sharedMesh.bounds;
-                Vector3 min = meshBounds.min;
-                Vector3 max = meshBounds.max;
-                for (int x = 0; x < 2; x++)
-                {
-                    for (int y = 0; y < 2; y++)
-                    {
-                        for (int z = 0; z < 2; z++)
-                        {
-                            Vector3 corner = new Vector3(x == 0 ? min.x : max.x,
-                                y == 0 ? min.y : max.y, z == 0 ? min.z : max.z);
-                            Vector3 point = matrix.MultiplyPoint3x4(corner);
-                            if (!initialized)
-                            {
-                                result = new Bounds(point, Vector3.zero);
-                                initialized = true;
-                            }
-                            else
-                            {
-                                result.Encapsulate(point);
-                            }
-                        }
-                    }
-                }
-            }
-
-            return initialized ? result : new Bounds(Vector3.zero, Vector3.one);
-        }
-
-        private static Vector3 EvaluateBridgePoint(Vector3 start, Vector3 end, float progress, float curveHeight)
-        {
-            Vector3 point = Vector3.Lerp(start, end, progress);
-            point.y += Mathf.Sin(progress * Mathf.PI) * curveHeight;
-            return point;
-        }
-
-        private static void CreateWalkableBridgeSegment(Transform parent, int index,
-            Vector3 start, Vector3 end, float width)
-        {
-            Vector3 delta = end - start;
-            GameObject segment = new GameObject($"WalkableBridgeSegment_{index + 1:00}");
-            segment.transform.SetParent(parent, false);
-            segment.transform.position = (start + end) * 0.5f;
-            segment.transform.rotation = Quaternion.LookRotation(delta.normalized, Vector3.up);
-            BoxCollider collider = segment.AddComponent<BoxCollider>();
-            collider.size = new Vector3(width, 0.32f, delta.magnitude + 0.28f);
-            segment.isStatic = true;
+                      $"{grassTufts} tufos de grama e {flowers} flores cartoon; nova cachoeira ativa.");
         }
 
         private int SpawnNewTrees(Transform parent, System.Random random)
@@ -781,7 +613,7 @@ namespace AnimalBattleRoyale
                     float size = giant ? NextNatureFloat(random, 3.6f, 4.8f) : NextNatureFloat(random, 1.35f, 2.8f);
                     Quaternion rotation = Quaternion.Euler(0f, NextNatureFloat(random, 0f, 360f), 0f);
                     SpawnScaledPrefab(mushroomsRoot, prefab, $"{prefabName}_{index + 1:00}",
-                        position, rotation, Vector3.one * size, climbable: false);
+                        position, rotation, Vector3.one * size);
                     created++;
                 }
             }
@@ -817,15 +649,12 @@ namespace AnimalBattleRoyale
         }
 
         private GameObject SpawnScaledPrefab(Transform parent, GameObject prefab, string name,
-            Vector3 position, Quaternion rotation, Vector3 scale, bool climbable = true)
+            Vector3 position, Quaternion rotation, Vector3 scale)
         {
             if (prefab == null) return null;
             GameObject instance = Instantiate(prefab, position, rotation, parent);
             instance.name = name;
             instance.transform.localScale = scale;
-            // scale.y approximates the tree/rock's own height since these prefabs are
-            // normalized to one metre on their largest axis before being scaled up here.
-            if (climbable) RegisterClimbable(position, Mathf.Max(scale.x, scale.z) * 0.3f, scale.y);
             return instance;
         }
 

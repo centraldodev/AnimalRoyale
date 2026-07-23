@@ -13,6 +13,9 @@ namespace AnimalBattleRoyale
         private const int SwampTreeCount = 42;
         private const string SwampTreeResourceRoot = "EnvironmentModels/NewNaturePack/";
 
+        private float swampWaterHeightCache;
+        private bool swampWaterHeightCached;
+
         private static readonly string[] SwampTreePrefabs =
         {
             "SwampTree1", "SwampTree2", "SwampTree3"
@@ -191,7 +194,15 @@ namespace AnimalBattleRoyale
 
         private float CalculateSwampWaterHeight()
         {
-            return CalculateNaturalLandHeight(SwampLakeCenter.x, SwampLakeCenter.y) - 1.15f;
+            // The swamp center is fixed for the whole match, so recomputing its noise
+            // height on every nearby ground-height query (once per DrawCircle/particle
+            // sample near the swamp) was pure waste. Cache it per generated world.
+            if (!swampWaterHeightCached)
+            {
+                swampWaterHeightCache = CalculateNaturalLandHeight(SwampLakeCenter.x, SwampLakeCenter.y) - 1.15f;
+                swampWaterHeightCached = true;
+            }
+            return swampWaterHeightCache;
         }
 
         private static bool IsInsideSwampReserve(Vector2 worldPosition, float margin)

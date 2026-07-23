@@ -24,9 +24,9 @@ namespace AnimalBattleRoyale
         // and wider behave exactly as before.
         private const float ReferenceAspect = 16f / 9f;
 
-        // Precision-aim zoom (right mouse button, nozes ammo) — fraction of the base FOV at
-        // full zoom, and how fast the blend moves toward the target each second.
-        private const float AimZoomFovFraction = 0.42f;
+        // Secondary aim shared by all ammo types. A smaller fraction gives the scope
+        // a noticeably stronger zoom while retaining the existing smooth transition.
+        private const float AimZoomFovFraction = 0.30f;
         private const float AimZoomBlendSpeed = 7f;
         private const float GrappleDistanceMultiplier = 1.55f;
         private const float GrappleFovMultiplier = 1.08f;
@@ -110,8 +110,7 @@ namespace AnimalBattleRoyale
             target = newTarget;
         }
 
-        /// <summary>Held state for the precision-aim zoom — set every frame by whoever owns
-        /// input (ThirdPersonAnimalController), since only it knows the current ammo type.</summary>
+        /// <summary>Held state for the secondary zoom, set every frame by the local controller.</summary>
         public void SetAiming(bool value) => aiming = value;
 
         private void ApplyAspectCorrectedFov()

@@ -7,6 +7,12 @@ namespace AnimalBattleRoyale
     /// <summary>Main lobby, character wardrobe and settings panel shown before a match.</summary>
     public sealed class CharacterSelectionMenu : MonoBehaviour
     {
+        private enum LobbyPanelTab
+        {
+            Online,
+            Settings
+        }
+
         private const float ReferenceWidth = 1672f;
         private const float ReferenceHeight = 941f;
         private const float SettingsPanelWidth = 458f;
@@ -16,6 +22,8 @@ namespace AnimalBattleRoyale
         private MenuAnimalPreview animalPreview;
         private Texture2D menuBackground;
         private Vector2 settingsScroll;
+        private Vector2 onlineScroll;
+        private LobbyPanelTab activeLobbyTab = LobbyPanelTab.Online;
         private bool animalDropdownOpen;
         private GameInputAction? waitingForBinding;
         private string bindingMessage = string.Empty;
@@ -200,15 +208,51 @@ namespace AnimalBattleRoyale
             DrawPanel(panel, new Color(0.004f, 0.045f, 0.035f, 0.82f),
                 new Color(0.24f, 0.48f, 0.27f, 1f), 2f);
             GUI.Label(new Rect(panel.x + 22f, panel.y + 12f, panel.width - 44f, 40f),
-                "CONFIGURAÇÕES", titleStyle);
+                "LOBBY", titleStyle);
+
+            const float tabGap = 8f;
+            float tabWidth = (panel.width - 44f - tabGap) * 0.5f;
+            Rect onlineTab = new Rect(panel.x + 18f, panel.y + 54f, tabWidth, 42f);
+            Rect settingsTab = new Rect(onlineTab.xMax + tabGap, onlineTab.y, tabWidth, onlineTab.height);
+            DrawLobbyPanelTab(onlineTab, "JOGAR ONLINE", LobbyPanelTab.Online);
+            DrawLobbyPanelTab(settingsTab, "CONFIGURAÇÕES", LobbyPanelTab.Settings);
 
             OnlineMultiplayerManager online = OnlineMultiplayerManager.Instance;
+            if (activeLobbyTab == LobbyPanelTab.Online)
+                DrawOnlineLobbyTab(panel, online);
+            else
+                DrawLobbySettingsTab(panel);
+        }
+
+        private void DrawLobbyPanelTab(Rect rect, string label, LobbyPanelTab tab)
+        {
+            bool selectedTab = activeLobbyTab == tab;
+            bool hovered = rect.Contains(Event.current.mousePosition);
+            Color fill = selectedTab
+                ? new Color(0.12f, 0.48f, 0.28f, 0.98f)
+                : hovered
+                    ? new Color(0.055f, 0.2f, 0.14f, 0.94f)
+                    : new Color(0.025f, 0.105f, 0.075f, 0.9f);
+            Color border = selectedTab
+                ? new Color(0.58f, 1f, 0.66f, 1f)
+                : new Color(0.16f, 0.38f, 0.25f, 1f);
+            DrawPanel(rect, fill, border, selectedTab ? 2f : 1f);
+            GUI.Label(rect, label, keyStyle);
+            if (GUI.Button(rect, GUIContent.none, GUIStyle.none))
+            {
+                activeLobbyTab = tab;
+                animalDropdownOpen = false;
+            }
+        }
+
+        private void DrawOnlineLobbyTab(Rect panel, OnlineMultiplayerManager online)
+        {
             int humans = online != null && online.IsConnected ? online.HumanPlayerCount : 1;
             int target = online != null ? online.ParticipantTarget : 15;
             int friends = Mathf.Max(0, humans - 1);
             int bots = Mathf.Max(0, target - humans);
 
-            Rect room = new Rect(panel.x + 18f, panel.y + 55f, panel.width - 36f, 72f);
+            Rect room = new Rect(panel.x + 18f, panel.y + 108f, panel.width - 36f, 76f);
             DrawPanel(room, new Color(0.02f, 0.085f, 0.06f, 0.7f),
                 new Color(0.44f, 0.78f, 0.3f, 1f), 1f);
             GUI.Label(new Rect(room.x + 14f, room.y + 5f, room.width - 28f, 28f),
@@ -217,13 +261,23 @@ namespace AnimalBattleRoyale
             GUI.Label(new Rect(room.x + 14f, room.y + 35f, room.width - 28f, 25f),
                 $"{friends} AMIGO(S)  •  {bots} BOT(S)  •  TOTAL {target}", centeredStyle);
 
-            Rect viewport = new Rect(panel.x + 14f, panel.y + 139f, panel.width - 28f, panel.height - 153f);
-            float contentHeight = 962f + GameInputBindings.Definitions.Count * 58f;
+            Rect viewport = new Rect(panel.x + 14f, room.yMax + 12f,
+                panel.width - 28f, panel.yMax - room.yMax - 28f);
+            Rect content = new Rect(0f, 0f, viewport.width - 20f, 230f);
+            onlineScroll = GUI.BeginScrollView(viewport, onlineScroll, content);
+            DrawOnlineSection(content.width, 0f, online);
+            GUI.EndScrollView();
+        }
+
+        private void DrawLobbySettingsTab(Rect panel)
+        {
+            Rect viewport = new Rect(panel.x + 14f, panel.y + 108f,
+                panel.width - 28f, panel.height - 122f);
+            float contentHeight = 820f + GameInputBindings.Definitions.Count * 58f;
             Rect content = new Rect(0f, 0f, viewport.width - 20f, contentHeight);
             settingsScroll = GUI.BeginScrollView(viewport, settingsScroll, content);
 
             float y = 0f;
-            y = DrawOnlineSection(content.width, y, online);
             y = DrawSliderSetting(content.width, y, "VOLUME GERAL",
                 GameSettings.MasterVolume, 0f, 1f, value => GameSettings.MasterVolume = value, true);
             y = DrawSliderSetting(content.width, y, "EFEITOS E AMBIENTE",

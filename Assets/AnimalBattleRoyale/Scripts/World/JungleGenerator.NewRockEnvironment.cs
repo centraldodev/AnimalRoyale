@@ -123,7 +123,6 @@ namespace AnimalBattleRoyale
                 GameObject instance = Instantiate(prefab, position, rotation, parent);
                 instance.name = $"{placement.PrefabName}_{index + 1:00}_{finalSize:0}m";
                 instance.transform.localScale = Vector3.one * finalSize;
-                RegisterClimbable(position, finalSize * 0.3f, finalSize);
                 created++;
             }
 

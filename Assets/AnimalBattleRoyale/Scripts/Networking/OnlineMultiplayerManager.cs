@@ -19,7 +19,8 @@ namespace AnimalBattleRoyale
         Ability,
         Consume,
         SelectWeapon,
-        Reload
+        Reload,
+        AbilitySecondary
     }
 
     public readonly struct NetworkSpawnDefinition
@@ -44,9 +45,6 @@ namespace AnimalBattleRoyale
     public sealed class OnlineMultiplayerManager : MonoBehaviour
     {
         private const int TargetParticipants = 15;
-        private const ushort LocalPort = 7777;
-        private const float LocalConnectionTimeout = 10f;
-        private const float LanInviteGracePeriod = 12f;
         private const string SelectionMessage = "ABR_SELECTION_V1";
         private const string StartMessage = "ABR_START_V1";
         private const string TransformMessage = "ABR_TRANSFORM_V1";
@@ -66,7 +64,6 @@ namespace AnimalBattleRoyale
         private NetworkManager networkManager;
         private UnityTransport transport;
         private CustomMessagingManager registeredMessagingManager;
-        private LanFriendDiscovery lanDiscovery;
         private ISession session;
         private AnimalType localSelection = AnimalType.Tiger;
         private ThirdPersonAnimalController localFighter;
@@ -74,15 +71,8 @@ namespace AnimalBattleRoyale
         private bool busy;
         private bool connected;
         private bool matchStarted;
-        private bool localLanSession;
-        private bool localClientConnecting;
-        private bool lanRefreshWasActive;
         private float nextSendTime;
-        private float localConnectionDeadline;
-        private float lanInviteWaitEndsAt;
-        private int expectedLanHumanCount;
         private string joinCodeInput = string.Empty;
-        private string directAddress = "127.0.0.1";
         private string status = "OFFLINE";
         private string visibleJoinCode = string.Empty;
 
@@ -93,15 +83,6 @@ namespace AnimalBattleRoyale
         public bool MatchStarted => matchStarted;
         public bool UsesRemoteAuthority => matchStarted && IsClientOnly;
         public bool IsBusy => busy;
-        public bool IsLanRefreshing => lanDiscovery != null && lanDiscovery.IsRefreshing;
-        public bool IsWaitingForLanFriend => IsHost && localLanSession && !matchStarted
-                                                    && expectedLanHumanCount > HumanPlayerCount
-                                                    && Time.unscaledTime < lanInviteWaitEndsAt;
-        public int LanInviteWaitSeconds => IsWaitingForLanFriend
-            ? Mathf.Max(1, Mathf.CeilToInt(lanInviteWaitEndsAt - Time.unscaledTime))
-            : 0;
-        public bool CanInviteLanFriends => !busy && !matchStarted
-                                                  && (!IsConnected || IsHost && localLanSession);
         public int ParticipantTarget => TargetParticipants;
         public int HumanPlayerCount => session != null ? session.PlayerCount
             : networkManager != null && networkManager.IsListening ? networkManager.ConnectedClientsIds.Count : 1;
@@ -109,18 +90,10 @@ namespace AnimalBattleRoyale
         public int FriendCount => Mathf.Max(0, HumanPlayerCount - 1);
         public string Status => status;
         public string JoinCode => visibleJoinCode;
-        public IReadOnlyList<LanPeerInfo> LanFriends => lanDiscovery != null
-            ? lanDiscovery.Peers
-            : Array.Empty<LanPeerInfo>();
         public string JoinCodeInput
         {
             get => joinCodeInput;
             set => joinCodeInput = value ?? string.Empty;
-        }
-        public string DirectAddress
-        {
-            get => directAddress;
-            set => directAddress = value ?? string.Empty;
         }
 
         private void Awake()
@@ -175,49 +148,8 @@ namespace AnimalBattleRoyale
 #endif
         }
 
-        private void EnsureLanDiscovery()
-        {
-            lanDiscovery = GetComponent<LanFriendDiscovery>();
-            if (lanDiscovery == null) lanDiscovery = gameObject.AddComponent<LanFriendDiscovery>();
-            lanDiscovery.IsInLobbyProvider = () => IsConnected && localLanSession;
-            lanDiscovery.IsJoinableProvider = () => !busy && !matchStarted && !IsConnected;
-            lanDiscovery.HumanCountProvider = () => HumanPlayerCount;
-            lanDiscovery.InviteReceived -= OnLanInviteReceived;
-            lanDiscovery.InviteReceived += OnLanInviteReceived;
-        }
-
         private void Update()
         {
-            if (lanRefreshWasActive && !IsLanRefreshing)
-            {
-                lanRefreshWasActive = false;
-                if (status == "PROCURANDO AMIGOS NA REDE LOCAL...")
-                {
-                    int found = LanFriends.Count;
-                    status = found == 0
-                        ? "NENHUM AMIGO ENCONTRADO NA REDE LOCAL"
-                        : found == 1 ? "1 AMIGO ENCONTRADO NA REDE LOCAL" : $"{found} AMIGOS ENCONTRADOS NA REDE LOCAL";
-                }
-            }
-
-            if (localClientConnecting && Time.unscaledTime >= localConnectionDeadline)
-            {
-                localClientConnecting = false;
-                busy = false;
-                connected = false;
-                localLanSession = false;
-                status = "O HOST LOCAL NÃO RESPONDEU";
-                if (networkManager != null && networkManager.IsListening) networkManager.Shutdown();
-            }
-
-            if (expectedLanHumanCount > 0 && Time.unscaledTime >= lanInviteWaitEndsAt)
-            {
-                expectedLanHumanCount = 0;
-                lanInviteWaitEndsAt = 0f;
-                if (IsHost && status.StartsWith("CONVITE ENVIADO", StringComparison.Ordinal))
-                    status = "AMIGO NÃO ENTROU — VOCÊ PODE INICIAR COM BOTS";
-            }
-
             if (!matchStarted || !IsConnected || Time.unscaledTime < nextSendTime) return;
             nextSendTime = Time.unscaledTime + SendInterval;
 
@@ -238,11 +170,6 @@ namespace AnimalBattleRoyale
         public bool HandleStartRequest(AnimalType type)
         {
             if (!IsConnected) return false;
-            if (IsWaitingForLanFriend)
-            {
-                status = $"AGUARDANDO O AMIGO ENTRAR — {LanInviteWaitSeconds}s";
-                return true;
-            }
             SetLocalSelection(type);
 
             if (IsClientOnly)
@@ -258,8 +185,16 @@ namespace AnimalBattleRoyale
 
         public void ReportAction(OnlineActionType action, Vector3 direction)
         {
-            if (!matchStarted || !IsClientOnly || localFighter == null) return;
+            if (!matchStarted || localFighter == null) return;
             if (!entityIds.TryGetValue(localFighter, out int entityId)) return;
+
+            if (IsHost)
+            {
+                if (action == OnlineActionType.AbilitySecondary)
+                    BroadcastAction(entityId, action, direction, ulong.MaxValue);
+                return;
+            }
+            if (!IsClientOnly) return;
 
             using FastBufferWriter writer = new FastBufferWriter(64, Allocator.Temp);
             writer.WriteValueSafe(entityId);
@@ -267,6 +202,31 @@ namespace AnimalBattleRoyale
             writer.WriteValueSafe(direction);
             networkManager.CustomMessagingManager.SendNamedMessage(ActionMessage, NetworkManager.ServerClientId, writer,
                 NetworkDelivery.ReliableSequenced);
+        }
+
+        public void ReportAuthoritativeAction(ThirdPersonAnimalController fighter,
+            OnlineActionType action, Vector3 direction)
+        {
+            if (!matchStarted || !IsHost || fighter == null
+                || action != OnlineActionType.AbilitySecondary) return;
+            if (!entityIds.TryGetValue(fighter, out int entityId)) return;
+            BroadcastAction(entityId, action, direction, ulong.MaxValue);
+        }
+
+        private void BroadcastAction(int entityId, OnlineActionType action, Vector3 direction,
+            ulong excludedClientId)
+        {
+            if (!IsHost || networkManager == null) return;
+            using FastBufferWriter writer = new FastBufferWriter(64, Allocator.Temp);
+            writer.WriteValueSafe(entityId);
+            writer.WriteValueSafe((byte)action);
+            writer.WriteValueSafe(direction);
+            foreach (ulong clientId in networkManager.ConnectedClientsIds)
+            {
+                if (clientId == networkManager.LocalClientId || clientId == excludedClientId) continue;
+                networkManager.CustomMessagingManager.SendNamedMessage(ActionMessage, clientId, writer,
+                    NetworkDelivery.ReliableSequenced);
+            }
         }
 
         public void RegisterSpawnedFighter(NetworkSpawnDefinition definition, ThirdPersonAnimalController fighter)
@@ -300,6 +260,9 @@ namespace AnimalBattleRoyale
             try
             {
                 await EnsureServicesReady();
+                // Must be configured before the session starts the host's NetworkManager
+                // listening, otherwise NGO ignores ConnectionApprovalCallback entirely.
+                ConfigureConnectionApproval();
                 SessionOptions options = new SessionOptions
                 {
                     Name = $"Animal Royale {DateTime.UtcNow:HHmm}",
@@ -381,114 +344,6 @@ namespace AnimalBattleRoyale
             }
         }
 
-        public void StartLocalHost()
-        {
-            if (busy || IsConnected) return;
-            ConfigureConnectionApproval();
-            RegisterNetworkHandlers();
-            transport.SetConnectionData("127.0.0.1", LocalPort, "0.0.0.0");
-            localLanSession = true;
-            if (!networkManager.StartHost())
-            {
-                localLanSession = false;
-                status = "NÃO FOI POSSÍVEL INICIAR O HOST LOCAL";
-                return;
-            }
-
-            RegisterNetworkHandlers();
-            connected = true;
-            visibleJoinCode = $"LAN:{LocalPort}";
-            status = $"HOST LOCAL ATIVO NA PORTA {LocalPort}";
-            SetLocalSelection(localSelection);
-            Debug.Log($"[Multiplayer] Host local iniciado na porta {LocalPort}.");
-        }
-
-        public void StartLocalClient()
-        {
-            StartLocalClientAt(directAddress, LocalPort);
-        }
-
-        private void StartLocalClientAt(string requestedAddress, ushort port)
-        {
-            if (busy || IsConnected) return;
-            string address = string.IsNullOrWhiteSpace(requestedAddress) ? "127.0.0.1" : requestedAddress.Trim();
-            directAddress = address;
-            RegisterNetworkHandlers();
-            transport.SetConnectionData(address, port);
-            localLanSession = true;
-            busy = true;
-            localClientConnecting = true;
-            if (!networkManager.StartClient())
-            {
-                busy = false;
-                localClientConnecting = false;
-                localLanSession = false;
-                status = "NÃO FOI POSSÍVEL INICIAR O CLIENTE LOCAL";
-                return;
-            }
-
-            RegisterNetworkHandlers();
-            connected = false;
-            localConnectionDeadline = Time.unscaledTime + LocalConnectionTimeout;
-            visibleJoinCode = $"{address}:{port}";
-            status = "CONECTANDO AO HOST LOCAL...";
-            Debug.Log($"[Multiplayer] Cliente tentando conectar a {address}:{port}.");
-        }
-
-        public void RefreshLanFriends()
-        {
-            if (matchStarted) return;
-            lanDiscovery?.RequestRefresh();
-            lanRefreshWasActive = lanDiscovery != null && lanDiscovery.IsAvailable;
-            status = lanDiscovery != null && lanDiscovery.IsAvailable
-                ? "PROCURANDO AMIGOS NA REDE LOCAL..."
-                : "DESCOBERTA DE REDE LOCAL INDISPONÍVEL";
-        }
-
-        public bool InviteLanFriend(string peerId)
-        {
-            if (!CanInviteLanFriends || lanDiscovery == null || string.IsNullOrWhiteSpace(peerId)) return false;
-            LanPeerInfo peer = lanDiscovery.Peers.FirstOrDefault(candidate => candidate.PeerId == peerId);
-            if (peer == null || !peer.IsJoinable)
-            {
-                status = "ESTE AMIGO NÃO ESTÁ DISPONÍVEL PARA CONVITE";
-                return false;
-            }
-
-            if (!IsConnected)
-            {
-                StartLocalHost();
-                if (!IsHost) return false;
-            }
-
-            if (!localLanSession || HumanPlayerCount >= TargetParticipants)
-            {
-                status = !localLanSession ? "CONVITES LOCAIS EXIGEM UMA SALA LAN" : "A SALA JÁ ESTÁ CHEIA";
-                return false;
-            }
-
-            // A pessoa que criou a sala pode deixar o endereço em branco: o convidado usa o IP
-            // de origem do próprio pacote. Clientes da mesma sala encaminham o IP do host.
-            string hostAddress = IsHost ? string.Empty : directAddress;
-            bool sent = lanDiscovery.SendInvite(peerId, hostAddress, LocalPort);
-            if (sent)
-            {
-                expectedLanHumanCount = Mathf.Min(TargetParticipants, HumanPlayerCount + 1);
-                lanInviteWaitEndsAt = Time.unscaledTime + LanInviteGracePeriod;
-            }
-            status = sent
-                ? $"CONVITE ENVIADO PARA {peer.DisplayName.ToUpperInvariant()}"
-                : "NÃO FOI POSSÍVEL ENVIAR O CONVITE";
-            return sent;
-        }
-
-        private void OnLanInviteReceived(LanInviteInfo invite)
-        {
-            if (matchStarted || busy || IsConnected) return;
-            status = $"CONVITE DE {invite.SenderDisplayName.ToUpperInvariant()} — ENTRANDO NA SALA...";
-            StartLocalClientAt(invite.HostAddress, invite.HostPort);
-        }
-
         private void ConfigureConnectionApproval()
         {
             if (networkManager == null || networkManager.IsListening) return;
@@ -535,13 +390,7 @@ namespace AnimalBattleRoyale
             connected = true;
             if (clientId == networkManager.LocalClientId)
             {
-                localClientConnecting = false;
                 busy = false;
-            }
-            if (expectedLanHumanCount > 0 && HumanPlayerCount >= expectedLanHumanCount)
-            {
-                expectedLanHumanCount = 0;
-                lanInviteWaitEndsAt = 0f;
             }
             status = IsHost
                 ? $"JOGADORES HUMANOS: {networkManager.ConnectedClientsIds.Count}/{TargetParticipants}"
@@ -657,9 +506,7 @@ namespace AnimalBattleRoyale
             }
             if (clientId != networkManager.LocalClientId) return;
             connected = false;
-            localClientConnecting = false;
             busy = false;
-            localLanSession = false;
             string reason = networkManager != null ? networkManager.DisconnectReason : string.Empty;
             status = string.IsNullOrWhiteSpace(reason)
                 ? "DESCONECTADO DO HOST"
@@ -893,13 +740,26 @@ namespace AnimalBattleRoyale
 
         private void ReceiveAction(ulong sender, FastBufferReader reader)
         {
-            if (!IsHost || !matchStarted) return;
+            if (!matchStarted) return;
             reader.ReadValueSafe(out int entityId);
             reader.ReadValueSafe(out byte actionValue);
             reader.ReadValueSafe(out Vector3 direction);
+            OnlineActionType action = (OnlineActionType)actionValue;
+
+            if (!IsHost)
+            {
+                if (sender != NetworkManager.ServerClientId
+                    || !entities.TryGetValue(entityId, out ThirdPersonAnimalController remoteFighter)
+                    || remoteFighter == null) return;
+                remoteFighter.ExecuteNetworkAction(action, direction);
+                return;
+            }
+
             if (!entityOwners.TryGetValue(entityId, out ulong ownerId) || ownerId != sender) return;
             if (!entities.TryGetValue(entityId, out ThirdPersonAnimalController fighter) || fighter == null) return;
-            fighter.ExecuteNetworkAction((OnlineActionType)actionValue, direction);
+            bool executed = fighter.ExecuteNetworkAction(action, direction);
+            if (executed && action == OnlineActionType.AbilitySecondary)
+                BroadcastAction(entityId, action, direction, sender);
         }
 
         private static string ShortError(Exception exception)
@@ -924,7 +784,6 @@ namespace AnimalBattleRoyale
 
         private void OnDestroy()
         {
-            if (lanDiscovery != null) lanDiscovery.InviteReceived -= OnLanInviteReceived;
             if (registeredMessagingManager != null)
             {
                 registeredMessagingManager.UnregisterNamedMessageHandler(SelectionMessage);

@@ -175,33 +175,11 @@ namespace AnimalBattleRoyale
             zone.AddComponent<SafeZoneController>();
         }
 
-        private static void EnsureDiamondObjective(JungleGenerator jungle)
-        {
-            DiamondObjectiveManager objective = DiamondObjectiveManager.Instance;
-            if (objective == null)
-            {
-                GameObject objectiveObject = new GameObject("DiamondEscapeObjective");
-                objective = objectiveObject.AddComponent<DiamondObjectiveManager>();
-            }
-            objective.Initialize(jungle);
-        }
-
         private static void EnsureAmbientAudio()
         {
             if (AmbientAudioController.Instance != null) return;
             GameObject ambienceObject = new GameObject("AmbientAudioController");
             ambienceObject.AddComponent<AmbientAudioController>();
-        }
-
-        private static void EnsureMissionDirector(JungleGenerator jungle)
-        {
-            ForestMissionDirector director = ForestMissionDirector.Instance;
-            if (director == null)
-            {
-                GameObject directorObject = new GameObject("ForestMissionDirector");
-                director = directorObject.AddComponent<ForestMissionDirector>();
-            }
-            director.Initialize(jungle);
         }
 
         private static Camera EnsureCamera()
@@ -316,6 +294,7 @@ namespace AnimalBattleRoyale
             CartoonColorGrading.Ensure(camera, 1.24f, 1.05f, 0.95f);
             ThirdPersonCamera thirdPersonCamera = camera.GetComponent<ThirdPersonCamera>();
             if (thirdPersonCamera == null) thirdPersonCamera = camera.gameObject.AddComponent<ThirdPersonCamera>();
+            ScopeLensEffect.Ensure(camera);
             thirdPersonCamera.SetTarget(target);
 
             ThirdPersonAnimalController controller = target.GetComponent<ThirdPersonAnimalController>();

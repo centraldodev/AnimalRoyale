@@ -20,6 +20,9 @@ namespace AnimalBattleRoyale
 
         public static void PlayPower(AnimalType type, int slot, Vector3 position)
         {
+            // The authored animal ability clips now belong to the secondary E abilities.
+            // Q remains focused on movement and no longer plays these combat-effect sounds.
+            if (slot != 1) return;
             if (type == AnimalType.Tiger) PlayTigerPounce(position);
             else if (type == AnimalType.Monkey) PlayMonkeyVine(position);
             else if (type == AnimalType.Eagle) PlayEagleFlight(position);

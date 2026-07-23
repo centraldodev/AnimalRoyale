@@ -12,6 +12,17 @@ namespace AnimalBattleRoyale
         public float CurrentHealth { get; private set; } = 100f;
         public bool IsDead { get; private set; }
         public ThirdPersonAnimalController Owner { get; private set; }
+        private float temporaryShield;
+        private float temporaryShieldExpiresAt;
+
+        public float TemporaryShield
+        {
+            get
+            {
+                ExpireTemporaryShield();
+                return temporaryShield;
+            }
+        }
 
         public void Initialize(float maxHealth, ThirdPersonAnimalController owner)
         {
@@ -19,6 +30,8 @@ namespace AnimalBattleRoyale
             CurrentHealth = MaxHealth;
             Owner = owner;
             IsDead = false;
+            temporaryShield = 0f;
+            temporaryShieldExpiresAt = 0f;
             HealthChanged?.Invoke(CurrentHealth, MaxHealth);
         }
 
@@ -40,6 +53,17 @@ namespace AnimalBattleRoyale
             if (Owner != null) amount = Owner.ModifyIncomingDamage(amount);
             if (amount <= 0f) return;
 
+            ExpireTemporaryShield();
+            if (temporaryShield > 0f)
+            {
+                float absorbed = Mathf.Min(temporaryShield, amount);
+                temporaryShield -= absorbed;
+                amount -= absorbed;
+                AttackVfx.CreateBurst(transform.position + Vector3.up * 0.75f,
+                    new Color(0.58f, 0.9f, 1f), 1.15f);
+                if (amount <= 0f) return;
+            }
+
             CurrentHealth = Mathf.Max(0f, CurrentHealth - amount);
             HealthChanged?.Invoke(CurrentHealth, MaxHealth);
 
@@ -59,10 +83,30 @@ namespace AnimalBattleRoyale
             HealthChanged?.Invoke(CurrentHealth, MaxHealth);
         }
 
+        public void GrantTemporaryShield(float amount, float duration)
+        {
+            if (IsDead || amount <= 0f || duration <= 0f) return;
+            temporaryShield = Mathf.Max(temporaryShield, amount);
+            temporaryShieldExpiresAt = Time.time + duration;
+            DefensiveShieldEffect.Show(transform, this, duration);
+        }
+
+        private void ExpireTemporaryShield()
+        {
+            if (temporaryShield <= 0f || Time.time < temporaryShieldExpiresAt) return;
+            temporaryShield = 0f;
+            temporaryShieldExpiresAt = 0f;
+        }
+
         public void ApplyReplicatedState(float currentHealth)
         {
             CurrentHealth = Mathf.Clamp(currentHealth, 0f, MaxHealth);
             IsDead = CurrentHealth <= 0f;
+            if (IsDead)
+            {
+                temporaryShield = 0f;
+                temporaryShieldExpiresAt = 0f;
+            }
             HealthChanged?.Invoke(CurrentHealth, MaxHealth);
         }
 

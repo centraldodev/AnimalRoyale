@@ -59,28 +59,28 @@ namespace AnimalBattleRoyale
             return type switch
             {
                 AnimalType.Tiger => new AnimalStats(
-                    "Tigre", new[] { "Bote Certeiro", "DESATIVADO", "DESATIVADO" },
-                    100f, 6.1f, 9.0f, 6.2f, 22.5f, 2.0f, 0.9f, new[] { 8f, 0f, 0f }, 0.62f, 1.45f,
+                    "Tigre", new[] { "Bote Certeiro", "Rugido Dominante", "DESATIVADO" },
+                    100f, 6.1f, 9.0f, 6.2f, 22.5f, 2.0f, 0.9f, new[] { 8f, 18f, 0f }, 0.62f, 1.45f,
                     Vector3.one * 0.78f, new Color(0.95f, 0.42f, 0.08f)),
 
                 AnimalType.Ant => new AnimalStats(
-                    "Formiga", new[] { "Entrar no Túnel", "DESATIVADO", "DESATIVADO" },
-                    100f, 6.7f, 9.4f, 7.4f, 16f, 1.6f, 0.7f, new[] { 8f, 0f, 0f }, 0.42f, 1.0f,
+                    "Formiga", new[] { "Entrar no Túnel", "Ácido Corrosivo", "DESATIVADO" },
+                    100f, 6.7f, 9.4f, 7.4f, 16f, 1.6f, 0.7f, new[] { 8f, 20f, 0f }, 0.42f, 1.0f,
                     Vector3.one * 0.72f, new Color(0.86f, 0.36f, 0.14f)),
 
                 AnimalType.Eagle => new AnimalStats(
-                    "Águia", new[] { "Salto Planado", "DESATIVADO", "DESATIVADO" },
-                    100f, 6.2f, 9.5f, 8.6f, 18f, 1.85f, 0.82f, new[] { 8f, 0f, 0f }, 0.46f, 1.3f,
+                    "Águia", new[] { "Salto Planado", "Visão de Águia", "DESATIVADO" },
+                    100f, 6.2f, 9.5f, 8.6f, 18f, 1.85f, 0.82f, new[] { 8f, 24f, 0f }, 0.46f, 1.3f,
                     Vector3.one * 0.8f, new Color(0.74f, 0.68f, 0.58f)),
 
                 AnimalType.Monkey => new AnimalStats(
-                    "Macaco", new[] { "Gancho de Cipó", "DESATIVADO", "DESATIVADO" },
-                    100f, 6.5f, 9.2f, 8.0f, 19f, 1.75f, 0.76f, new[] { 8f, 0f, 0f }, 0.46f, 1.2f,
+                    "Macaco", new[] { "Gancho de Cipó", "Laço de Cipó", "DESATIVADO" },
+                    100f, 6.5f, 9.2f, 8.0f, 19f, 1.75f, 0.76f, new[] { 8f, 20f, 0f }, 0.46f, 1.2f,
                     Vector3.one * 0.76f, new Color(0.55f, 0.36f, 0.2f)),
 
                 AnimalType.Cow => new AnimalStats(
-                    "Vaca", new[] { "Investida", "DESATIVADO", "DESATIVADO" },
-                    100f, 5.8f, 8.4f, 5.8f, 24f, 2.1f, 0.95f, new[] { 8f, 0f, 0f }, 0.68f, 1.55f,
+                    "Vaca", new[] { "Investida", "Leite Fortificante", "DESATIVADO" },
+                    100f, 5.8f, 8.4f, 5.8f, 24f, 2.1f, 0.95f, new[] { 8f, 24f, 0f }, 0.68f, 1.55f,
                     Vector3.one * 0.85f, new Color(0.68f, 0.5f, 0.32f)),
 
                 _ => throw new System.ArgumentOutOfRangeException(nameof(type), type, null)

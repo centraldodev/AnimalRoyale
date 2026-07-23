@@ -226,6 +226,7 @@ namespace AnimalBattleRoyale
             ClearGeneratedWorld();
             if (randomizeSeedEveryMatch) seed = unchecked(System.Environment.TickCount ^ (int)System.DateTime.UtcNow.Ticks);
             Random.InitState(seed);
+            swampWaterHeightCached = false;
 
             GameObject generated = new GameObject("GeneratedJungle");
             generated.transform.SetParent(transform, false);
@@ -1870,78 +1871,6 @@ namespace AnimalBattleRoyale
             }
         }
 
-        private static void CreateCrystalCluster(Transform parent, Vector3 position, Material blueMaterial, Material purpleMaterial, Material rockMaterial)
-        {
-            GameObject cluster = new GameObject("CrystalCluster");
-            cluster.transform.SetParent(parent, false);
-            cluster.transform.position = position;
-            cluster.transform.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-            cluster.isStatic = true;
-
-            GameObject glow = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            glow.name = "CrystalGlowBase";
-            glow.transform.SetParent(cluster.transform, false);
-            glow.transform.localPosition = Vector3.up * 0.12f;
-            glow.transform.localScale = new Vector3(1.6f, 0.12f, 1.6f);
-            glow.GetComponent<Renderer>().sharedMaterial = Random.value > 0.5f ? blueMaterial : purpleMaterial;
-            Collider glowCollider = glow.GetComponent<Collider>();
-            if (glowCollider != null) Destroy(glowCollider);
-
-            for (int i = 0; i < 4; i++)
-            {
-                float angle = i * Mathf.PI * 0.5f + Random.Range(-0.3f, 0.3f);
-                GameObject rockPrefab = GetRandomArtRefRockPrefab();
-                if (rockPrefab != null)
-                {
-                    GameObject baseRock = Object.Instantiate(rockPrefab, cluster.transform, false);
-                    baseRock.name = "CrystalBaseArtRefRock";
-                    baseRock.transform.localPosition = new Vector3(
-                        Mathf.Cos(angle) * 0.72f, 0.02f, Mathf.Sin(angle) * 0.72f);
-                    baseRock.transform.localRotation = Quaternion.Euler(
-                        Random.Range(-8f, 8f), Random.Range(0f, 360f), Random.Range(-8f, 8f));
-                    float size = Random.Range(0.28f, 0.48f);
-                    baseRock.transform.localScale = new Vector3(size, size * Random.Range(0.62f, 0.88f), size);
-                    ApplyArtRefMaterial(baseRock, GetArtRefRockMaterial());
-                    ConfigureArtRefRockLods(baseRock);
-                    foreach (Collider rockCollider in baseRock.GetComponentsInChildren<Collider>(true))
-                    {
-                        if (rockCollider != null) Destroy(rockCollider);
-                    }
-                    baseRock.isStatic = true;
-                }
-                else
-                {
-                    GameObject baseRock = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    baseRock.name = "CrystalBaseRockFallback";
-                    baseRock.transform.SetParent(cluster.transform, false);
-                    baseRock.transform.localPosition = new Vector3(
-                        Mathf.Cos(angle) * 0.72f, 0.16f, Mathf.Sin(angle) * 0.72f);
-                    baseRock.transform.localScale = new Vector3(Random.Range(0.45f, 0.75f),
-                        Random.Range(0.2f, 0.38f), Random.Range(0.45f, 0.75f));
-                    baseRock.GetComponent<Renderer>().sharedMaterial = rockMaterial;
-                    Collider rockCollider = baseRock.GetComponent<Collider>();
-                    if (rockCollider != null) Destroy(rockCollider);
-                }
-            }
-
-            int count = Random.Range(3, 7);
-            for (int i = 0; i < count; i++)
-            {
-                GameObject crystal = new GameObject("MagicCrystal");
-                crystal.name = "MagicCrystal";
-                crystal.transform.SetParent(cluster.transform, false);
-                crystal.transform.localPosition = new Vector3(Random.Range(-0.72f, 0.72f), Random.Range(0.55f, 0.95f), Random.Range(-0.72f, 0.72f));
-                float height = i == 0 ? Random.Range(1.5f, 2.15f) : Random.Range(0.72f, 1.5f);
-                crystal.transform.localScale = new Vector3(height * Random.Range(0.22f, 0.3f), height, height * Random.Range(0.22f, 0.3f));
-                crystal.transform.localRotation = Quaternion.Euler(Random.Range(-14f, 14f), Random.Range(0f, 360f), Random.Range(-14f, 14f));
-                MeshFilter filter = crystal.AddComponent<MeshFilter>();
-                filter.sharedMesh = GetCrystalMesh();
-                MeshRenderer renderer = crystal.AddComponent<MeshRenderer>();
-                renderer.sharedMaterial = Random.value > 0.48f ? blueMaterial : purpleMaterial;
-                renderer.shadowCastingMode = ShadowCastingMode.Off;
-                renderer.receiveShadows = false;
-            }
-        }
 
         private static void CreateWaterfall(Transform parent, Vector3 position, Material waterMaterial, Material rockMaterial)
         {
@@ -2541,52 +2470,10 @@ namespace AnimalBattleRoyale
 
         private void ClearGeneratedWorld()
         {
-            climbableSpots.Clear();
             Transform existing = transform.Find("GeneratedJungle");
             if (existing == null) return;
             if (Application.isPlaying) Destroy(existing.gameObject);
             else DestroyImmediate(existing.gameObject);
-        }
-
-        /// <summary>A tree or rock the ant can climb, straight up along its trunk from ground level.</summary>
-        public readonly struct ClimbableSpot
-        {
-            public readonly Vector3 BasePosition;
-            public readonly float Height;
-            public readonly float Radius;
-
-            public ClimbableSpot(Vector3 basePosition, float height, float radius)
-            {
-                BasePosition = basePosition;
-                Height = height;
-                Radius = radius;
-            }
-        }
-
-        private readonly List<ClimbableSpot> climbableSpots = new List<ClimbableSpot>();
-
-        private void RegisterClimbable(Vector3 basePosition, float radius, float height)
-        {
-            climbableSpots.Add(new ClimbableSpot(basePosition, Mathf.Max(1f, height), Mathf.Max(0.5f, radius)));
-        }
-
-        /// <summary>Finds the nearest climbable tree/rock trunk within range, regardless of facing.</summary>
-        public bool TryFindNearestClimbable(Vector3 fromPosition, float maxRange, out ClimbableSpot spot)
-        {
-            spot = default;
-            bool found = false;
-            float bestDistance = float.MaxValue;
-            for (int i = 0; i < climbableSpots.Count; i++)
-            {
-                ClimbableSpot candidate = climbableSpots[i];
-                Vector3 planarOffset = new Vector3(candidate.BasePosition.x - fromPosition.x, 0f, candidate.BasePosition.z - fromPosition.z);
-                float distance = Mathf.Max(0f, planarOffset.magnitude - candidate.Radius);
-                if (distance > maxRange || distance >= bestDistance) continue;
-                bestDistance = distance;
-                spot = candidate;
-                found = true;
-            }
-            return found;
         }
 
         private readonly struct TrailRoute

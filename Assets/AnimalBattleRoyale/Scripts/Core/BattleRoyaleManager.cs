@@ -400,6 +400,7 @@ namespace AnimalBattleRoyale
             if (!mobileControls) DrawAbilityAndAmmoBar();
 
             DrawAimReticle();
+            DrawEagleVisionReveals();
 
             DrawMinimap();
 
@@ -455,38 +456,6 @@ namespace AnimalBattleRoyale
                 if (!fighters.Contains(fighter)) RegisterFighter(fighter);
                 return;
             }
-        }
-
-        private void DrawMissionHud()
-        {
-            ForestMissionDirector director = ForestMissionDirector.Instance;
-            if (LocalPlayer == null || director == null) return;
-            float panelWidth = Mathf.Min(382f, viewWidth * 0.31f);
-            Rect panel = new Rect(20f, 20f, panelWidth, 112f);
-            DrawCartoonPanel(panel, new Color(0.025f, 0.045f, 0.048f, 0.9f), new Color(0.2f, 0.34f, 0.31f, 0.95f), 1f);
-            GUI.Label(new Rect(panel.x + 16f, panel.y + 10f, panel.width - 32f, 18f), "OBJETIVOS", eyebrowStyle);
-            DrawQuestCard(new Rect(panel.x + 16f, panel.y + 37f, panel.width - 32f, 28f), director.GlobalMissionText, new Color(0.98f, 0.74f, 0.24f));
-            DrawQuestCard(new Rect(panel.x + 16f, panel.y + 72f, panel.width - 32f, 28f), director.AnimalMissionText, new Color(0.36f, 0.86f, 0.58f));
-            if (!string.IsNullOrEmpty(director.EventMessage))
-            {
-                float minimapSize = Mathf.Clamp(viewHeight * 0.22f, 176f, 218f);
-                float minimapLeft = viewWidth - minimapSize - 20f;
-                float availableWidth = minimapLeft - panel.xMax - 24f;
-                float bannerWidth = Mathf.Clamp(availableWidth, 280f, 440f);
-                float bannerX = Mathf.Clamp((viewWidth - bannerWidth) * 0.5f, panel.xMax + 12f, minimapLeft - bannerWidth - 12f);
-                Rect banner = new Rect(bannerX, 20f, bannerWidth, 38f);
-                DrawCartoonPanel(banner, new Color(0.08f, 0.055f, 0.11f, 0.94f), new Color(0.78f, 0.46f, 0.94f, 1f), 1f);
-                GUI.Label(banner, director.EventMessage, centeredStyle);
-            }
-        }
-
-        private void DrawQuestCard(Rect rect, string text, Color accent)
-        {
-            Color oldColor = GUI.color;
-            GUI.color = accent;
-            GUI.DrawTexture(new Rect(rect.x, rect.y + 3f, 3f, rect.height - 6f), Texture2D.whiteTexture);
-            GUI.color = oldColor;
-            GUI.Label(new Rect(rect.x + 12f, rect.y, rect.width - 12f, rect.height), text, smallStyle);
         }
 
         private static void RestartMatch()
@@ -557,6 +526,13 @@ namespace AnimalBattleRoyale
             DrawStatBar(new Rect(contentX, textY + 24f, contentWidth, 22f), healthNormalized, healthTrailNormalized,
                 healthColor, "VIDA", GetHealthText(health));
             DrawLivesHearts(new Rect(contentX, textY + 52f, contentWidth, 24f), LocalPlayer.LivesRemaining);
+            float shield = health.TemporaryShield;
+            if (shield > 0.01f)
+            {
+                Rect shieldBadge = new Rect(contentX + 86f, textY + 52f, contentWidth - 86f, 22f);
+                DrawRoundedRect(shieldBadge, new Color(0.08f, 0.35f, 0.5f, 0.86f));
+                GUI.Label(shieldBadge, $"ESCUDO  +{Mathf.CeilToInt(shield)}", rightStyle);
+            }
 
             if (healthNormalized <= 0.25f) DrawLowHealthVignette();
         }
@@ -834,8 +810,8 @@ namespace AnimalBattleRoyale
             return Color.Lerp(color, new Color(gray, gray, gray, color.a), amount);
         }
 
-        // Bottom-center row: Ability 1 (Q) — Ammo/reload (bigger, center) — Ability 2 (E,
-        // reserved for a future ability). Ability and ammo icons desaturate to grayscale when
+        // Bottom-center row: Ability 1 (Q) — Ammo/reload (bigger, center) — Ability 2 (E).
+        // Ability and ammo icons desaturate to grayscale when
         // unavailable (on cooldown / out of ammo), mirroring the weapon selector's locked look.
         private const float AbilityIconSize = 84f;
         private const float AmmoIconSize = 140f;
@@ -861,7 +837,10 @@ namespace AnimalBattleRoyale
             string abilityKey = MobileInputController.ControlsEnabled ? "P" : GameInputBindings.GetDisplayName(GameInputAction.Ability);
             DrawAbilitySlot(ability1Rect, 0, abilityKey);
             DrawAmmoSlot(ammoRect);
-            DrawAbilitySlot(ability2Rect, 1, "E");
+            string secondaryAbilityKey = MobileInputController.ControlsEnabled
+                ? "E"
+                : GameInputBindings.GetDisplayName(GameInputAction.AbilitySecondary);
+            DrawAbilitySlot(ability2Rect, 1, secondaryAbilityKey);
         }
 
         private void DrawAbilitySlot(Rect rect, int slot, string keyLabel)
@@ -1097,75 +1076,12 @@ namespace AnimalBattleRoyale
             }
         }
 
-        private void DrawCombatModeHud()
-        {
-            if (LocalPlayer == null) return;
-            float powerWidth = 350f;
-            float powerX = (viewWidth - powerWidth) * 0.5f;
-            if (powerX < 430f) powerX = Mathf.Min(430f, viewWidth - powerWidth - 20f);
-
-            float width = 420f;
-            float x = powerX + powerWidth + 10f;
-            float y = viewHeight - 108f;
-            if (x + width > viewWidth - 20f)
-            {
-                x = Mathf.Max(20f, powerX + powerWidth - width);
-                y -= 110f;
-            }
-
-            bool hasAmmo = LocalPlayer.RangedAmmo > 0;
-            bool reloading = LocalPlayer.IsRangedReloading;
-            Color accent = reloading
-                ? new Color(0.96f, 0.68f, 0.2f)
-                : hasAmmo ? new Color(0.28f, 0.82f, 1f) : new Color(1f, 0.3f, 0.24f);
-            Rect panel = new Rect(x, y, width, 96f);
-            DrawCartoonPanel(panel, new Color(0.025f, 0.045f, 0.048f, 0.94f), accent, 1f);
-            GUI.Label(new Rect(panel.x + 12f, panel.y + 8f, panel.width - 24f, 16f),
-                "ATALHOS DE ATAQUE", eyebrowStyle);
-            DrawShortcutRow(new Rect(panel.x + 12f, panel.y + 27f, panel.width - 24f, 26f),
-                GameInputAction.RangedAttack, "Ataque longo", accent);
-            DrawShortcutRow(new Rect(panel.x + 12f, panel.y + 57f, panel.width - 24f, 26f),
-                GameInputAction.MeleeAttack, "Ataque corpo a corpo", new Color(0.96f, 0.68f, 0.2f));
-            string ammoStatus = reloading
-                ? $"RECARGA {LocalPlayer.RangedReloadSecondsRemaining:0.0}s"
-                : $"PENTE {LocalPlayer.RangedMagazineAmmo}/{LocalPlayer.RangedMagazineCapacityValue}  RES. {LocalPlayer.RangedReserveAmmo}";
-            GUI.Label(new Rect(panel.x + panel.width - 190f, panel.y + 8f, 178f, 20f), ammoStatus, rightStyle);
-            Rect modeBar = new Rect(panel.x + 12f, panel.y + 86f, panel.width - 24f, 4f);
-            DrawRoundedRect(modeBar, new Color(accent.r, accent.g, accent.b, 0.75f));
-        }
-
-        private void DrawShortcutRow(Rect row, GameInputAction action, string label, Color accent)
-        {
-            Rect icon = new Rect(row.x, row.y, 58f, row.height);
-            DrawKeycapIcon(icon, GameInputBindings.GetDisplayName(action), accent, true);
-            GUI.Label(new Rect(row.x + 68f, row.y, row.width - 68f, row.height),
-                $"{GameInputBindings.GetDisplayName(action)} - {label}", smallStyle);
-        }
-
         private void DrawKeycapIcon(Rect rect, string keyText, Color accent, bool ready)
         {
             Color fill = ready ? new Color(0.12f, 0.38f, 0.25f, 1f) : new Color(0.16f, 0.17f, 0.16f, 1f);
             DrawCartoonPanel(rect, fill, accent, 1f);
             DrawRoundedRect(new Rect(rect.x + 5f, rect.y + 5f, rect.width - 10f, 5f), new Color(1f, 1f, 1f, 0.12f));
             GUI.Label(rect, keyText, centeredStyle);
-        }
-
-        private void DrawMouseIcon(Rect rect, bool leftButton, Color accent)
-        {
-            Rect body = new Rect(rect.x + 12f, rect.y + 2f, 34f, rect.height - 4f);
-            DrawRoundedRect(body, new Color(0.06f, 0.075f, 0.075f, 1f));
-            DrawRoundedRect(new Rect(body.x + 2f, body.y + 2f, body.width - 4f, body.height - 4f), new Color(0.13f, 0.16f, 0.16f, 1f));
-
-            Rect left = new Rect(body.x + 4f, body.y + 4f, body.width * 0.5f - 5f, body.height * 0.42f);
-            Rect right = new Rect(body.center.x + 1f, body.y + 4f, body.width * 0.5f - 5f, body.height * 0.42f);
-            DrawRoundedRect(leftButton ? left : right, accent);
-            DrawRoundedRect(leftButton ? right : left, new Color(0.22f, 0.25f, 0.25f, 1f));
-
-            Color previous = GUI.color;
-            GUI.color = new Color(0.03f, 0.04f, 0.04f, 1f);
-            GUI.DrawTexture(new Rect(body.center.x - 1f, body.y + 4f, 2f, body.height * 0.42f), Texture2D.whiteTexture);
-            GUI.DrawTexture(new Rect(body.x + 10f, body.y + body.height * 0.5f, body.width - 20f, 2f), Texture2D.whiteTexture);
-            GUI.color = previous;
         }
 
         private void DrawAimReticle()
@@ -1182,14 +1098,9 @@ namespace AnimalBattleRoyale
 
             float centerX = viewWidth * 0.5f;
             float centerY = viewHeight * 0.5f;
-            if (precisionAiming)
-            {
-                // Tight dot + thin ring instead of the open 4-tick crosshair — reads as
-                // "zoomed/precise" while aiming down the sights.
-                GUI.DrawTexture(new Rect(centerX - 1.5f, centerY - 1.5f, 3f, 3f), Texture2D.whiteTexture);
-                RuntimeGuiTheme.DrawCircle(new Rect(centerX - 22f, centerY - 22f, 44f, 44f), GUI.color, ring: true);
-            }
-            else
+            // During secondary aim the camera effect renders the full resolution-independent
+            // scope. Keep the regular HUD reticle only outside that mode.
+            if (!precisionAiming)
             {
                 GUI.DrawTexture(new Rect(centerX - 14f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
                 GUI.DrawTexture(new Rect(centerX + 6f, centerY - 1f, 8f, 2f), Texture2D.whiteTexture);
@@ -1224,6 +1135,56 @@ namespace AnimalBattleRoyale
                     GUI.Label(new Rect(centerX - 100f, centerY + 22f, 200f, 24f), "SEM MUNIÇÃO", centeredStyle);
                 }
             }
+        }
+
+        private void DrawEagleVisionReveals()
+        {
+            if (LocalPlayer == null || !LocalPlayer.IsEagleVisionActive || Camera.main == null) return;
+
+            Camera camera = Camera.main;
+            Color previous = GUI.color;
+            GUI.color = new Color(1f, 0.84f, 0.18f, 0.96f);
+            foreach (ThirdPersonAnimalController fighter in fighters)
+            {
+                if (!IsRevealedByEagleVision(fighter)) continue;
+                Vector3 head = fighter.transform.position
+                               + Vector3.up * (fighter.Stats.ControllerHeight * 0.72f);
+                Vector3 screen = camera.WorldToScreenPoint(head);
+                if (screen.z <= 0f) continue;
+
+                float x = screen.x / uiScale;
+                float y = viewHeight - screen.y / uiScale;
+                float size = Mathf.Lerp(48f, 25f, Mathf.Clamp01(screen.z / ThirdPersonAnimalController.EagleVisionRange));
+                float arm = size * 0.28f;
+                float half = size * 0.5f;
+                DrawBracketCorner(x - half, y - half, arm, arm, false, false);
+                DrawBracketCorner(x + half, y - half, -arm, arm, true, false);
+                DrawBracketCorner(x - half, y + half, arm, -arm, false, true);
+                DrawBracketCorner(x + half, y + half, -arm, -arm, true, true);
+                GUI.Label(new Rect(x - 34f, y + half + 2f, 68f, 18f),
+                    $"{Vector3.Distance(LocalPlayer.transform.position, fighter.transform.position):0} m",
+                    eyebrowStyle);
+            }
+            GUI.color = previous;
+        }
+
+        private bool IsRevealedByEagleVision(ThirdPersonAnimalController fighter)
+        {
+            return LocalPlayer != null && LocalPlayer.IsEagleVisionActive
+                   && fighter != null && fighter != LocalPlayer && fighter.Health != null
+                   && !fighter.Health.IsDead && !fighter.IsBurrowed
+                   && Vector3.SqrMagnitude(fighter.transform.position - LocalPlayer.transform.position)
+                   <= ThirdPersonAnimalController.EagleVisionRange
+                      * ThirdPersonAnimalController.EagleVisionRange;
+        }
+
+        private static void DrawBracketCorner(float x, float y, float horizontal,
+            float vertical, bool right, bool bottom)
+        {
+            float horizontalX = right ? x + horizontal : x;
+            float verticalY = bottom ? y + vertical : y;
+            GUI.DrawTexture(new Rect(horizontalX, y, Mathf.Abs(horizontal), 2f), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(x, verticalY, 2f, Mathf.Abs(vertical)), Texture2D.whiteTexture);
         }
 
         private void DrawMinimap()
@@ -1320,10 +1281,24 @@ namespace AnimalBattleRoyale
                 }
                 else
                 {
+                    bool revealed = IsRevealedByEagleVision(fighter);
+                    if (revealed)
+                    {
+                        GUI.color = new Color(1f, 0.84f, 0.18f, 1f);
+                        GUI.DrawTexture(new Rect(point.x - 6f, point.y - 6f, 12f, 12f),
+                            RuntimeGuiTheme.RingTexture);
+                        GUI.color = new Color(1f, 0.32f, 0.12f, 1f);
+                        GUI.DrawTexture(new Rect(point.x - 2.5f, point.y - 2.5f, 5f, 5f),
+                            RuntimeGuiTheme.CircleTexture);
+                    }
                     int fighterDiamonds = DiamondObjectiveManager.Instance != null
                         ? DiamondObjectiveManager.Instance.GetCount(fighter)
                         : 0;
-                    if (fighterDiamonds <= 0) continue;
+                    if (fighterDiamonds <= 0)
+                    {
+                        if (revealed) continue;
+                        continue;
+                    }
                     GUI.color = new Color(0.15f, 0.92f, 1f, 1f);
                     GUI.DrawTexture(new Rect(point.x - 7f, point.y - 7f, 14f, 14f), RuntimeGuiTheme.RingTexture);
                     GUI.color = new Color(1f, 0.28f, 0.16f, 1f);

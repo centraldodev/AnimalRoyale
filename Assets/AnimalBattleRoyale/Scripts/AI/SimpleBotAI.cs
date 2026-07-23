@@ -103,7 +103,11 @@ namespace AnimalBattleRoyale
             if (zone != null && zone.IsOutside(transform.position, 3f))
             {
                 Vector3 fallback = (zone.Center - transform.position).normalized;
-                desiredDirection = GetNavigationDirection(zone.Center, fallback);
+                // The zone center drifts every frame while shrinking, so a tight
+                // tolerance here would force every fleeing bot to recompute a full
+                // NavMesh path in lockstep. A wide tolerance lets the randomized
+                // per-bot throttle (nextPathRefresh) be what actually paces replans.
+                desiredDirection = GetNavigationDirection(zone.Center, fallback, 15f);
                 sprint = true;
             }
             else if (shouldFlee)
@@ -149,10 +153,14 @@ namespace AnimalBattleRoyale
                     : GetNavigationDirection(target.transform.position, fallback);
                 sprint = !canUseRanged && distance > controller.Stats.AttackRange * 1.2f;
 
-                if (Time.time >= nextAbilityDecision && distance < 12f)
+                if (Time.time >= nextAbilityDecision)
                 {
                     nextAbilityDecision = Time.time + Random.Range(2.5f, 5.5f);
-                    abilitySlot = Random.value > 0.38f ? 0 : -1;
+                    bool useSecondary = CanUseSecondaryAbility(distance)
+                                        && controller.AbilityCooldownRemainingFor(1) <= 0.01f
+                                        && Random.value < 0.58f;
+                    abilitySlot = useSecondary ? 1 : distance < 12f && Random.value > 0.38f ? 0 : -1;
+                    if (abilitySlot >= 0) attackDirection = GetAttackDirection(fallback);
                 }
             }
             else if (objectiveDiamond != null)
@@ -180,6 +188,20 @@ namespace AnimalBattleRoyale
             desiredDirection = RecoverIfStuck(desiredDirection);
             desiredDirection = AvoidObstacles(desiredDirection);
             controller.SetAIInput(desiredDirection, attackDirection, sprint, attack, rangedAttack, abilitySlot);
+        }
+
+        private bool CanUseSecondaryAbility(float targetDistance)
+        {
+            return controller.AnimalType switch
+            {
+                AnimalType.Tiger => targetDistance <= 7f,
+                AnimalType.Ant => targetDistance <= 12f,
+                AnimalType.Eagle => targetDistance <= ThirdPersonAnimalController.EagleVisionRange,
+                AnimalType.Monkey => targetDistance <= 18f,
+                AnimalType.Cow => targetDistance <= 9f
+                                  || controller.Health.CurrentHealth <= controller.Health.MaxHealth * 0.7f,
+                _ => false
+            };
         }
 
         private ThirdPersonAnimalController GetFleeThreat()
@@ -272,11 +294,12 @@ namespace AnimalBattleRoyale
             return desired;
         }
 
-        private Vector3 GetNavigationDirection(Vector3 destination, Vector3 fallback)
+        private Vector3 GetNavigationDirection(Vector3 destination, Vector3 fallback, float destinationChangeTolerance = 3f)
         {
             if (!RuntimeNavMeshSurface.IsReady) return fallback;
 
-            bool destinationChanged = (destination - pathDestination).sqrMagnitude > 9f;
+            bool destinationChanged = (destination - pathDestination).sqrMagnitude
+                > destinationChangeTolerance * destinationChangeTolerance;
             if (destinationChanged || Time.time >= nextPathRefresh || pathCornerCount < 2)
             {
                 nextPathRefresh = Time.time + Random.Range(0.45f, 0.75f);

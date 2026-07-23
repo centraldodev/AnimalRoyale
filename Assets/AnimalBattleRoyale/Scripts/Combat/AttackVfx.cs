@@ -62,6 +62,35 @@ namespace AnimalBattleRoyale
 
         public static void CreatePower(AnimalType type, int slot, Vector3 position, Vector3 direction)
         {
+            if (slot == 1)
+            {
+                switch (type)
+                {
+                    case AnimalType.Tiger:
+                        CreateBurst(position + Vector3.up * 0.7f, new Color(1f, 0.38f, 0.05f), 4.2f);
+                        CreateBurst(position + Vector3.up * 0.7f, new Color(1f, 0.75f, 0.12f), 2.6f);
+                        break;
+                    case AnimalType.Ant:
+                        CreateSlash(position + Vector3.up * 0.15f, direction,
+                            new Color(0.48f, 1f, 0.06f), 2.2f);
+                        break;
+                    case AnimalType.Eagle:
+                        CreateBurst(position + Vector3.up, new Color(1f, 0.86f, 0.22f), 5.2f);
+                        CreateBurst(position + Vector3.up, Color.white, 2.5f);
+                        break;
+                    case AnimalType.Monkey:
+                        CreateSlash(position + Vector3.up * 0.7f, direction,
+                            new Color(0.22f, 0.82f, 0.08f), 2.8f);
+                        break;
+                    case AnimalType.Cow:
+                        CreateBurst(position + Vector3.up * 0.65f,
+                            new Color(0.62f, 0.9f, 1f), 2.8f);
+                        CreateBurst(position + Vector3.up * 0.65f, Color.white, 1.6f);
+                        break;
+                }
+                return;
+            }
+
             switch (type)
             {
                 case AnimalType.Tiger:
